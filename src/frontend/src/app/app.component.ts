@@ -31,7 +31,7 @@ import { AuthService } from './core/auth.service';
             <div class="header-actions">
               <nav class="main-nav" [attr.aria-label]="'NAV.LABEL' | translate">
                 <a routerLink="/chat" routerLinkActive="nav-active">{{ 'NAV.CHAT' | translate }}</a>
-                <a routerLink="/rapport" routerLinkActive="nav-active">{{ 'NAV.REPORT' | translate }}</a>
+                <a routerLink="/teams-weekly-report" routerLinkActive="nav-active">{{ 'NAV.REPORT' | translate }}</a>
                 <a routerLink="/configuration" routerLinkActive="nav-active">{{ 'NAV.CONFIG' | translate }}</a>
               </nav>
               <button class="header-button language-button" type="button" (click)="toggleLanguage()"

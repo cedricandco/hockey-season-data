@@ -7,7 +7,8 @@ import { ConfigurationComponent } from './config/config.component';
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'chat' },
   { path: 'chat', component: ChatComponent },
-  { path: 'rapport', component: ReportComponent },
+  { path: 'teams-weekly-report', component: ReportComponent },
+  { path: 'rapport', pathMatch: 'full', redirectTo: 'teams-weekly-report' },
   { path: 'configuration', component: ConfigurationComponent },
   { path: '**', redirectTo: 'chat' },
 ];

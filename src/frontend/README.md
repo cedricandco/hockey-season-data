@@ -81,7 +81,7 @@ answer questions about hockey data.
 
 ## Weekly report page
 
-The weekly report page (`/rapport`) loads the previous seven days through today
+The weekly report page (`/teams-weekly-report`) loads the previous seven days through today
 by default. The date range is adjustable; games are filtered to the configured
 team IDs and ordered chronologically. Standings and games are shown per
 division, followed by all published division suspensions. Unavailable sources
@@ -108,7 +108,7 @@ src/
   app/
     app.config.ts        # zoneless, routed, HttpClient(fetch)+interceptors, translation and agent providers
     app.component.ts     # login gate ↔ header + router outlet based on auth state
-    app.routes.ts        # /chat, /rapport, /configuration
+    app.routes.ts        # /chat, /teams-weekly-report, /configuration
     chat/chat.component.ts     # agent chat page, composer pinned at the bottom
     report/report.component.ts # weekly report page and current ID selection
     config/config.component.ts # configuration page (colors)
