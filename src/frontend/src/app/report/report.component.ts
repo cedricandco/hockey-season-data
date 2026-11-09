@@ -6,8 +6,13 @@ import { Subscription } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { Game, ReportDivision, Standing, WeeklyReport } from './weekly-report.models';
 
-const DIVISION_IDS = [194899, 194901, 194908] as const;
-const TEAM_IDS = [182497, 182498, 182220, 194901, 181303, 181300] as const;
+const DIVISION_IDS = [
+  194899, 194901, 194906, 194908, 194910, 194930, 194934, 194936, 194940, 194942, 194944, 194931, 194937, 194945,
+] as const;
+const TEAM_IDS = [
+  182497, 182498, 182222, 182220, 181829, 181826, 181303, 181300, 185754, 185755, 185751, 181088, 181090,
+  180492, 180494, 180322, 222322, 221751, 221750, 214757, 222320, 222321, 214756, 180671, 221752, 221749, 186200,
+] as const;
 
 @Component({
   selector: 'app-report',
@@ -62,7 +67,7 @@ const TEAM_IDS = [182497, 182498, 182220, 194901, 181303, 181300] as const;
               <section class="report-section">
                 <div class="section-heading"><h4>{{ 'REPORT.STANDINGS' | translate }}</h4><span>{{ 'REPORT.SELECTED_TEAMS' | translate }}</span></div>
                 @if (!division.standings.available) {
-                  <p class="notice">{{ 'REPORT.STANDINGS_UNAVAILABLE' | translate }}</p>
+                  <p class="notice">{{ 'REPORT.STANDINGS_UNAVAILABLE' | translate }} @if (division.standings.error) { <span class="notice-detail">{{ division.standings.error }}</span> }</p>
                 } @else if (selectedStandings(division, result.teamIds); as standings) {
                   @if (standings.length) {
                     <div class="table-wrap"><table>
@@ -77,7 +82,7 @@ const TEAM_IDS = [182497, 182498, 182220, 194901, 181303, 181300] as const;
               <section class="report-section">
                 <div class="section-heading"><h4>{{ 'REPORT.GAMES' | translate }}</h4><span>{{ 'REPORT.CHRONOLOGICAL' | translate }}</span></div>
                 @if (!division.games.available) {
-                  <p class="notice">{{ 'REPORT.GAMES_UNAVAILABLE' | translate }}</p>
+                  <p class="notice">{{ 'REPORT.GAMES_UNAVAILABLE' | translate }} @if (division.games.error) { <span class="notice-detail">{{ division.games.error }}</span> }</p>
                 } @else if (selectedGames(division, result.teamIds); as games) {
                   @if (games.length) {
                     <div class="games-list">@for (game of games; track game.id) {
@@ -108,7 +113,7 @@ const TEAM_IDS = [182497, 182498, 182220, 194901, 181303, 181300] as const;
               <section class="report-section suspensions">
                 <div class="section-heading"><h4>{{ 'REPORT.SUSPENSIONS' | translate }}</h4><span>{{ 'REPORT.DIVISION_WIDE' | translate }}</span></div>
                 @if (!division.suspensions.available) {
-                  <p class="notice">{{ 'REPORT.SUSPENSIONS_UNAVAILABLE' | translate }}</p>
+                  <p class="notice">{{ 'REPORT.SUSPENSIONS_UNAVAILABLE' | translate }} @if (division.suspensions.error) { <span class="notice-detail">{{ division.suspensions.error }}</span> }</p>
                 } @else if (division.suspensions.data?.length) {
                   <div class="suspension-list">@for (suspension of division.suspensions.data; track suspension.id) {
                     <div class="suspension-row">

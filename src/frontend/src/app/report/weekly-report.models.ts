@@ -1,6 +1,7 @@
 export interface ReportSource<T> {
   available: boolean;
   data: T[] | null;
+  error?: string | null;
 }
 
 export interface Standing {

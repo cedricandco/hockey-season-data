@@ -60,6 +60,7 @@ td.rank, td.points { color: var(--color-primary); font-weight: 800; }
 .empty { margin: 0; padding: 18px; border: 1px dashed #e2eaf0; border-radius: 10px; color: #8999a8; font-size: .78rem; text-align: center; }
 .notice { margin: 0; padding: 13px 15px; border: 1px solid #f3dfb8; border-radius: 10px; background: #fffaef; color: #86601c; font-size: .78rem; line-height: 1.5; }
 .notice-error { margin-top: 16px; border-color: #f0cfcb; background: #fff4f3; color: #9c2c2c; }
+.notice-detail { display: block; margin-top: 5px; color: #a02020; font-weight: 700; font-size: .74rem; word-break: break-word; }
 .loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 55px 15px; color: #728396; font-size: .82rem; }
 .spinner { width: 17px; height: 17px; border: 2px solid #d8e6ef; border-top-color: var(--color-primary); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

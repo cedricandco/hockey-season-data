@@ -13,17 +13,12 @@ namespace HockeySeason.Functions;
 public static class FunctionsAuthorization
 {
     /// <summary>
-    /// Throws <see cref="UnauthorizedAccessException"/> (surfaced as HTTP 401
-    /// by the Functions host) when the caller does not carry a valid token
-    /// from the configured issuer/audience.
+    /// Returns whether the caller has a valid token from the configured issuer/audience.
     /// </summary>
-    public static void RequireAuthenticatedUser(FunctionContext context)
+    public static bool IsAuthenticated(FunctionContext context)
     {
         var httpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("Function context has no HttpContext.");
-        if (httpContext.User.Identity?.IsAuthenticated != true)
-        {
-            throw new UnauthorizedAccessException("Missing or invalid bearer token.");
-        }
+        return httpContext.User.Identity?.IsAuthenticated == true;
     }
 }

@@ -86,7 +86,7 @@ app.MapGet("/api/weekly-report", async (HttpRequest httpRequest, IWeeklyReportSe
 {
     var query = httpRequest.Query;
     if (!WeeklyReportRequest.TryParse(query["startDate"], query["endDate"], query["divisionId"], query["teamId"], out var request))
-        return Results.ValidationProblem(new Dictionary<string, string[]> { ["query"] = ["Provide valid yyyy-MM-dd dates and positive divisionId and teamId parameters (at most 20 each)."] });
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["query"] = ["Provide valid yyyy-MM-dd dates and positive divisionId and teamId parameters (at most 50 each)."] });
     return Results.Ok(await reports.GetAsync(request!, cancellationToken));
 })
     .WithName("GetWeeklyReport")

@@ -53,6 +53,8 @@ public sealed class WeeklyReportTests
             Assert.True(division.Standings.Available);
             Assert.True(division.Games.Available);
         });
+        Assert.All(report.Divisions, division => Assert.Equal(
+            "HTTP 503 ServiceUnavailable from Spordle", division.Suspensions.Error));
         Assert.Equal(6, handler.Requests.Count(uri => uri.AbsolutePath.Contains("suspensions")));
     }
 
@@ -61,7 +63,11 @@ public sealed class WeeklyReportTests
     {
         var handler = new ReportHandler(uri => uri.AbsolutePath.Contains("suspensions") ? HttpStatusCode.Forbidden : HttpStatusCode.OK);
         var report = await CreateService(handler).GetAsync(Request(), CancellationToken.None);
-        Assert.All(report.Divisions, division => Assert.False(division.Suspensions.Available));
+        Assert.All(report.Divisions, division =>
+        {
+            Assert.False(division.Suspensions.Available);
+            Assert.Equal("HTTP 403 Forbidden from Spordle", division.Suspensions.Error);
+        });
         Assert.Equal(2, handler.Requests.Count(uri => uri.AbsolutePath.Contains("suspensions")));
     }
 
@@ -83,6 +89,22 @@ public sealed class WeeklyReportTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CreateService(new ReportHandler()).GetAsync(Request(), cancellation.Token));
+    }
+
+    [Fact]
+    public async Task Report_ErrorCarriesClearMessageForClient()
+    {
+        var handler = new ReportHandler(uri => uri.AbsolutePath.Contains("suspensions") ? HttpStatusCode.Forbidden : HttpStatusCode.OK);
+        var report = await CreateService(handler).GetAsync(Request(), CancellationToken.None);
+
+        Assert.All(report.Divisions, division =>
+        {
+            Assert.False(division.Suspensions.Available);
+            Assert.Null(division.Suspensions.Data);
+            Assert.Equal("HTTP 403 Forbidden from Spordle", division.Suspensions.Error);
+            Assert.Null(division.Standings.Error);
+            Assert.Null(division.Games.Error);
+        });
     }
 
     [Theory]

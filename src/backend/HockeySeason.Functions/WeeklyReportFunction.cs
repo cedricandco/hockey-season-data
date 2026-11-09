@@ -12,11 +12,12 @@ public sealed class WeeklyReportFunction(IWeeklyReportService reports)
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "weekly-report")] HttpRequest httpRequest,
         FunctionContext context, CancellationToken cancellationToken)
     {
-        FunctionsAuthorization.RequireAuthenticatedUser(context);
+        if (!FunctionsAuthorization.IsAuthenticated(context))
+            return new UnauthorizedResult();
         var query = httpRequest.Query;
         if (!WeeklyReportRequest.TryParse(query["startDate"], query["endDate"], query["divisionId"], query["teamId"], out var request))
             return new BadRequestObjectResult(new ValidationProblemDetails(
-                new Dictionary<string, string[]> { ["query"] = ["Provide valid yyyy-MM-dd dates and positive divisionId and teamId parameters (at most 20 each)."] }));
+                new Dictionary<string, string[]> { ["query"] = ["Provide valid yyyy-MM-dd dates and positive divisionId and teamId parameters (at most 50 each)."] }));
         return new OkObjectResult(await reports.GetAsync(request!, cancellationToken));
     }
 }

@@ -32,7 +32,7 @@ public sealed record WeeklyReportRequest(DateOnly StartDate, DateOnly EndDate, i
     private static bool TryParseIds(StringValues values, out int[] ids)
     {
         ids = [];
-        if (values.Count is 0 or > 20)
+        if (values.Count is 0 or > 50)
             return false;
 
         var parsed = new List<int>();
@@ -48,8 +48,11 @@ public sealed record WeeklyReportRequest(DateOnly StartDate, DateOnly EndDate, i
     }
 }
 
-/// <summary>One unmodified Spordle response, or an explicit unavailable status.</summary>
-public sealed record WeeklyReportSource(bool Available, JsonElement? Data);
+/// <summary>
+/// One unmodified Spordle response, or an explicit unavailable status carrying
+/// a human-readable failure reason (HTTP status, timeout or invalid payload).
+/// </summary>
+public sealed record WeeklyReportSource(bool Available, JsonElement? Data, string? Error);
 
 /// <summary>Raw Spordle data for a requested division.</summary>
 public sealed record WeeklyReportDivision(
@@ -68,8 +71,7 @@ public sealed class WeeklyReportService(
     LeagueApiService leagueApi,
     IOptions<LeagueApiOptions> options,
     ILogger<WeeklyReportService> logger) : IWeeklyReportService
-{
-    public async Task<WeeklyReportResponse> GetAsync(WeeklyReportRequest request, CancellationToken cancellationToken)
+{    public async Task<WeeklyReportResponse> GetAsync(WeeklyReportRequest request, CancellationToken cancellationToken)
     {
         var leagueNames = await GetLeagueNamesAsync(cancellationToken);
         var divisions = await Task.WhenAll(request.DivisionIds.Select(id => GetDivisionAsync(id, request, cancellationToken)));
@@ -117,14 +119,14 @@ public sealed class WeeklyReportService(
     {
         for (var attempt = 1; ; attempt++)
         {
+            string lastError;
             try
-            {
-                using var attemptCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            {                using var attemptCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 attemptCancellation.CancelAfter(TimeSpan.FromSeconds(8));
                 var data = await fetch(attemptCancellation.Token);
                 if (data.ValueKind != JsonValueKind.Array)
                     throw new JsonException("Spordle returned a non-array response.");
-                return new(true, data);
+                return new(true, data, null);
             }
             catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException)
             {
@@ -133,10 +135,25 @@ public sealed class WeeklyReportService(
                     || http.StatusCode is null or HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
                     || (int)http.StatusCode >= 500;
                 logger.LogWarning(ex, "Spordle {Source} unavailable for division {DivisionId}, attempt {Attempt}", source, divisionId, attempt);
+                lastError = Describe(ex);
                 if (!transient || attempt >= 3)
-                    return new(false, null);
+                    return new(false, null, lastError);
                 await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
             }
         }
     }
+
+    /// <summary>
+    /// Builds the client-facing reason for a failed Spordle fetch, so the
+    /// weekly report can show why a source was unavailable.
+    /// </summary>
+    private static string Describe(Exception exception) => exception switch
+    {
+        HttpRequestException { StatusCode: var status } when status is not null
+            => $"HTTP {(int)status} {status} from Spordle",
+        HttpRequestException => $"The Spordle API could not be reached: {exception.InnerException?.Message ?? exception.Message}",
+        OperationCanceledException => "The Spordle API timed out after 8 seconds",
+        JsonException json => $"Invalid Spordle response: {json.Message}",
+        _ => exception.Message,
+    };
 }

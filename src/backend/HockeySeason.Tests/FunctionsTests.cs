@@ -27,8 +27,8 @@ public sealed class FunctionsTests
         var request = new DefaultHttpContext().Request;
         request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&divisionId=194901&teamId=182497");
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            function.Run(request, CreateAnonymousContext(), CancellationToken.None));
+        Assert.IsType<UnauthorizedResult>(await function.Run(request, CreateAnonymousContext(), CancellationToken.None));
+        Assert.Null(service.Request);
         var result = Assert.IsType<OkObjectResult>(await function.Run(request, CreateAuthenticatedContext(), CancellationToken.None));
         Assert.IsType<WeeklyReportResponse>(result.Value);
         Assert.Equal(new[] { 194899, 194901 }, service.Request!.DivisionIds);
@@ -97,9 +97,7 @@ public sealed class FunctionsTests
         var context = new DefaultHttpContext();
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(
             """{"threadId":"thread","runId":"run","messages":[{"id":"message","role":"user","content":"Bonjour"}]}"""));
-        var exception = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            CreateAgentFunction().Run(context.Request, CreateAnonymousContext(), CancellationToken.None));
-        Assert.Contains("bearer token", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<UnauthorizedResult>(await CreateAgentFunction().Run(context.Request, CreateAnonymousContext(), CancellationToken.None));
     }
 
     private static FunctionContext CreateAuthenticatedContext()
@@ -160,8 +158,7 @@ public sealed class FunctionsTests
     public void Health_RequiresAuthenticatedUser()
     {
         var function = new HealthFunction(new HealthService(new FixedTimeProvider(DateTimeOffset.UtcNow)), new TestEnvironment());
-        Assert.Throws<UnauthorizedAccessException>(() =>
-            function.Run(new DefaultHttpContext().Request, CreateAnonymousContext()));
+        Assert.IsType<UnauthorizedResult>(function.Run(new DefaultHttpContext().Request, CreateAnonymousContext()));
     }
 
     private sealed class TestEnvironment : IHostEnvironment
