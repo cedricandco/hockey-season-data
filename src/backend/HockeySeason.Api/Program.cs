@@ -1,5 +1,6 @@
 using HockeySeason.Agents;
 using HockeySeason.Application;
+using HockeySeason.Auth;
 using HockeySeason.Domain;
 using HockeySeason.Infrastructure;
 using HockeySeason.LeagueApi.Extensions;
@@ -7,6 +8,7 @@ using HockeySeason.Mcp;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
 using ModelContextProtocol.Protocol;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Respect Aspire's URL configuration while retaining PORT for hosted deployments.
@@ -25,6 +27,10 @@ else if (string.IsNullOrEmpty(builder.Configuration["urls"]))
 builder.Services.AddSingleton<ITimeProvider, UtcTimeProvider>();
 builder.Services.AddSingleton<IHealthService, HealthService>();
 builder.Services.AddLeagueApi();
+
+// OIDC-style JWT security: login with the shared 6-digit access code from
+// configuration, HS256 tokens, JwtBearer validation and rate limiting.
+builder.Services.AddHockeySeasonAuth(builder.Configuration);
 
 // LeagueTools must be registered explicitly: WithTools<LeagueTools>() exposes
 // the [McpServerTool] methods over /mcp but does not add the instance to DI,
@@ -58,23 +64,29 @@ var hockeyAgentBuilder = builder.Services.AddHockeySeasonDataAgent(builder.Confi
 var app = builder.Build();
 
 app.UseCors(CorsPolicy);
+app.UseAuthentication();
+app.UseAuthorization();
 
 // Liveness and readiness probes (anonymous, no redirects).
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/readyz", () => Results.Ok(new { status = "ready" }));
+
+// Login endpoint: exchanges the 6-digit access code for a signed JWT.
+app.MapHockeySeasonLogin(app.Services.GetRequiredService<LoginRateGuard>());
 
 // Health report consumed by the frontend "Ping API" button.
 app.MapGet("/api/health", (IHealthService healthService) =>
 {
     var time = healthService.GetServerTime();
     return Results.Ok(new HealthReport(time, app.Environment.EnvironmentName));
-});
+}).RequireAuthorization(HockeySeasonAuthExtensions.AuthenticatedPolicy);
 
 // Streamable HTTP MCP endpoint.
-app.MapMcp("/mcp");
+app.MapMcp("/mcp").RequireAuthorization(HockeySeasonAuthExtensions.AuthenticatedPolicy);
 
 // AG-UI endpoint consumed by the CopilotKit frontend (proxied through /api).
-app.MapAGUIServer(hockeyAgentBuilder, "/api/agui/hockey-season-data.agent");
+app.MapAGUIServer(hockeyAgentBuilder, "/api/agui/hockey-season-data.agent")
+    .RequireAuthorization(HockeySeasonAuthExtensions.AuthenticatedPolicy);
 
 app.MapFallback(() => Results.NotFound(new { status = "not found" }));
 

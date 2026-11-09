@@ -20,8 +20,10 @@ public sealed class AgentFunction(
     [Function("HockeySeasonDataAgent")]
     public async Task<IActionResult> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agui/hockey-season-data.agent")] HttpRequest request,
+        FunctionContext context,
         CancellationToken cancellationToken)
     {
+        FunctionsAuthorization.RequireAuthenticatedUser(context);
         var options = jsonOptions.Value.SerializerOptions;
         RunAgentInput? input;
         try
@@ -42,15 +44,15 @@ public sealed class AgentFunction(
         // knows system/user/assistant/developer/tool, but AG-UI 1.x clients
         // replay reasoning messages they received in earlier runs.
         AGUIReasoningMessageMapper.DropReasoningHistory(input);
-        var context = input.ToChatRequestContext(options);
+        var chatContext = input.ToChatRequestContext(options);
 #pragma warning disable MAAI001
         // The Agent Framework's chat-client adapter is currently experimental.
-        var updates = agent.AsIChatClient().GetStreamingResponseAsync(context.Messages, context.ChatOptions, cancellationToken);
+        var updates = agent.AsIChatClient().GetStreamingResponseAsync(chatContext.Messages, chatContext.ChatOptions, cancellationToken);
 #pragma warning restore MAAI001
         var response = request.HttpContext.Response;
         response.ContentType = "text/event-stream";
         response.Headers.CacheControl = "no-cache";
-        await foreach (var item in updates.AsAGUIEventStreamAsync(context, cancellationToken))
+        await foreach (var item in updates.AsAGUIEventStreamAsync(chatContext, cancellationToken))
         {
             await response.WriteAsync($"data: {JsonSerializer.Serialize<BaseEvent>(item, options)}\n\n", cancellationToken);
             await response.Body.FlushAsync(cancellationToken);

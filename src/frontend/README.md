@@ -30,6 +30,17 @@ npm run build
 The deployable browser bundle, including `index.html`, lands in
 `dist/hockey-frontend/browser`.
 
+## Authentication gate
+
+Every screen except the login gate requires an OIDC-style JWT: the app asks
+for the shared 6-digit access code (`LOGIN` translations), posts it to
+`POST /api/auth/login`, and stores the returned bearer token in local storage
+(`core/auth-storage.ts`). Each HTTP request adds
+`Authorization: Bearer <token>` (`core/auth.interceptor.ts`) and the AG-UI
+agent adds the same header in `agent/translation-http-agent.ts`. A rejected
+token (401) clears the session and flips the app back to the login screen; the
+header button logs out explicitly.
+
 ## Azure Static Web Apps deployment
 
 The GitHub Actions workflow builds the frontend with Node.js 22 and publishes
@@ -42,9 +53,10 @@ application settings when using Ollama Cloud; do not put credentials in the
 repository or frontend. The default model and endpoint are in the backend's
 `appsettings.json` and may also be overridden through application settings.
 Azure Static Web Apps limits API requests to 45 seconds. Verify AG-UI streaming
-through the deployed Static Web App as well as locally. The agent endpoint is
-anonymous, so anyone who can reach the site can use the configured model and
-potentially incur charges.
+through the deployed Static Web App as well as locally. Configure
+`Auth__PinCode` and `Auth__SigningKey` in the Static Web App's application
+settings so the login gate protects the agent endpoint; access without a valid
+access code is rejected with 401.
 
 The explicit `@emnapi/core` and `@emnapi/runtime` development dependencies
 resolve conflicting WebAssembly build-tool peer dependencies in the lockfile.
@@ -65,14 +77,18 @@ inserts a new line. The chat displays connection errors and offers a retry.
 ```
 src/
   index.html             # <html lang="fr">, viewport, theme color
-  global.scss            # responsive layout and theme variables
+  global.scss            # responsive layout, theme variables and login styles
   main.ts                # bootstrapApplication entry
   app/
-    app.config.ts        # zoneless, HttpClient(fetch), translation and agent providers
-    app.component.ts     # application shell rendering the home page
-    home/home.component.ts  # agent chat, language toggle, and theme settings
-    core/api.service.ts   # HttpClient wrapper for GET /api/health
-    core/models.ts        # HealthReport / ServerTime interfaces
+    app.config.ts        # zoneless, HttpClient(fetch)+interceptors, translation and agent providers
+    app.component.ts     # login gate ↔ home shell based on auth state
+    home/home.component.ts  # agent chat, language toggle, theme settings, logout button
+    core/login.component.ts # 6-digit access code screen
+    core/auth.service.ts    # login/logout against POST /api/auth/login
+    core/auth-storage.ts    # bearer token persistence (localStorage)
+    core/auth.interceptor.ts # Authorization header attach + 401 → logout
+    core/api.service.ts     # HttpClient wrapper for GET /api/health
+    core/models.ts          # HealthReport / ServerTime interfaces
   environments/environment.ts  # apiUrl: '/api'
   assets/i18n/en.json     # English translations
   assets/i18n/fr.json     # French translations

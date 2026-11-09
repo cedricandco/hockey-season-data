@@ -2,6 +2,7 @@ import { Component, effect, ElementRef, inject, signal, viewChild } from '@angul
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { CopilotKit, injectAgentStore } from '@copilotkit/angular';
 import { HOCKEY_SEASON_DATA_AGENT_ID } from '../app.config';
+import { AuthService } from '../core/auth.service';
 
 type Language = 'fr' | 'en';
 type ThemeColor = 'primary' | 'secondary';
@@ -36,6 +37,10 @@ const THEME_STORAGE_KEY = 'hockey-season-theme';
           <button class="header-button settings-button" type="button" (click)="settingsOpen.update(open => !open)"
             [attr.aria-expanded]="settingsOpen()" [attr.aria-label]="'THEME.BUTTON' | translate" aria-controls="theme-settings">
             <span aria-hidden="true">⚙</span><span class="settings-label">{{ 'THEME.BUTTON' | translate }}</span>
+          </button>
+          <button class="header-button logout-button" type="button" (click)="logout()"
+            [attr.aria-label]="'LOGOUT.BUTTON' | translate">
+            <span aria-hidden="true">⎋</span><span class="settings-label">{{ 'LOGOUT.BUTTON' | translate }}</span>
           </button>
           @if (settingsOpen()) {
             <section id="theme-settings" class="theme-panel" [attr.aria-label]="'THEME.TITLE' | translate">
@@ -132,6 +137,7 @@ const THEME_STORAGE_KEY = 'hockey-season-theme';
 export class HomeComponent {
   private readonly translate = inject(TranslateService);
   private readonly copilotKit = inject(CopilotKit);
+  private readonly auth = inject(AuthService);
   private readonly conversation = viewChild<ElementRef<HTMLElement>>('conversation');
   readonly store = injectAgentStore(HOCKEY_SEASON_DATA_AGENT_ID);
   readonly language = signal<Language>('fr');
@@ -160,6 +166,10 @@ export class HomeComponent {
     this.language.set(next);
     document.documentElement.lang = next;
     this.translate.use(next);
+  }
+
+  logout(): void {
+    this.auth.logout();
   }
 
   setColor(color: ThemeColor, event: Event): void {

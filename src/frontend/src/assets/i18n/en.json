@@ -23,7 +23,19 @@
     "ERROR": "Could not reach the agent. Check your connection and try again.",
     "RETRY": "Retry"
   },
-  "LANGUAGE": { "BUTTON": "Passer en français" },
+  "LANGUAGE": { "BUTTON": "Switch to English" },
+  "LOGOUT": { "BUTTON": "Log out" },
+  "LOGIN": {
+    "TITLE": "Restricted access",
+    "SUBTITLE": "Enter your 6-digit access code to continue.",
+    "CODE_LABEL": "Access code",
+    "PLACEHOLDER": "••••••",
+    "INVALID": "Incorrect code. Please try again.",
+    "THROTTLED": "Too many attempts. Please wait a minute before retrying.",
+    "NETWORK": "Unable to reach the server. Check your connection.",
+    "BUSY": "Checking…",
+    "ACTION": "Sign in"
+  },
   "THEME": {
     "BUTTON": "Appearance",
     "TITLE": "Customize colors",

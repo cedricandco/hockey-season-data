@@ -11,6 +11,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Azure.Functions.Worker;
 using Xunit;
 
 namespace HockeySeason.Tests;
@@ -23,7 +24,9 @@ public sealed class FunctionsTests
         var time = new DateTimeOffset(2026, 11, 9, 0, 0, 0, TimeSpan.Zero);
         var function = new HealthFunction(new HealthService(new FixedTimeProvider(time)), new TestEnvironment());
 
-        var result = Assert.IsType<OkObjectResult>(function.Run(new DefaultHttpContext().Request));
+        var result = Assert.IsType<OkObjectResult>(function.Run(
+            new DefaultHttpContext().Request,
+            CreateAuthenticatedContext()));
         var report = Assert.IsType<HealthReport>(result.Value);
         Assert.Equal("Production", report.Environment);
         Assert.Equal(time, report.Time.UtcNow);
@@ -38,7 +41,7 @@ public sealed class FunctionsTests
             """{"threadId":"thread","runId":"run","messages":[{"id":"message","role":"user","content":"Bonjour"}]}"""));
         context.Response.Body = new MemoryStream();
 
-        var result = await CreateAgentFunction().Run(context.Request, CancellationToken.None);
+        var result = await CreateAgentFunction().Run(context.Request, CreateAuthenticatedContext(), CancellationToken.None);
 
         Assert.IsType<EmptyResult>(result);
         Assert.Equal("text/event-stream", context.Response.ContentType);
@@ -55,8 +58,65 @@ public sealed class FunctionsTests
     {
         var context = new DefaultHttpContext();
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("{"));
-        var result = await CreateAgentFunction().Run(context.Request, CancellationToken.None);
+        var result = await CreateAgentFunction().Run(context.Request, CreateAuthenticatedContext(), CancellationToken.None);
         Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Agent_RejectsAnonymousCaller()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(
+            """{"threadId":"thread","runId":"run","messages":[{"id":"message","role":"user","content":"Bonjour"}]}"""));
+        var exception = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            CreateAgentFunction().Run(context.Request, CreateAnonymousContext(), CancellationToken.None));
+        Assert.Contains("bearer token", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static FunctionContext CreateAuthenticatedContext()
+    {
+        var httpContext = new DefaultHttpContext();
+        var identity = new System.Security.Claims.ClaimsIdentity(
+            [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "pin-user")],
+            authenticationType: "Bearer");
+        httpContext.User = new System.Security.Claims.ClaimsPrincipal(identity);
+        return CreateContext(httpContext);
+    }
+
+    private static FunctionContext CreateAnonymousContext() => CreateContext(new DefaultHttpContext());
+
+    private static FunctionContext CreateContext(DefaultHttpContext httpContext)
+    {
+        // FunctionContextExtensions.GetHttpContext resolves the HttpContext
+        // from Items["HttpRequestContext"] (ASP.NET Core integration contract).
+        var serviceProvider = new ServiceCollection().AddSingleton(httpContext).BuildServiceProvider();
+        return new FunctionContextStub
+        {
+            InstanceServices = serviceProvider,
+            Items =
+            {
+                ["HttpRequestContext"] = httpContext,
+            },
+        };
+    }
+
+    private sealed class FunctionContextStub : FunctionContext
+    {
+        public override IServiceProvider InstanceServices { get; set; } = new ServiceCollection().BuildServiceProvider();
+        public override string InvocationId => "test-invocation";
+        public override string FunctionId => "test-function";
+        public override TraceContext TraceContext => new TraceContextStub();
+        public override BindingContext BindingContext => throw new NotImplementedException();
+        public override RetryContext RetryContext => throw new NotImplementedException();
+        public override FunctionDefinition FunctionDefinition => throw new NotImplementedException();
+        public override IDictionary<object, object> Items { get; set; } = new Dictionary<object, object>();
+        public override IInvocationFeatures Features => throw new NotImplementedException();
+    }
+
+    private sealed class TraceContextStub : TraceContext
+    {
+        public override string TraceParent => "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+        public override string TraceState => string.Empty;
     }
 
     private static AgentFunction CreateAgentFunction()
@@ -65,6 +125,14 @@ public sealed class FunctionsTests
         var options = services.GetRequiredService<IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>>();
         var agent = HockeySeasonDataAgentFactory.Create(new TestChatClient(), "Translate.", "test");
         return new AgentFunction(agent, options, NullLogger<AgentFunction>.Instance);
+    }
+
+    [Fact]
+    public void Health_RequiresAuthenticatedUser()
+    {
+        var function = new HealthFunction(new HealthService(new FixedTimeProvider(DateTimeOffset.UtcNow)), new TestEnvironment());
+        Assert.Throws<UnauthorizedAccessException>(() =>
+            function.Run(new DefaultHttpContext().Request, CreateAnonymousContext()));
     }
 
     private sealed class TestEnvironment : IHostEnvironment

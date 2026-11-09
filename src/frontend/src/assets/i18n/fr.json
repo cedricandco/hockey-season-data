@@ -24,6 +24,18 @@
     "RETRY": "Réessayer"
   },
   "LANGUAGE": { "BUTTON": "Switch to English" },
+  "LOGOUT": { "BUTTON": "Se déconnecter" },
+  "LOGIN": {
+    "TITLE": "Accès réservé",
+    "SUBTITLE": "Entrez votre code d'accès à 6 chiffres pour continuer.",
+    "CODE_LABEL": "Code d'accès",
+    "PLACEHOLDER": "••••••",
+    "INVALID": "Code incorrect. Réessayez.",
+    "THROTTLED": "Trop de tentatives. Patientez une minute avant de réessayer.",
+    "NETWORK": "Impossible de joindre le serveur. Vérifiez votre connexion.",
+    "BUSY": "Vérification…",
+    "ACTION": "Se connecter"
+  },
   "THEME": {
     "BUTTON": "Apparence",
     "TITLE": "Personnaliser les couleurs",

@@ -1,10 +1,12 @@
 import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core';
-import { provideHttpClient, withFetch } from '@angular/common/http';
+import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import { provideTranslateService } from '@ngx-translate/core';
 import { provideTranslateHttpLoader } from '@ngx-translate/http-loader';
 import { provideCopilotChatConfiguration, provideCopilotKit } from '@copilotkit/angular';
 import { environment } from '../environments/environment';
 import { TranslationHttpAgent } from './agent/translation-http-agent';
+import { authInterceptor } from './core/auth.interceptor';
+import { AuthStorage } from './core/auth-storage';
 
 /** Logical id of the translation agent exposed by the backend over AG-UI. */
 export const HOCKEY_SEASON_DATA_AGENT_ID = 'hockey-season-data.agent';
@@ -21,6 +23,10 @@ export const hockeySeasonDataAgent = new TranslationHttpAgent({
   url: `${environment.apiUrl}/agui/hockey-season-data.agent`,
 });
 
+// The AG-UI agent resolves the bearer token lazily at request time so logins
+// and token refreshes apply to subsequent agent runs without re-creating it.
+TranslationHttpAgent.accessTokenProvider = () => new AuthStorage().accessToken;
+
 /**
  * Root application configuration (zoneless Angular 22 + ngx-translate 18
  * + CopilotKit Angular UI connected to the Microsoft Agent Framework backend).
@@ -28,7 +34,8 @@ export const hockeySeasonDataAgent = new TranslationHttpAgent({
 export const appConfig: ApplicationConfig = {
   providers: [
     provideZonelessChangeDetection(),
-    provideHttpClient(withFetch()),
+    // Bearer token attach + automatic logout on 401 for every HTTP call.
+    provideHttpClient(withFetch(), withInterceptors([authInterceptor])),
     // i18n: translations live in src/assets/i18n/{{lang}}.json, loaded over HTTP.
     provideTranslateService({
       lang: 'fr',
