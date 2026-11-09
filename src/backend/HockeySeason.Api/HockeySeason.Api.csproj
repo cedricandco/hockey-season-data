@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <RootNamespace>HockeySeason.Api</RootNamespace>
+    <UserSecretsId>e84f87c0-4937-4d07-a9ba-cef86eb02329</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
