@@ -2,7 +2,7 @@
 A web app that allows us to query data about your preferred hockey team (Quebec).
 
 > **Status:** application shell. The project currently contains a mobile-friendly
-> frontend (Ionic + Angular), a .NET 10 Minimal API with health endpoints, and an
+> frontend (Ionic + Angular), a .NET 8 Minimal API with health endpoints, and an
 > MCP server exposing a `get-server-time` tool. No database yet.
 
 ## Monorepo structure
@@ -41,7 +41,7 @@ hockey-season-data/
 
 ### Aspire
 
-Install the .NET 10 SDK and Node.js 22 or later, then install the frontend
+Install the .NET 8 SDK and Node.js 22 or later, then install the frontend
 dependencies once:
 
 ```bash

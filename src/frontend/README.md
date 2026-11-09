@@ -32,7 +32,7 @@ The deployable browser bundle, including `index.html`, lands in
 ## Azure Static Web Apps deployment
 
 The GitHub Actions workflow builds the frontend with Node.js 22 and publishes
-the .NET 10 isolated-worker project `HockeySeason.Functions` as the managed
+the .NET 8 isolated-worker project `HockeySeason.Functions` as the managed
 Azure Functions API. It exposes `/api/health` and the AG-UI agent endpoint.
 The local ASP.NET Core API remains the backend for development.
 

@@ -1,6 +1,6 @@
 # Hockey Season Backend
 
-.NET 10 Minimal API following Clean Architecture, with an integrated MCP
+.NET 8 Minimal API following Clean Architecture, with an integrated MCP
 (Model Context Protocol) server exposed over Streamable HTTP.
 
 ## Projects
