@@ -31,11 +31,19 @@ The deployable browser bundle, including `index.html`, lands in
 
 ## Azure Static Web Apps deployment
 
-The GitHub Actions workflow builds the frontend with Node.js 22 and deploys
-`dist/hockey-frontend/browser` as prebuilt static assets. It does not deploy the
-backend: the .NET Minimal API is not an Azure Functions project. The frontend's
-`/api/health` request requires the backend to be hosted and routed separately;
-it will not work with the static deployment alone.
+The GitHub Actions workflow builds the frontend with Node.js 22 and publishes
+the .NET 10 isolated-worker project `HockeySeason.Functions` as the managed
+Azure Functions API. It exposes `/api/health` and the AG-UI agent endpoint.
+The local ASP.NET Core API remains the backend for development.
+
+Configure `Agents__HockeySeasonData__OllamaApiKey` in the Static Web App's
+application settings when using Ollama Cloud; do not put credentials in the
+repository or frontend. The default model and endpoint are in the backend's
+`appsettings.json` and may also be overridden through application settings.
+Azure Static Web Apps limits API requests to 45 seconds. Verify AG-UI streaming
+through the deployed Static Web App as well as locally. The agent endpoint is
+anonymous, so anyone who can reach the site can use the configured model and
+potentially incur charges.
 
 The explicit `@emnapi/core` and `@emnapi/runtime` development dependencies
 resolve conflicting WebAssembly build-tool peer dependencies in the lockfile.

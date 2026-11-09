@@ -32,6 +32,7 @@ hockey-season-data/
         ├── HockeySeason.Infrastructure/   # UtcTimeProvider
         ├── HockeySeason.Mcp/              # TimeTool → get-server-time
         ├── HockeySeason.Api/              # Minimal API host + /mcp endpoint
+        ├── HockeySeason.Functions/        # Azure Functions health + AG-UI host
         ├── HockeySeason.AppHost/          # Aspire orchestration
         └── HockeySeason.Tests/            # xUnit tests
 ```
@@ -73,6 +74,7 @@ Port 4200 must be available.
    - `GET /readyz` → `{ "status": "ready" }`
    - `GET /api/health` → `{ "environment": "...", "time": { "utcNow": "...", "timeZoneId": "UTC" } }`
    - `/mcp` — MCP Streamable HTTP endpoint (tool: `get-server-time`)
+   - `POST /api/agui/hockey-season-data.agent` — AG-UI translation agent
 
 2. Start the frontend (from `src/frontend`):
 
@@ -95,6 +97,9 @@ dotnet test
 
 ## Notes
 
+- Azure Static Web Apps deploys the separate .NET Functions host; configure
+  `Agents__HockeySeasonData__OllamaApiKey` as an application setting for Ollama
+  Cloud. See the frontend README for deployment details and limitations.
 - Default UI language is French with English fallback.
 - The API binds all interfaces (`http://*:$PORT`) so it works in containers
   and behind managed API integrations.

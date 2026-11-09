@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\HockeySeason.Application\HockeySeason.Application.csproj" />
     <ProjectReference Include="..\HockeySeason.Domain\HockeySeason.Domain.csproj" />
+    <ProjectReference Include="..\HockeySeason.Functions\HockeySeason.Functions.csproj" />
   </ItemGroup>
 
 </Project>

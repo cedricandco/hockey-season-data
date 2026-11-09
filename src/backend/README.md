@@ -12,6 +12,7 @@
 | `HockeySeason.Infrastructure` | `UtcTimeProvider` adapter over the system clock |
 | `HockeySeason.Mcp` | MCP tools (`TimeTool` → `get-server-time`) |
 | `HockeySeason.Api` | Composition root: endpoints, CORS, MCP host |
+| `HockeySeason.Functions` | Azure Functions host for health and AG-UI endpoints |
 | `HockeySeason.AppHost` | Aspire orchestration for the API and Angular frontend |
 | `HockeySeason.Tests` | xUnit tests for the application layer |
 
@@ -37,6 +38,11 @@ then from the application output directory containing the bundled instructions.
 - `GET /api/health` — health report consumed by the frontend:
   `{ "environment": "Development", "time": { "utcNow": "...", "timeZoneId": "UTC" } }`
 - `POST /mcp` — MCP Streamable HTTP endpoint (tools: `get-server-time`)
+- `POST /api/agui/hockey-season-data.agent` — AG-UI translation agent
+
+The managed Azure Functions deployment exposes `/api/health` and the AG-UI
+endpoint. It does not host `/mcp`, `/healthz`, or `/readyz`; these remain
+available from the local ASP.NET Core host.
 
 ## Run tests
 

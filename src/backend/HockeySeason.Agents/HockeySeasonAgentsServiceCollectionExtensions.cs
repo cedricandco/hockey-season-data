@@ -27,20 +27,24 @@ public static class HockeySeasonAgentsServiceCollectionExtensions
             HockeySeasonDataAgentFactory.DefaultName,
             (serviceProvider, name) =>
             {
-                var options = serviceProvider.GetRequiredService<IOptions<HockeySeasonDataAgentOptions>>().Value;
-                var contentRoot = serviceProvider.GetRequiredService<IHostEnvironment>().ContentRootPath;
-                var instructionsPath = Path.IsPathRooted(options.InstructionsPath)
-                    ? options.InstructionsPath
-                    : Path.Combine(contentRoot, options.InstructionsPath);
-                if (!Path.IsPathRooted(options.InstructionsPath) && !File.Exists(instructionsPath))
-                {
-                    instructionsPath = Path.Combine(AppContext.BaseDirectory, options.InstructionsPath);
-                }
-
-                var instructions = File.ReadAllText(instructionsPath);
-                var chatClient = TranslationChatClientFactory.Create(options);
-
-                return HockeySeasonDataAgentFactory.Create(chatClient, instructions, name);
+                return CreateAgent(serviceProvider, name);
             });
+    }
+
+    public static Microsoft.Agents.AI.ChatClientAgent CreateAgent(IServiceProvider serviceProvider, string name)
+    {
+        var options = serviceProvider.GetRequiredService<IOptions<HockeySeasonDataAgentOptions>>().Value;
+        var contentRoot = serviceProvider.GetRequiredService<IHostEnvironment>().ContentRootPath;
+        var instructionsPath = Path.IsPathRooted(options.InstructionsPath)
+            ? options.InstructionsPath
+            : Path.Combine(contentRoot, options.InstructionsPath);
+        if (!Path.IsPathRooted(options.InstructionsPath) && !File.Exists(instructionsPath))
+        {
+            instructionsPath = Path.Combine(AppContext.BaseDirectory, options.InstructionsPath);
+        }
+
+        var instructions = File.ReadAllText(instructionsPath);
+        var chatClient = TranslationChatClientFactory.Create(options);
+        return HockeySeasonDataAgentFactory.Create(chatClient, instructions, name);
     }
 }

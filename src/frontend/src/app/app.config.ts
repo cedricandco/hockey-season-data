@@ -13,8 +13,8 @@ export const HOCKEY_SEASON_DATA_AGENT_ID = 'hockey-season-data.agent';
 /**
  * Self-managed AG-UI agent talking straight to the .NET backend's
  * `MapAGUIServer` endpoint. The relative URL keeps same-origin calls working
- * in dev (proxy.conf.json → http://localhost:5000) and behind managed API
- * integrations (Azure Static Web Apps).
+ * in dev (proxy.conf.cjs → http://localhost:5000) and with the Azure Static
+ * Web Apps managed Functions API.
  */
 export const hockeySeasonDataAgent = new HttpAgent({
   agentId: HOCKEY_SEASON_DATA_AGENT_ID,
