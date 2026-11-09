@@ -32,6 +32,7 @@ public static class LeagueApiServiceCollectionExtensions
             client.BaseAddress = options.BaseAddress;
             client.Timeout = TimeSpan.FromSeconds(30);
         });
+        services.AddTransient<IWeeklyReportService, WeeklyReportService>();
 
         return services;
     }

@@ -2,7 +2,7 @@
 
 Angular 22 (standalone, zoneless) responsive frontend with French/English
 translation via `@ngx-translate/core` 18. The app has three routed pages:
-a chat page (translation agent), a weekly report placeholder, and a
+a chat page (translation agent), a weekly report, and a
 configuration page for the colors.
 
 ## Prerequisites
@@ -81,8 +81,22 @@ answer questions about hockey data.
 
 ## Weekly report page
 
-The weekly report page (`/rapport`) is intentionally empty for now; its
-placeholder text comes from the `REPORT` translation keys.
+The weekly report page (`/rapport`) loads the previous seven days through today
+by default. The date range is adjustable; games are filtered to the configured
+team IDs and ordered chronologically. Standings and games are shown per
+division, followed by all published division suspensions. Unavailable sources
+are clearly identified rather than presented as empty results.
+Division cards use the official league names returned by `GetLeagues`. Tracked
+teams and their scores are highlighted green for a win, gray for a tie, and red
+for a loss.
+
+The initial division and team IDs are defined in `report/report.component.ts`.
+The authenticated `GET /api/weekly-report` accepts `startDate` and `endDate`
+in `yyyy-MM-dd` format, plus repeated `divisionId` and `teamId` parameters
+(up to 20 of each). It returns the original Spordle arrays for standings, games
+and suspensions, with an `available` flag per source. Requests are retried up
+to three times for transient failures; a failed source does not prevent the
+other sources from appearing. Both the local API and Functions host support it.
 
 ## Project layout
 
@@ -96,7 +110,7 @@ src/
     app.component.ts     # login gate ↔ header + router outlet based on auth state
     app.routes.ts        # /chat, /rapport, /configuration
     chat/chat.component.ts     # agent chat page, composer pinned at the bottom
-    report/report.component.ts # weekly report placeholder page
+    report/report.component.ts # weekly report page and current ID selection
     config/config.component.ts # configuration page (colors)
     core/theme.service.ts   # primary/secondary colors, localStorage persistence
     core/login.component.ts # 6-digit access code screen

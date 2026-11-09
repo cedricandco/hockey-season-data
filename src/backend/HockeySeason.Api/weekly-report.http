@@ -1,0 +1,10 @@
+@baseUrl = http://localhost:5000
+@token = replace-with-login-token
+
+### Weekly report
+GET {{baseUrl}}/api/weekly-report?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&divisionId=194901&teamId=182497&teamId=182498&teamId=182220&teamId=194901
+Authorization: Bearer {{token}}
+
+### Invalid date range
+GET {{baseUrl}}/api/weekly-report?startDate=2026-11-09&endDate=2026-11-02&divisionId=194899&teamId=182497
+Authorization: Bearer {{token}}

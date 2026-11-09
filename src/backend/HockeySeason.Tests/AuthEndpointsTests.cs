@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text;
 using HockeySeason.Api;
 using HockeySeason.Auth;
+using HockeySeason.LeagueApi;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -114,6 +115,45 @@ public sealed class AuthEndpointsTests
         var response = await client.GetAsync("/api/health");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task WeeklyReport_RequiresAuthentication()
+    {
+        await using var app = CreateApp();
+        var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
+        var response = await client.GetAsync("/api/weekly-report?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&teamId=182497");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task WeeklyReport_ValidatesParametersAndPassesSelectionToService()
+    {
+        var service = new FakeWeeklyReportService();
+        await using var app = CreateApp().WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services => services.AddSingleton<IWeeklyReportService>(service)));
+        var client = await CreateAuthenticatedClientAsync(app);
+
+        var invalid = await client.GetAsync("/api/weekly-report?startDate=2026-11-09&endDate=2026-11-02&divisionId=194899&teamId=182497");
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.Null(service.Request);
+
+        var response = await client.GetAsync("/api/weekly-report?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&divisionId=194901&teamId=182497&teamId=194901");
+        response.EnsureSuccessStatusCode();
+        Assert.NotNull(service.Request);
+        Assert.Equal(new[] { 194899, 194901 }, service.Request.DivisionIds);
+        Assert.Equal(new[] { 182497, 194901 }, service.Request.TeamIds);
+    }
+
+    private sealed class FakeWeeklyReportService : IWeeklyReportService
+    {
+        public WeeklyReportRequest? Request { get; private set; }
+
+        public Task<WeeklyReportResponse> GetAsync(WeeklyReportRequest request, CancellationToken cancellationToken)
+        {
+            Request = request;
+            return Task.FromResult(new WeeklyReportResponse(request.StartDate, request.EndDate, request.TeamIds, []));
+        }
     }
 
     [Fact]

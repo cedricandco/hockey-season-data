@@ -1,0 +1,82 @@
+:host { display: block; width: 100%; }
+.report { padding-bottom: 60px; }
+.report-heading { display: flex; justify-content: space-between; align-items: center; margin: 14px 0 25px; }
+.eyebrow { color: #438d54; font-size: .68rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.report-heading .page-title { margin: 8px 0; font-size: clamp(1.7rem, 4vw, 2.45rem); }
+.report-heading .page-subtitle { margin: 0; }
+.heading-icon { color: var(--color-secondary); font-size: 2rem; opacity: .8; }
+.period-card { display: flex; align-items: end; gap: 14px; padding: 20px; border: 1px solid #e0e8ef; border-radius: 16px; background: #fff; box-shadow: 0 12px 35px #1836500d; }
+.period-intro { display: flex; align-items: center; gap: 11px; flex: 1; align-self: center; min-width: 180px; }
+.period-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 11px; color: var(--color-primary); background: #eef4fa; font-size: 1.4rem; }
+.period-intro strong, .period-intro small { display: block; }
+.period-intro strong { font-size: .84rem; }
+.period-intro small { margin-top: 4px; color: #7a8b9b; font-size: .72rem; }
+.period-card label { display: grid; gap: 7px; color: #607389; font-size: .71rem; font-weight: 700; }
+.period-card input { min-width: 0; padding: 10px 11px; border: 1px solid #dce5ed; border-radius: 9px; color: #263d55; background: #fff; font-size: .79rem; }
+.period-card button { min-height: 39px; padding: 0 15px; border: 0; border-radius: 9px; background: var(--color-primary); color: white; font-size: .77rem; font-weight: 700; white-space: nowrap; }
+.period-card button span { margin-left: 7px; }
+.period-card button:disabled { opacity: .6; cursor: wait; }
+.results-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin: 38px 0 16px; }
+.results-heading h2 { margin: 6px 0 0; color: #203b58; font-size: 1.18rem; }
+.date-range { color: #73869a; font-size: .75rem; font-weight: 600; }
+.division-card { overflow: hidden; margin-bottom: 20px; border: 1px solid #e0e8ef; border-radius: 16px; background: white; box-shadow: 0 12px 35px #1836500d; }
+.division-header { display: flex; align-items: center; gap: 13px; padding: 20px 24px; background: linear-gradient(110deg, #f3f8fc, #fbfdfc); border-bottom: 1px solid #e8eff4; }
+.division-number { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; border-radius: 12px; background: var(--color-primary); color: white; font-size: .76rem; font-weight: 800; }
+.division-label { color: #6b8194; font-size: .64rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.division-header h3 { margin: 4px 0 0; color: #173c60; font-size: 1.05rem; }
+.division-id { margin-left: auto; color: #8b9bad; font-size: .72rem; font-weight: 700; }
+.division-content { padding: 2px 24px 24px; }
+.report-section { padding-top: 24px; }
+.section-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.section-heading h4 { margin: 0; color: #1d3853; font-size: .9rem; }
+.section-heading > span { color: #8899a9; font-size: .68rem; font-weight: 600; text-align: right; }
+.table-wrap { overflow-x: auto; border: 1px solid #edf1f5; border-radius: 10px; }
+table { width: 100%; border-collapse: collapse; text-align: left; font-size: .77rem; }
+th { padding: 10px 12px; background: #f8fafc; color: #8a9aaa; font-size: .65rem; font-weight: 700; white-space: nowrap; }
+td { padding: 12px; border-top: 1px solid #edf1f5; color: #65798c; }
+td.team-name { color: #294057; font-weight: 700; }
+td.rank, td.points { color: var(--color-primary); font-weight: 800; }
+.games-list, .suspension-list { border: 1px solid #edf1f5; border-radius: 10px; overflow: hidden; }
+.game-row { display: flex; align-items: center; gap: 20px; padding: 15px; }
+.game-row + .game-row, .suspension-row + .suspension-row { border-top: 1px solid #edf1f5; }
+.game-date { min-width: 118px; display: grid; gap: 4px; font-size: .74rem; }
+.game-date strong { color: #486079; }
+.game-date span { color: #91a0ad; }
+.matchup { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; flex: 1; color: #2d4359; font-size: .79rem; font-weight: 700; }
+.matchup > span:first-child { text-align: right; }
+.score { padding: 7px 10px; border-radius: 8px; color: var(--color-primary); background: #f0f5f9; font-size: .9rem; font-weight: 800; white-space: nowrap; }
+.score i { color: #a7b6c4; font-style: normal; }
+.matchup .tracked-win { color: #218344; }
+.matchup .tracked-tie { color: #75808a; }
+.matchup .tracked-loss { color: #c43d3d; }
+.suspension-row { display: flex; align-items: center; gap: 11px; padding: 13px 15px; }
+.suspension-icon { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; border-radius: 9px; background: #fff4e5; color: #a56919; font-weight: 800; }
+.suspension-person { flex: 1; min-width: 0; }
+.suspension-person strong, .suspension-person small, .suspension-meta strong, .suspension-meta small { display: block; }
+.suspension-person strong, .suspension-meta strong { color: #334d64; font-size: .77rem; }
+.suspension-person strong span { color: #99a8b5; font-weight: 500; }
+.suspension-person small, .suspension-meta small { margin-top: 4px; color: #8b9baa; font-size: .69rem; }
+.suspension-meta { text-align: right; }
+.empty { margin: 0; padding: 18px; border: 1px dashed #e2eaf0; border-radius: 10px; color: #8999a8; font-size: .78rem; text-align: center; }
+.notice { margin: 0; padding: 13px 15px; border: 1px solid #f3dfb8; border-radius: 10px; background: #fffaef; color: #86601c; font-size: .78rem; line-height: 1.5; }
+.notice-error { margin-top: 16px; border-color: #f0cfcb; background: #fff4f3; color: #9c2c2c; }
+.loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 55px 15px; color: #728396; font-size: .82rem; }
+.spinner { width: 17px; height: 17px; border: 2px solid #d8e6ef; border-top-color: var(--color-primary); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 700px) {
+  .period-card { display: grid; grid-template-columns: 1fr 1fr; }
+  .period-intro, .period-card button { grid-column: 1 / -1; }
+  .period-card button { min-height: 43px; }
+  .period-card input { width: 100%; }
+}
+@media (max-width: 480px) {
+  .report-heading { margin-top: 4px; }
+  .heading-icon { display: none; }
+  .results-heading { align-items: start; flex-direction: column; }
+  .division-header { padding: 16px; }
+  .division-content { padding: 0 16px 18px; }
+  .game-row { align-items: stretch; flex-direction: column; gap: 10px; }
+  .game-date { display: flex; justify-content: center; gap: 8px; }
+  .matchup { font-size: .72rem; gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }

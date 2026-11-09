@@ -3,6 +3,7 @@ using System.Text;
 using HockeySeason.Agents;
 using HockeySeason.Application;
 using HockeySeason.Functions;
+using HockeySeason.LeagueApi;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.AI;
@@ -18,6 +19,34 @@ namespace HockeySeason.Tests;
 
 public sealed class FunctionsTests
 {
+    [Fact]
+    public async Task WeeklyReport_ValidatesAndRequiresAuthentication()
+    {
+        var service = new TestWeeklyReportService();
+        var function = new WeeklyReportFunction(service);
+        var request = new DefaultHttpContext().Request;
+        request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&divisionId=194901&teamId=182497");
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            function.Run(request, CreateAnonymousContext(), CancellationToken.None));
+        var result = Assert.IsType<OkObjectResult>(await function.Run(request, CreateAuthenticatedContext(), CancellationToken.None));
+        Assert.IsType<WeeklyReportResponse>(result.Value);
+        Assert.Equal(new[] { 194899, 194901 }, service.Request!.DivisionIds);
+
+        request.QueryString = new QueryString("?startDate=2026-11-09&endDate=2026-11-02&divisionId=194899&teamId=182497");
+        Assert.IsType<BadRequestObjectResult>(await function.Run(request, CreateAuthenticatedContext(), CancellationToken.None));
+    }
+
+    private sealed class TestWeeklyReportService : IWeeklyReportService
+    {
+        public WeeklyReportRequest? Request { get; private set; }
+        public Task<WeeklyReportResponse> GetAsync(WeeklyReportRequest request, CancellationToken cancellationToken)
+        {
+            Request = request;
+            return Task.FromResult(new WeeklyReportResponse(request.StartDate, request.EndDate, request.TeamIds, []));
+        }
+    }
+
     [Fact]
     public void Health_ReturnsProductionReport()
     {

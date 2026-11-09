@@ -173,6 +173,119 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
   .chat-header { padding: 14px 16px; }
   .agent-badge { font-size: .62rem; }
   .conversation { padding: 16px; }
-  .message-content { max-width: 85%; }
+  .message-content { max-width: 92%; }
   .composer-area { padding: 12px 16px 10px; }
+}
+
+/* ===== Game detail card (show_game_detail tool renderer) ===== */
+.game-card {
+  --gc-accent: var(--color-primary);
+  width: 100%; max-width: 560px; margin: 0; overflow: hidden;
+  border: 0; border-radius: 15px; background: #fff;
+  box-shadow: 0 16px 38px #102f4c1c;
+  font-size: .86rem;
+}
+.game-card-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 18px; background: linear-gradient(135deg, var(--color-primary) 0%, #0b2c56 100%);
+  color: #fff;
+}
+.game-card-meta { display: flex; align-items: center; gap: 9px; min-width: 0; flex-wrap: wrap; }
+.meta-chip {
+  padding: 3px 10px; border-radius: 20px; background: #ffffff22; border: 1px solid #ffffff38;
+  color: #fff; font-size: .7rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
+}
+.meta-text { color: #d7e5f3; font-size: .74rem; font-weight: 600; white-space: nowrap; }
+.live-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 20px; background: #d43a3a; color: #fff; font-size: .68rem; font-weight: 800; letter-spacing: .1em; }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: livePulse 1.4s ease-in-out infinite; }
+@keyframes livePulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.7); } }
+
+.game-scoreboard {
+  position: relative;
+  padding: 18px 18px 16px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, #eef4fb 0%, #ffffff 55%),
+    #fff;
+  border-bottom: 1px solid #eef1f5;
+}
+.score-row.score-teams { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
+.score-team { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.score-team.away { flex-direction: row-reverse; text-align: right; }
+.team-logo {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 11px;
+  object-fit: contain; background: #fff; border: 1px solid #e5ecf3; padding: 3px;
+}
+.team-logo.logo-fallback { display: grid; place-items: center; font-size: 1.1rem; }
+.team-name {
+  font-weight: 800; font-size: .92rem; color: #1d3548;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.score-versus { display: grid; place-items: center; gap: 3px; text-align: center; }
+.score-main {
+  font-size: 2rem; font-weight: 900; letter-spacing: -.03em; color: var(--color-primary);
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.score-status {
+  padding: 2px 9px; border-radius: 12px; background: #eff3f8; color: #5d6f81;
+  font-size: .62rem; font-weight: 800; letter-spacing: .12em;
+}
+.game-card.live .score-status { background: #fdecec; color: #b23434; }
+
+/* Per-period grid: header P1/P2/P3 + one row per team. */
+.periods-table { margin-top: 14px; display: grid; row-gap: 2px; }
+.periods-row { display: grid; grid-template-columns: minmax(90px, 1fr) repeat(var(--gc-periods, 3), 44px) 52px; align-items: center; }
+.periods-row.periods-head { margin-bottom: 2px; }
+.periods-lead { color: #617185; font-size: .74rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px; }
+.periods-cell { text-align: center; color: #405267; font-variant-numeric: tabular-nums; font-size: .82rem; }
+.periods-cell.head { color: #8395a7; font-size: .64rem; font-weight: 800; letter-spacing: .08em; }
+.periods-cell.total {
+  margin-left: 6px; padding: 1px 0; border-left: 2px solid #e8eef4;
+  font-weight: 800; color: #1d3548;
+}
+.periods-head .periods-cell.total { font-size: .64rem; font-weight: 800; letter-spacing: .08em; color: #8395a7; }
+
+/* Key moments (goals and penalties) on a vertical timeline. */
+.game-timeline { padding: 14px 18px 16px; background: #fbfcfe; }
+.game-timeline h3 { margin: 0 0 12px; color: #617185; font-size: .68rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.timeline-list { margin: 0; padding: 0; list-style: none; }
+.timeline-item {
+  position: relative; display: flex; align-items: flex-start; gap: 10px;
+  padding: 7px 0 7px 4px;
+}
+.timeline-item::before {
+  content: ""; position: absolute; left: 17px; top: 0; bottom: 0; width: 2px; background: #e5ecf3;
+}
+.timeline-item:first-child::before { top: 50%; }
+.timeline-item:last-child::before { bottom: 50%; }
+.moment-icon {
+  position: relative; z-index: 1; flex: 0 0 36px; width: 36px; height: 36px;
+  display: grid; place-items: center; border-radius: 11px;
+  border: 1px solid transparent;
+  box-shadow: 0 4px 10px #102f4c14;
+}
+.moment-icon svg { width: 18px; height: 18px; }
+.moment-icon[data-kind="goal"] { background: #eef8ec; color: #2f8c2f; border-color: #d4ecd1; }
+.moment-icon[data-kind="penalty"] { background: #fdf3e5; color: #c07b15; border-color: #f3e2c4; }
+.moment-time {
+  flex: 0 0 auto; min-width: 74px; margin-top: 1px;
+  color: #8395a7; font-size: .73rem; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.moment-body { flex: 1; min-width: 0; display: grid; row-gap: 1px; }
+.moment-team { color: #17283e; font-size: .78rem; font-weight: 800; }
+.moment-desc { color: #405267; font-size: .82rem; line-height: 1.45; overflow-wrap: anywhere; }
+.moment-sub { color: #778698; font-size: .76rem; line-height: 1.4; overflow-wrap: anywhere; }
+.moment-tags { display: flex; gap: 5px; }
+.tag {
+  padding: 1px 7px; border-radius: 9px; background: #edf3f9; color: #47617d;
+  font-size: .63rem; font-style: normal; font-weight: 800; letter-spacing: .05em;
+}
+.goal-item .tag { background: #eef8ec; color: #2f8c2f; }
+
+@media (max-width: 460px) {
+  .score-team { gap: 7px; }
+  .team-logo { width: 32px; height: 32px; border-radius: 9px; }
+  .team-name { font-size: .8rem; max-width: 17ch; }
+  .score-main { font-size: 1.6rem; }
+  .periods-row { grid-template-columns: minmax(72px, 1fr) repeat(var(--gc-periods, 3), 34px) 44px; }
+  .moment-time { min-width: 62px; font-size: .68rem; }
 }

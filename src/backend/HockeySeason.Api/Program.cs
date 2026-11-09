@@ -4,6 +4,7 @@ using HockeySeason.Auth;
 using HockeySeason.Domain;
 using HockeySeason.Infrastructure;
 using HockeySeason.LeagueApi.Extensions;
+using HockeySeason.LeagueApi;
 using HockeySeason.Mcp;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
@@ -80,6 +81,17 @@ app.MapGet("/api/health", (IHealthService healthService) =>
     var time = healthService.GetServerTime();
     return Results.Ok(new HealthReport(time, app.Environment.EnvironmentName));
 }).RequireAuthorization(HockeySeasonAuthExtensions.AuthenticatedPolicy);
+
+app.MapGet("/api/weekly-report", async (HttpRequest httpRequest, IWeeklyReportService reports, CancellationToken cancellationToken) =>
+{
+    var query = httpRequest.Query;
+    if (!WeeklyReportRequest.TryParse(query["startDate"], query["endDate"], query["divisionId"], query["teamId"], out var request))
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["query"] = ["Provide valid yyyy-MM-dd dates and positive divisionId and teamId parameters (at most 20 each)."] });
+    return Results.Ok(await reports.GetAsync(request!, cancellationToken));
+})
+    .WithName("GetWeeklyReport")
+    .WithSummary("Retrieve raw Spordle data for a weekly report.")
+    .RequireAuthorization(HockeySeasonAuthExtensions.AuthenticatedPolicy);
 
 // Streamable HTTP MCP endpoint.
 app.MapMcp("/mcp").RequireAuthorization(HockeySeasonAuthExtensions.AuthenticatedPolicy);

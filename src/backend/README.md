@@ -37,6 +37,14 @@ then from the application output directory containing the bundled instructions.
 
 ## Endpoints
 
+`GET /api/weekly-report` is available in both hosts and requires authentication.
+It accepts `startDate` and `endDate` in `yyyy-MM-dd` format, plus repeated
+`divisionId` and `teamId` parameters (1–20 positive IDs each). The response
+contains raw Spordle arrays and an availability flag per source. Transient
+failures are retried up to three times without blocking other sources. Each
+division also includes its official league name from `GetLeagues` when available.
+See `HockeySeason.Api/weekly-report.http` for example requests.
+
 - `GET /healthz` — liveness: `{ "status": "ok" }`
 - `GET /readyz` — readiness: `{ "status": "ready" }`
 - `POST /api/auth/login` — exchanges the shared 6-digit access code for a signed

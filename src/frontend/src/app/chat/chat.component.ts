@@ -2,6 +2,7 @@ import { Component, ElementRef, effect, inject, signal, viewChild } from '@angul
 import { TranslatePipe } from '@ngx-translate/core';
 import { CopilotKit, injectAgentStore } from '@copilotkit/angular';
 import { HOCKEY_SEASON_DATA_AGENT_ID } from '../app.config';
+import { registerHockeySeasonComponents } from './game-card-registration';
 
 /**
  * Chat page: conversation with the translation agent. The page fills the
