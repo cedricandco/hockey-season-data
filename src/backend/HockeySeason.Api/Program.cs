@@ -26,6 +26,11 @@ builder.Services.AddSingleton<ITimeProvider, UtcTimeProvider>();
 builder.Services.AddSingleton<IHealthService, HealthService>();
 builder.Services.AddLeagueApi();
 
+// LeagueTools must be registered explicitly: WithTools<LeagueTools>() exposes
+// the [McpServerTool] methods over /mcp but does not add the instance to DI,
+// and the agent resolves its AIFunctions from this registration.
+builder.Services.AddSingleton<LeagueTools>();
+
 // CORS: permissive in development so local frontends can call the API.
 const string CorsPolicy = "AllowFrontend";
 builder.Services.AddCors(options => options.AddPolicy(CorsPolicy, policy =>
