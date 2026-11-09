@@ -1,0 +1,11 @@
+.angular/
+.copilot-azure/
+.env
+node_modules/
+dist/
+www/
+bin/
+obj/
+*.user
+.vscode/*
+!.vscode/extensions.json

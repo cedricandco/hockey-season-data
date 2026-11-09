@@ -1,0 +1,18 @@
+{
+  "APP": {
+    "TITLE": "Hockey Season Data"
+  },
+  "HOME": {
+    "TITLE": "Bienvenue",
+    "DESCRIPTION": "Coquille applicative pour la saison de hockey : vérifiez que l'API répond et affichez l'heure du serveur.",
+    "PING_BUTTON": "Tester l'API",
+    "SERVER_TIME": "Heure du serveur (UTC)",
+    "STATUS": {
+      "OK": "L'API répond",
+      "ERROR": "L'API ne répond pas"
+    }
+  },
+  "LANGUAGE": {
+    "SWITCH": "Changez de langue avec le bouton FR/EN dans la barre supérieure."
+  }
+}

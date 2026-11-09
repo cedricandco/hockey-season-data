@@ -1,0 +1,53 @@
+/* Global styles for the Hockey Season frontend (Ionic). */
+@import "@ionic/angular/css/core.css";
+@import "@ionic/angular/css/normalize.css";
+@import "@ionic/angular/css/structure.css";
+@import "@ionic/angular/css/typography.css";
+
+@import "@ionic/angular/css/padding.css";
+@import "@ionic/angular/css/float-elements.css";
+@import "@ionic/angular/css/text-alignment.css";
+@import "@ionic/angular/css/text-transformation.css";
+@import "@ionic/angular/css/flex-utils.css";
+@import "@ionic/angular/css/display.css";
+
+/* Optional Ionic theme extras */
+@import "@ionic/angular/css/palettes/dark.class.css";
+
+html {
+  /* Ensure the Ionic app fills the viewport. */
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  height: 100%;
+}
+
+.app-footer-note {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--ion-color-medium);
+  padding: 0 16px 24px;
+}
+
+/* Status chips shown after the Ping API call. */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.status-chip.ok {
+  background: var(--ion-color-success-tint);
+  color: var(--ion-color-success-shade);
+}
+
+.status-chip.error {
+  background: var(--ion-color-danger-tint);
+  color: var(--ion-color-danger-shade);
+}

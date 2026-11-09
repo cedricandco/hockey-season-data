@@ -1,0 +1,18 @@
+{
+  "APP": {
+    "TITLE": "Hockey Season Data"
+  },
+  "HOME": {
+    "TITLE": "Welcome",
+    "DESCRIPTION": "Application shell for the hockey season: validate that the API responds and display the server time.",
+    "PING_BUTTON": "Ping API",
+    "SERVER_TIME": "Server time (UTC)",
+    "STATUS": {
+      "OK": "API is responding",
+      "ERROR": "API is not responding"
+    }
+  },
+  "LANGUAGE": {
+    "SWITCH": "Switch languages with the FR/EN button in the top bar."
+  }
+}
