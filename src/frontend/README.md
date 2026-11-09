@@ -24,7 +24,16 @@ so relative `apiUrl: '/api'` works out of the box.
 npm run build
 ```
 
-Output lands in `dist/hockey-frontend` (browser bundle).
+The deployable browser bundle, including `index.html`, lands in
+`dist/hockey-frontend/browser`.
+
+## Azure Static Web Apps deployment
+
+The GitHub Actions workflow builds the frontend with Node.js 22 and deploys
+`dist/hockey-frontend/browser` as prebuilt static assets. It does not deploy the
+backend: the .NET Minimal API is not an Azure Functions project. The frontend's
+`/api/health` request requires the backend to be hosted and routed separately;
+it will not work with the static deployment alone.
 
 ## Project layout
 
