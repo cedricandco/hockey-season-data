@@ -20,6 +20,6 @@ public sealed class HockeySeasonDataAgentOptions
     /// <summary>API key used as Bearer token (optional for local Ollama).</summary>
     public string? OllamaApiKey { get; set; }
 
-    /// <summary>Model used for translation, e.g. glm-5.3:cloud.</summary>
-    public string OllamaModel { get; set; } = "glm-5.3:cloud";
+    /// <summary>Model used for translation, e.g. glm-5.3-flash:cloud.</summary>
+    public string OllamaModel { get; set; } = "glm-5.3-flash:cloud";
 }

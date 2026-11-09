@@ -15,11 +15,9 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import {
   COPILOT_CHAT_DEFAULT_LABELS,
   COPILOT_CHAT_LABELS,
-  CopilotChat,
   CopilotSidebar,
 } from '@copilotkit/angular';
 import { ApiService } from '../core/api.service';
-import { HOCKEY_SEASON_DATA_AGENT_ID } from '../app.config';
 
 type Status = 'idle' | 'ok' | 'error';
 type Language = 'fr' | 'en';
@@ -40,7 +38,6 @@ type Language = 'fr' | 'en';
     IonLabel,
     IonNote,
     CopilotSidebar,
-    CopilotChat,
   ],
   // Resolved lazily when the chat is first created (translations are loaded by
   // then); the @if language guard below recreates the chat on language switch.
@@ -102,6 +99,8 @@ type Language = 'fr' | 'en';
       </p>
     </ion-content>
 
+    <!-- CopilotSidebar projects no content and renders its own chat, which
+         resolves the agent from the ambient chat configuration. -->
     @if (chatOpen()) {
       @if (language()) {
         <copilot-sidebar
@@ -109,9 +108,7 @@ type Language = 'fr' | 'en';
           mode="overlay"
           position="right"
           [title]="'HOME.CHAT.TITLE' | translate"
-        >
-          <copilot-chat [agentId]="hockeyAgentId" />
-        </copilot-sidebar>
+        />
       }
     }
   `,
@@ -125,7 +122,6 @@ export class HomeComponent {
   readonly language = signal<Language>('fr');
 
   readonly chatOpen = signal(false);
-  readonly hockeyAgentId = HOCKEY_SEASON_DATA_AGENT_ID;
 
   private readonly serverTime = signal<string | null>(null);
 

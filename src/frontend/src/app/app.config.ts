@@ -4,7 +4,7 @@ import { provideIonicAngular } from '@ionic/angular';
 import { provideTranslateService } from '@ngx-translate/core';
 import { provideTranslateHttpLoader } from '@ngx-translate/http-loader';
 import { HttpAgent } from '@ag-ui/client';
-import { provideCopilotKit } from '@copilotkit/angular';
+import { provideCopilotChatConfiguration, provideCopilotKit } from '@copilotkit/angular';
 import { environment } from '../environments/environment';
 
 /** Logical id of the translation agent exposed by the backend over AG-UI. */
@@ -47,5 +47,10 @@ export const appConfig: ApplicationConfig = {
         [HOCKEY_SEASON_DATA_AGENT_ID]: hockeySeasonDataAgent,
       },
     }),
+    // Prebuilt surfaces (copilot-sidebar / copilot-popup) render their own chat
+    // component and do not project content, so they resolve the agent from this
+    // ambient configuration instead of CopilotKit's "default" agent (which does
+    // not exist here).
+    provideCopilotChatConfiguration({ agentId: HOCKEY_SEASON_DATA_AGENT_ID }),
   ],
 };
