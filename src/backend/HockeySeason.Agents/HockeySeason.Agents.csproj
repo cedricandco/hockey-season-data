@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\HockeySeason.Application\HockeySeason.Application.csproj" />
     <ProjectReference Include="..\HockeySeason.Domain\HockeySeason.Domain.csproj" />
+    <ProjectReference Include="..\HockeySeason.Mcp\HockeySeason.Mcp.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,10 +23,10 @@
     <!-- Ollama client implementing Microsoft.Extensions.AI IChatClient. -->
     <PackageReference Include="OllamaSharp" Version="5.5.2" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.11.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.12" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.12" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.12" />
-    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.14" />
   </ItemGroup>
 
   <!-- Ship the agent instruction file next to the binaries so it can be

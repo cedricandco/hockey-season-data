@@ -2,6 +2,7 @@ using HockeySeason.Agents;
 using HockeySeason.Application;
 using HockeySeason.Domain;
 using HockeySeason.Infrastructure;
+using HockeySeason.LeagueApi.Extensions;
 using HockeySeason.Mcp;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
@@ -23,6 +24,7 @@ else if (string.IsNullOrEmpty(builder.Configuration["urls"]))
 // application use cases are wired here only (Dependency Inversion).
 builder.Services.AddSingleton<ITimeProvider, UtcTimeProvider>();
 builder.Services.AddSingleton<IHealthService, HealthService>();
+builder.Services.AddLeagueApi();
 
 // CORS: permissive in development so local frontends can call the API.
 const string CorsPolicy = "AllowFrontend";
@@ -38,11 +40,13 @@ builder.Services
         options.ServerInfo = new Implementation { Name = "HockeySeasonMcp", Version = "1.0.0" };
     })
     .WithHttpTransport()
-    .WithTools<TimeTool>();
+    .WithTools<TimeTool>()
+    .WithTools<LeagueTools>();
 
 // Microsoft Agent Framework: AG-UI server support plus the
-// "hockey-season-data.agent" translation agent (instructions loaded from
-// Agents/hockey-season-data.agent.md, model served through an Ollama-compatible API).
+// "hockey-season-data.agent" agent (instructions loaded from
+// Agents/hockey-season-data.agent.md, model served through an Ollama-compatible API,
+// tools resolved from the HockeySeason.Mcp league tools).
 builder.Services.AddAGUIServer();
 var hockeyAgentBuilder = builder.Services.AddHockeySeasonDataAgent(builder.Configuration);
 

@@ -45,6 +45,25 @@ public static class HockeySeasonAgentsServiceCollectionExtensions
 
         var instructions = File.ReadAllText(instructionsPath);
         var chatClient = TranslationChatClientFactory.Create(options);
-        return HockeySeasonDataAgentFactory.Create(chatClient, instructions, name);
+        var tools = ResolveAgentTools(serviceProvider);
+        return HockeySeasonDataAgentFactory.Create(chatClient, instructions, name, tools);
+    }
+
+    /// <summary>
+    /// Resolves the MCP tools the agent may call. Registered as
+    /// <see cref="AITool"/> functions from <see cref="HockeySeason.Mcp.LeagueTools"/>,
+    /// resolved lazily so the agent still builds when the league API is not
+    /// registered (tests, translation-only deployments).
+    /// </summary>
+    private static System.Collections.Generic.IList<Microsoft.Extensions.AI.AITool>? ResolveAgentTools(IServiceProvider serviceProvider)
+    {
+        var tools = serviceProvider.GetService<HockeySeason.Mcp.LeagueTools>();
+        if (tools is null)
+        {
+            return null;
+        }
+
+        var functions = HockeySeason.Mcp.LeagueAgentToolFactory.CreateFrom(tools);
+        return functions.Count == 0 ? null : functions;
     }
 }

@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\HockeySeason.Domain\HockeySeason.Domain.csproj" />
     <ProjectReference Include="..\HockeySeason.Application\HockeySeason.Application.csproj" />
+    <ProjectReference Include="..\HockeySeason.LeagueApi\HockeySeason.LeagueApi.csproj" />
   </ItemGroup>
 
   <ItemGroup>
