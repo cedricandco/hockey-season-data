@@ -1,7 +1,8 @@
 # Hockey Season Frontend
 
-Ionic 9 + Angular 22 (standalone, zoneless) frontend with French/English
-translation via `@ngx-translate/core` 18.
+Angular 22 (standalone, zoneless) responsive frontend with French/English
+translation via `@ngx-translate/core` 18. The main page connects directly to
+the existing AG-UI translation agent.
 
 ## Prerequisites
 
@@ -49,28 +50,33 @@ The explicit `@emnapi/core` and `@emnapi/runtime` development dependencies
 resolve conflicting WebAssembly build-tool peer dependencies in the lockfile.
 Keep them aligned when updating the frontend build dependencies.
 
+## Appearance and chat
+
+The appearance button in the header lets each user choose primary and secondary
+colors. The choices are saved in the browser's local storage and can be reset
+to the defaults, `#0e3a70` and `#3eb838`. Default CSS variables are defined in
+`src/global.scss`; keep the defaults in `home.component.ts` in sync if changing
+them. The current backend agent translates messages into English; it does not
+yet answer questions about hockey data. Enter sends a message and Shift+Enter
+inserts a new line. The chat displays connection errors and offers a retry.
+
 ## Project layout
 
 ```
 src/
   index.html             # <html lang="fr">, viewport, theme color
-  global.scss            # Ionic core styles + small app styles
+  global.scss            # responsive layout and theme variables
   main.ts                # bootstrapApplication entry
   app/
-    app.config.ts         # zoneless, Ionic, HttpClient(fetch), ngx-translate providers
-    app.component.ts     # <ion-app> shell rendering the home page
-    home/home.component.ts  # API status page (ping button, language toggle)
+    app.config.ts        # zoneless, HttpClient(fetch), translation and agent providers
+    app.component.ts     # application shell rendering the home page
+    home/home.component.ts  # agent chat, language toggle, and theme settings
     core/api.service.ts   # HttpClient wrapper for GET /api/health
     core/models.ts        # HealthReport / ServerTime interfaces
   environments/environment.ts  # apiUrl: '/api'
   assets/i18n/en.json     # English translations
   assets/i18n/fr.json     # French translations
 ```
-
-## Translation keys
-
-`APP.TITLE`, `HOME.TITLE`, `HOME.DESCRIPTION`, `HOME.PING_BUTTON`,
-`HOME.SERVER_TIME`, `HOME.STATUS.OK`, `HOME.STATUS.ERROR`, `LANGUAGE.SWITCH`.
 
 Default language is French (`fr`) with English fallback (`en`). The header
 button toggles between the two and updates `<html lang>`.

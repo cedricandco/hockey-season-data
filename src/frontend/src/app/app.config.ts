@@ -1,6 +1,5 @@
 import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core';
 import { provideHttpClient, withFetch } from '@angular/common/http';
-import { provideIonicAngular } from '@ionic/angular';
 import { provideTranslateService } from '@ngx-translate/core';
 import { provideTranslateHttpLoader } from '@ngx-translate/http-loader';
 import { HttpAgent } from '@ag-ui/client';
@@ -23,13 +22,12 @@ export const hockeySeasonDataAgent = new HttpAgent({
 });
 
 /**
- * Root application configuration (zoneless Angular 22 + Ionic 9 + ngx-translate 18
+ * Root application configuration (zoneless Angular 22 + ngx-translate 18
  * + CopilotKit Angular UI connected to the Microsoft Agent Framework backend).
  */
 export const appConfig: ApplicationConfig = {
   providers: [
     provideZonelessChangeDetection(),
-    provideIonicAngular({ mode: 'md' }),
     provideHttpClient(withFetch()),
     // i18n: translations live in src/assets/i18n/{{lang}}.json, loaded over HTTP.
     provideTranslateService({
@@ -43,6 +41,7 @@ export const appConfig: ApplicationConfig = {
     }),
     // CopilotKit UI wired to the backend AG-UI agent (no CopilotKit runtime server needed).
     provideCopilotKit({
+      enableInspector: false,
       selfManagedAgents: {
         [HOCKEY_SEASON_DATA_AGENT_ID]: hockeySeasonDataAgent,
       },

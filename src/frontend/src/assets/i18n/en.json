@@ -1,24 +1,36 @@
 {
-  "APP": {
-    "TITLE": "Hockey Season Data"
-  },
+  "APP": { "TITLE": "Hockey Season Data" },
   "HOME": {
-    "TITLE": "Welcome",
-    "DESCRIPTION": "Application shell for the hockey season: validate that the API responds and display the server time.",
-    "PING_BUTTON": "Ping API",
-    "SERVER_TIME": "Server time (UTC)",
-    "STATUS": {
-      "OK": "API is responding",
-      "ERROR": "API is not responding"
-    },
-    "CHAT": {
-      "OPEN": "Translation agent",
-      "TITLE": "Translate to English",
-      "PLACEHOLDER": "Type a message to translate into English…",
-      "DESCRIPTION": "The agent translates your message into English (Microsoft Agent Framework + CopilotKit)."
-    }
+    "EYEBROW": "Your hockey space",
+    "TITLE": "Welcome to",
+    "TITLE_ACCENT": "the ice.",
+    "DESCRIPTION": "A place to chat with your Hockey Season Data assistant.",
+    "FOOTER": "Hockey Season Data · Your assistant, close at hand."
   },
-  "LANGUAGE": {
-    "SWITCH": "Switch languages with the FR/EN button in the top bar."
+  "CHAT": {
+    "TITLE": "Hockey Season Assistant",
+    "SUBTITLE": "Your translation agent",
+    "BADGE": "Translation agent",
+    "AGENT": "Assistant",
+    "YOU": "You",
+    "WELCOME": "Hello and welcome! 👋",
+    "WELCOME_DETAIL": "I can translate your messages into English. Send me some text to get started.",
+    "INPUT_LABEL": "Your message to translate",
+    "PLACEHOLDER": "Write your message here...",
+    "SEND": "Send message",
+    "HINT": "Enter to send · Shift + Enter for a new line",
+    "THINKING": "Translating...",
+    "ERROR": "Could not reach the agent. Check your connection and try again.",
+    "RETRY": "Retry"
+  },
+  "LANGUAGE": { "BUTTON": "Passer en français" },
+  "THEME": {
+    "BUTTON": "Appearance",
+    "TITLE": "Customize colors",
+    "DESCRIPTION": "Choose the colors for your space.",
+    "PRIMARY": "Primary color",
+    "SECONDARY": "Secondary color",
+    "RESET": "Restore default colors",
+    "STORAGE_ERROR": "Your colors could not be read or saved on this device."
   }
 }
