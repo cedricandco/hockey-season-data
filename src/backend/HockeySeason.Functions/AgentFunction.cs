@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AGUI.Abstractions;
 using AGUI.Server;
+using HockeySeason.Agents;
 using Microsoft.Agents.AI;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -37,6 +38,10 @@ public sealed class AgentFunction(
             return new BadRequestObjectResult("A request body is required.");
         }
 
+        // Skip unknown "reasoning" history entries: the library conversion only
+        // knows system/user/assistant/developer/tool, but AG-UI 1.x clients
+        // replay reasoning messages they received in earlier runs.
+        AGUIReasoningMessageMapper.DropReasoningHistory(input);
         var context = input.ToChatRequestContext(options);
 #pragma warning disable MAAI001
         // The Agent Framework's chat-client adapter is currently experimental.

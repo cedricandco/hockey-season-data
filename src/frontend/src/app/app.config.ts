@@ -2,9 +2,9 @@ import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core
 import { provideHttpClient, withFetch } from '@angular/common/http';
 import { provideTranslateService } from '@ngx-translate/core';
 import { provideTranslateHttpLoader } from '@ngx-translate/http-loader';
-import { HttpAgent } from '@ag-ui/client';
 import { provideCopilotChatConfiguration, provideCopilotKit } from '@copilotkit/angular';
 import { environment } from '../environments/environment';
+import { TranslationHttpAgent } from './agent/translation-http-agent';
 
 /** Logical id of the translation agent exposed by the backend over AG-UI. */
 export const HOCKEY_SEASON_DATA_AGENT_ID = 'hockey-season-data.agent';
@@ -15,7 +15,7 @@ export const HOCKEY_SEASON_DATA_AGENT_ID = 'hockey-season-data.agent';
  * in dev (proxy.conf.cjs → http://localhost:5000) and with the Azure Static
  * Web Apps managed Functions API.
  */
-export const hockeySeasonDataAgent = new HttpAgent({
+export const hockeySeasonDataAgent = new TranslationHttpAgent({
   agentId: HOCKEY_SEASON_DATA_AGENT_ID,
   description: 'Translates the user input message into English.',
   url: `${environment.apiUrl}/agui/hockey-season-data.agent`,

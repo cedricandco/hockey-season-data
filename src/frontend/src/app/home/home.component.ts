@@ -88,7 +88,7 @@ const THEME_STORAGE_KEY = 'hockey-season-theme';
             </div>
           </div>
           @for (message of store().messages(); track message.id) {
-            @if ((message.role === 'user' || message.role === 'assistant') && messageText(message.content)) {
+            @if (message.role !== 'reasoning' && (message.role === 'user' || message.role === 'assistant') && messageText(message.content)) {
               <div class="message-row" [class.user-row]="message.role === 'user'">
                 @if (message.role === 'assistant') {
                   <div class="message-avatar" aria-hidden="true">✦</div>
