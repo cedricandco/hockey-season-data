@@ -1,5 +1,6 @@
 import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core';
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
+import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideTranslateService } from '@ngx-translate/core';
 import { provideTranslateHttpLoader } from '@ngx-translate/http-loader';
 import { provideCopilotChatConfiguration, provideCopilotKit } from '@copilotkit/angular';
@@ -7,6 +8,7 @@ import { environment } from '../environments/environment';
 import { TranslationHttpAgent } from './agent/translation-http-agent';
 import { authInterceptor } from './core/auth.interceptor';
 import { AuthStorage } from './core/auth-storage';
+import { routes } from './app.routes';
 
 /** Logical id of the translation agent exposed by the backend over AG-UI. */
 export const HOCKEY_SEASON_DATA_AGENT_ID = 'hockey-season-data.agent';
@@ -34,6 +36,7 @@ TranslationHttpAgent.accessTokenProvider = () => new AuthStorage().accessToken;
 export const appConfig: ApplicationConfig = {
   providers: [
     provideZonelessChangeDetection(),
+    provideRouter(routes, withComponentInputBinding()),
     // Bearer token attach + automatic logout on 401 for every HTTP call.
     provideHttpClient(withFetch(), withInterceptors([authInterceptor])),
     // i18n: translations live in src/assets/i18n/{{lang}}.json, loaded over HTTP.

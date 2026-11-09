@@ -64,3 +64,77 @@ public sealed record LeagueSuspension(
     string GameNumber,
     int RequiredGames,
     int PurgedGames);
+
+/// <summary>
+/// A team as it appears on a game scoreboard.
+/// </summary>
+public sealed record LeagueGameTeam(
+    int Id,
+    string Name,
+    string? LogoUrl);
+
+/// <summary>
+/// One team's line on a game scoreboard.
+/// </summary>
+public sealed record LeagueGameTeamStats(
+    int TeamId,
+    int GoalsFor,
+    int GoalsAgainst,
+    string Result,
+    string WinLossType,
+    int PenaltyMinutes,
+    string PowerPlay,
+    string PenaltyKill);
+
+/// <summary>
+/// A player involved in a game event, such as the scorer or a penalized player.
+/// </summary>
+public sealed record LeagueGameParticipant(
+    string Name,
+    int Number,
+    bool IsAffiliate);
+
+/// <summary>
+/// A goal, placed on the game clock.
+/// </summary>
+public sealed record LeagueGameGoal(
+    int TeamId,
+    int Period,
+    string Time,
+    LeagueGameParticipant Scorer,
+    IReadOnlyList<LeagueGameParticipant> Assists,
+    bool IsPowerPlay,
+    bool IsShorthanded,
+    bool IsEmptyNet,
+    bool IsPenaltyShot);
+
+/// <summary>
+/// A penalty, placed on the game clock.
+/// </summary>
+public sealed record LeagueGamePenalty(
+    int TeamId,
+    int Period,
+    string Time,
+    LeagueGameParticipant Player,
+    string Infraction,
+    string Duration,
+    bool IsBenchPenalty);
+
+/// <summary>
+/// The full box score of one game: both teams, scoreboard figures per team,
+/// every goal and every penalty.
+/// </summary>
+public sealed record LeagueGameDetail(
+    int Id,
+    string Number,
+    string Date,
+    string Time,
+    string Division,
+    string SeasonId,
+    bool IsLive,
+    bool IsApproved,
+    LeagueGameTeam HomeTeam,
+    LeagueGameTeam AwayTeam,
+    IReadOnlyList<LeagueGameTeamStats> TeamStats,
+    IReadOnlyList<LeagueGameGoal> Goals,
+    IReadOnlyList<LeagueGamePenalty> Penalties);

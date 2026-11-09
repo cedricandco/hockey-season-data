@@ -17,6 +17,10 @@ by calling the tools available to you.
 - `GetTeamGames(leagueId, startDate, endDate, teamId?)`: games between two
   dates in `yyyy-MM-dd` form, with both teams and the score. Pass `teamId`
   to restrict to one team (home and away).
+- `GetGameDetail(gameId)`: full box score of one game: both teams, per-team
+  figures (result, penalty minutes, power play, penalty kill), every goal
+  (period, time, scorer, assists) and every penalty. The game id comes from
+  `GetTeamGames`.
 - `GetLeagueSuspension(leagueId)`: suspensions published for a league
   (player, team, code, game, games to sit out and games already served).
 
@@ -28,6 +32,9 @@ by calling the tools available to you.
 2. Use `GetLeagueTeams` to resolve a team name into a team id.
 3. Then call the tool that answers the question: standings, games or
    suspensions.
+4. When the user asks who scored or which penalties were given in a game,
+   find the game id with `GetTeamGames` first, then call `GetGameDetail`
+   with that id.
 
 ## Rules
 

@@ -1,11 +1,15 @@
 {
   "APP": { "TITLE": "Hockey Season Data" },
-  "HOME": {
-    "EYEBROW": "Votre espace hockey",
-    "TITLE": "Bienvenue sur",
-    "TITLE_ACCENT": "la glace.",
-    "DESCRIPTION": "Un espace pour échanger avec votre assistant Hockey Season Data.",
-    "FOOTER": "Hockey Season Data · Votre assistant, à portée de main."
+  "NAV": {
+    "LABEL": "Navigation principale",
+    "CHAT": "Chat",
+    "REPORT": "Rapport hebdomadaire",
+    "CONFIG": "Configuration"
+  },
+  "REPORT": {
+    "TITLE": "Rapport hebdomadaire",
+    "SUBTITLE": "Le résumé de la semaine de votre équipe.",
+    "EMPTY": "Cette page sera bientôt disponible. Le rapport hebdomadaire apparaîtra ici."
   },
   "CHAT": {
     "TITLE": "Assistant Hockey Season",
@@ -37,8 +41,7 @@
     "ACTION": "Se connecter"
   },
   "THEME": {
-    "BUTTON": "Apparence",
-    "TITLE": "Personnaliser les couleurs",
+    "TITLE": "Configuration",
     "DESCRIPTION": "Choisissez les couleurs de votre espace.",
     "PRIMARY": "Couleur primaire",
     "SECONDARY": "Couleur secondaire",

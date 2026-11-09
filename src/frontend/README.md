@@ -1,8 +1,9 @@
 # Hockey Season Frontend
 
 Angular 22 (standalone, zoneless) responsive frontend with French/English
-translation via `@ngx-translate/core` 18. The main page connects directly to
-the existing AG-UI translation agent.
+translation via `@ngx-translate/core` 18. The app has three routed pages:
+a chat page (translation agent), a weekly report placeholder, and a
+configuration page for the colors.
 
 ## Prerequisites
 
@@ -62,15 +63,26 @@ The explicit `@emnapi/core` and `@emnapi/runtime` development dependencies
 resolve conflicting WebAssembly build-tool peer dependencies in the lockfile.
 Keep them aligned when updating the frontend build dependencies.
 
-## Appearance and chat
+## Appearance and colors
 
-The appearance button in the header lets each user choose primary and secondary
-colors. The choices are saved in the browser's local storage and can be reset
-to the defaults, `#0e3a70` and `#3eb838`. Default CSS variables are defined in
-`src/global.scss`; keep the defaults in `home.component.ts` in sync if changing
-them. The current backend agent translates messages into English; it does not
-yet answer questions about hockey data. Enter sends a message and Shift+Enter
-inserts a new line. The chat displays connection errors and offers a retry.
+The configuration page (`/configuration`) lets each user choose primary and
+secondary colors. The choices are saved in the browser's local storage and can
+be reset to the defaults, `#0e3a70` and `#3eb838`. Default CSS variables are
+defined in `src/global.scss`; keep the defaults in `core/theme.service.ts` in
+sync if changing them. The chat displays connection errors and offers a retry.
+
+## Chat page
+
+The chat page (`/chat`) is the default route and fills the viewport below the
+header: the transcript scrolls and the composer stays pinned at the bottom of
+the page. Enter sends a message and Shift+Enter inserts a new line.
+The current backend agent translates messages into English; it does not yet
+answer questions about hockey data.
+
+## Weekly report page
+
+The weekly report page (`/rapport`) is intentionally empty for now; its
+placeholder text comes from the `REPORT` translation keys.
 
 ## Project layout
 
@@ -80,9 +92,13 @@ src/
   global.scss            # responsive layout, theme variables and login styles
   main.ts                # bootstrapApplication entry
   app/
-    app.config.ts        # zoneless, HttpClient(fetch)+interceptors, translation and agent providers
-    app.component.ts     # login gate ↔ home shell based on auth state
-    home/home.component.ts  # agent chat, language toggle, theme settings, logout button
+    app.config.ts        # zoneless, routed, HttpClient(fetch)+interceptors, translation and agent providers
+    app.component.ts     # login gate ↔ header + router outlet based on auth state
+    app.routes.ts        # /chat, /rapport, /configuration
+    chat/chat.component.ts     # agent chat page, composer pinned at the bottom
+    report/report.component.ts # weekly report placeholder page
+    config/config.component.ts # configuration page (colors)
+    core/theme.service.ts   # primary/secondary colors, localStorage persistence
     core/login.component.ts # 6-digit access code screen
     core/auth.service.ts    # login/logout against POST /api/auth/login
     core/auth-storage.ts    # bearer token persistence (localStorage)

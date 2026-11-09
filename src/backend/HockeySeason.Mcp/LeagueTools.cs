@@ -119,7 +119,7 @@ public sealed class LeagueTools
         "Returns the games of a league between a start date and an end date, ordered by date and " +
         "time, with both teams (id, name, logo) and the score when the game was played. Pass a team " +
         "id to restrict to one team's games (home and away). Use GetLeagues to find the league id " +
-        "and GetLeagueTeams to find team ids.")]
+        "and GetLeagueTeams to find team ids. Pass a game id to GetGameDetail for goals and penalties.")]
     public async Task<IReadOnlyList<LeagueGame>> GetTeamGames(
         [Description("League (schedule) identifier, for example 194908. Use GetLeagues to find it.")]
         int leagueId,
@@ -180,6 +180,32 @@ public sealed class LeagueTools
     {
         return await _leagueApiService
             .GetLeagueSuspensionsAsync(leagueId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Returns the full box score of one game.
+    /// </summary>
+    [McpServerTool(
+        Name = "GetGameDetail",
+        Title = "Get Game Detail",
+        ReadOnly = true,
+        Idempotent = true,
+        Destructive = false,
+        OpenWorld = true,
+        UseStructuredContent = true)]
+    [Description(
+        "Returns the box score of one game: both teams, scoreboard figures per team (result, " +
+        "penalty minutes, power play and penalty kill), every goal (period, elapsed time, scorer, " +
+        "assists, power play and shorthanded flags) and every penalty (period, elapsed time, " +
+        "player, infraction in French, duration). Use GetTeamGames to find the game id.")]
+    public async Task<LeagueGameDetail> GetGameDetail(
+        [Description("Identifier of the game, as returned by GetTeamGames. Must be positive.")]
+        int gameId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _leagueApiService
+            .GetLeagueGameDetailAsync(gameId, cancellationToken)
             .ConfigureAwait(false);
     }
 }

@@ -154,6 +154,29 @@ public sealed partial class LeagueApiService
     }
 
     /// <summary>
+    /// Reads the box score of one game: both teams, their scoreboard figures,
+    /// every goal and every penalty. Nothing is cached, because a box score is
+    /// immutable once published.
+    /// </summary>
+    public async Task<LeagueGameDetail> GetLeagueGameDetailAsync(
+        int gameId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(gameId);
+
+        var gameFilter = Uri.EscapeDataString(
+            """{"include":["awayTeam","homeTeam","teamStats"]}""");
+        var gamePayload = await GetJsonAsync<GameDetailRowDto>(
+            $"sp/games/{gameId}?filter={gameFilter}",
+            cancellationToken).ConfigureAwait(false);
+        var boxScore = await GetJsonAsync<BoxScoreRowDto>(
+            $"sp/games/{gameId}/boxScore",
+            cancellationToken).ConfigureAwait(false);
+
+        return MapGameDetail(gamePayload, boxScore, gameId);
+    }
+
+    /// <summary>
     /// Lists the suspensions published for a league.
     /// </summary>
     public async Task<IReadOnlyList<LeagueSuspension>> GetLeagueSuspensionsAsync(
@@ -256,6 +279,74 @@ public sealed partial class LeagueApiService
             row.Score.TryGetValue(homeKey, out var homeScore) ? homeScore : null,
             row.Score.TryGetValue(awayKey, out var awayScore) ? awayScore : null);
     }
+
+    private static LeagueGameDetail MapGameDetail(GameDetailRowDto? row, BoxScoreRowDto detail, int gameId)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+
+        return new LeagueGameDetail(
+            row.Id,
+            row.Number,
+            row.Date,
+            ToLocalTime(row.StartTime, row.TimeZone),
+            row.Division,
+            row.SeasonId,
+            row.IsLive,
+            row.IsApproved,
+            new LeagueGameTeam(row.HomeTeam.Id, row.HomeTeam.Name, row.HomeTeam.LogoUrl),
+            new LeagueGameTeam(row.AwayTeam.Id, row.AwayTeam.Name, row.AwayTeam.LogoUrl),
+            [.. row.TeamStats.Select(MapGameTeamStats)
+                .OrderBy(stats => stats.TeamId)],
+            [.. detail.Goals.Select(MapGoal)
+                .OrderBy(goal => goal.Period)
+                .ThenBy(goal => goal.Time, StringComparer.Ordinal)],
+            [.. detail.Penalties.Select(MapPenalty)
+                .OrderBy(penalty => penalty.Period)
+                .ThenBy(penalty => penalty.Time, StringComparer.Ordinal)]);
+    }
+
+    private static LeagueGameTeamStats MapGameTeamStats(GameTeamStatsRowDto stats) => new(
+        stats.TeamId,
+        stats.GoalsFor,
+        stats.GoalsAgainst,
+        stats.GameResult,
+        stats.WinLossType,
+        stats.PenaltyMinutes,
+        string.Create(CultureInfo.InvariantCulture, $"{stats.PowerPlayGoals}/{stats.PowerPlayOpportunities}"),
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"{stats.PowerPlayGoalsAgainst}/{stats.TimesShorthanded}"));
+
+    private static LeagueGameGoal MapGoal(GoalRowDto goal) => new(
+        goal.TeamId,
+        int.Parse(goal.GameTime.Period, CultureInfo.InvariantCulture),
+        ToElapsed(goal.GameTime),
+        MapParticipant(goal.Participant),
+        [.. goal.Assists.Select(MapParticipant)],
+        goal.IsPowerplay,
+        goal.IsShorthanded,
+        goal.IsEmptyNet,
+        goal.IsPenaltyShot);
+
+    private static LeagueGamePenalty MapPenalty(PenaltyRowDto penalty) => new(
+        penalty.TeamId,
+        int.Parse(penalty.GameTime.Period, CultureInfo.InvariantCulture),
+        ToElapsed(penalty.GameTime),
+        MapParticipant(penalty.Participant),
+        // The league publishes the English label; the French one, when present, is what a
+        // French-speaking team reads.
+        penalty.I18n?.Fr?.Infraction ?? penalty.Infraction,
+        penalty.Duration?.Name ?? string.Empty,
+        penalty.IsBenchPenalty);
+
+    private static LeagueGameParticipant MapParticipant(ParticipantRowDto participant) => new(
+        participant.FullName,
+        participant.Number,
+        participant.IsAffiliate);
+
+    private static string ToElapsed(GameTimeRowDto clock) => string.Create(
+        CultureInfo.InvariantCulture,
+        $"{clock.ElapsedMinutes}:{clock.ElapsedSeconds:D2}");
 
     private static string BuildGamesFilter(int leagueId, int? teamId, DateOnly startDate, DateOnly endDate)
     {
