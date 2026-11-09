@@ -35,6 +35,10 @@ backend: the .NET Minimal API is not an Azure Functions project. The frontend's
 `/api/health` request requires the backend to be hosted and routed separately;
 it will not work with the static deployment alone.
 
+The explicit `@emnapi/core` and `@emnapi/runtime` development dependencies
+resolve conflicting WebAssembly build-tool peer dependencies in the lockfile.
+Keep them aligned when updating the frontend build dependencies.
+
 ## Project layout
 
 ```
