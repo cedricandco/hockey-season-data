@@ -11,12 +11,15 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@ag-ui/client": "1.0.2",
+    "@angular/cdk": "^22.2.6",
     "@angular/common": "^22.2.5",
     "@angular/compiler": "^22.2.5",
     "@angular/core": "^22.2.5",
     "@angular/forms": "^22.2.5",
     "@angular/platform-browser": "^22.2.5",
     "@angular/router": "^22.2.5",
+    "@copilotkit/angular": "^0.6.0",
     "@ionic/angular": "^9.0.10",
     "@ngx-translate/core": "^18.1.0",
     "@ngx-translate/http-loader": "^18.1.0",

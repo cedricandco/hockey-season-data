@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HockeySeason.Mcp", "HockeyS
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HockeySeason.Tests", "HockeySeason.Tests\HockeySeason.Tests.csproj", "{C8C34FE8-9441-4989-9DFA-D3C5A71C477D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HockeySeason.Agents", "HockeySeason.Agents\HockeySeason.Agents.csproj", "{C6D3A704-11B7-4BBE-85C8-0012D0FB3985}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -97,6 +99,18 @@ Global
 		{C8C34FE8-9441-4989-9DFA-D3C5A71C477D}.Release|x64.Build.0 = Release|Any CPU
 		{C8C34FE8-9441-4989-9DFA-D3C5A71C477D}.Release|x86.ActiveCfg = Release|Any CPU
 		{C8C34FE8-9441-4989-9DFA-D3C5A71C477D}.Release|x86.Build.0 = Release|Any CPU
+		{C6D3A704-11B7-4BBE-85C8-0012D0FB3985}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C6D3A704-11B7-4BBE-85C8-0012D0FB3985}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C6D3A704-11B7-4BBE-85C8-0012D0FB3985}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C6D3A704-11B7-4BBE-85C8-0012D0FB3985}.Debug|x64.Build.0 = Debug|Any CPU
+		{C6D3A704-11B7-4BBE-85C8-0012D0FB3985}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C6D3A704-11B7-4BBE-85C8-0012D0FB3985}.Debug|x86.Build.0 = Debug|Any CPU
+		{C6D3A704-11B7-4BBE-85C8-0012D0FB3985}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C6D3A704-11B7-4BBE-85C8-0012D0FB3985}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C6D3A704-11B7-4BBE-85C8-0012D0FB3985}.Release|x64.ActiveCfg = Release|Any CPU
+		{C6D3A704-11B7-4BBE-85C8-0012D0FB3985}.Release|x64.Build.0 = Release|Any CPU
+		{C6D3A704-11B7-4BBE-85C8-0012D0FB3985}.Release|x86.ActiveCfg = Release|Any CPU
+		{C6D3A704-11B7-4BBE-85C8-0012D0FB3985}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

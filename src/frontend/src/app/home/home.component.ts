@@ -12,7 +12,14 @@ import {
   IonNote,
 } from '@ionic/angular';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import {
+  COPILOT_CHAT_DEFAULT_LABELS,
+  COPILOT_CHAT_LABELS,
+  CopilotChat,
+  CopilotSidebar,
+} from '@copilotkit/angular';
 import { ApiService } from '../core/api.service';
+import { HOCKEY_SEASON_DATA_AGENT_ID } from '../app.config';
 
 type Status = 'idle' | 'ok' | 'error';
 type Language = 'fr' | 'en';
@@ -32,6 +39,21 @@ type Language = 'fr' | 'en';
     IonItem,
     IonLabel,
     IonNote,
+    CopilotSidebar,
+    CopilotChat,
+  ],
+  // Resolved lazily when the chat is first created (translations are loaded by
+  // then); the @if language guard below recreates the chat on language switch.
+  providers: [
+    {
+      provide: COPILOT_CHAT_LABELS,
+      useFactory: (translate: TranslateService) => ({
+        ...COPILOT_CHAT_DEFAULT_LABELS,
+        chatInputPlaceholder: translate.instant('HOME.CHAT.PLACEHOLDER'),
+        welcomeMessageText: translate.instant('HOME.CHAT.TITLE'),
+      }),
+      deps: [TranslateService],
+    },
   ],
   template: `
     <ion-header [translucent]="true">
@@ -70,10 +92,28 @@ type Language = 'fr' | 'en';
         </ion-list>
       }
 
+      <p>{{ 'HOME.CHAT.DESCRIPTION' | translate }}</p>
+      <ion-button (click)="chatOpen.set(true)" fill="solid" color="primary" expand="block">
+        {{ 'HOME.CHAT.OPEN' | translate }}
+      </ion-button>
+
       <p class="app-footer-note">
         {{ 'LANGUAGE.SWITCH' | translate }}
       </p>
     </ion-content>
+
+    @if (chatOpen()) {
+      @if (language()) {
+        <copilot-sidebar
+          [(open)]="chatOpen"
+          mode="overlay"
+          position="right"
+          [title]="'HOME.CHAT.TITLE' | translate"
+        >
+          <copilot-chat [agentId]="hockeyAgentId" />
+        </copilot-sidebar>
+      }
+    }
   `,
 })
 export class HomeComponent {
@@ -83,6 +123,9 @@ export class HomeComponent {
   readonly loading = signal(false);
   readonly status = signal<Status>('idle');
   readonly language = signal<Language>('fr');
+
+  readonly chatOpen = signal(false);
+  readonly hockeyAgentId = HOCKEY_SEASON_DATA_AGENT_ID;
 
   private readonly serverTime = signal<string | null>(null);
 

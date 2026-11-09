@@ -14,6 +14,9 @@
 /* Optional Ionic theme extras */
 @import "@ionic/angular/css/palettes/dark.class.css";
 
+/* CopilotKit Angular chat components styling. */
+@import "@copilotkit/angular/styles.css";
+
 html {
   /* Ensure the Ionic app fills the viewport. */
   height: 100%;

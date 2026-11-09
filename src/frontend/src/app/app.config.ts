@@ -3,9 +3,28 @@ import { provideHttpClient, withFetch } from '@angular/common/http';
 import { provideIonicAngular } from '@ionic/angular';
 import { provideTranslateService } from '@ngx-translate/core';
 import { provideTranslateHttpLoader } from '@ngx-translate/http-loader';
+import { HttpAgent } from '@ag-ui/client';
+import { provideCopilotKit } from '@copilotkit/angular';
+import { environment } from '../environments/environment';
+
+/** Logical id of the translation agent exposed by the backend over AG-UI. */
+export const HOCKEY_SEASON_DATA_AGENT_ID = 'hockey-season-data.agent';
 
 /**
- * Root application configuration (zoneless Angular 22 + Ionic 9 + ngx-translate 18).
+ * Self-managed AG-UI agent talking straight to the .NET backend's
+ * `MapAGUIServer` endpoint. The relative URL keeps same-origin calls working
+ * in dev (proxy.conf.json → http://localhost:5000) and behind managed API
+ * integrations (Azure Static Web Apps).
+ */
+export const hockeySeasonDataAgent = new HttpAgent({
+  agentId: HOCKEY_SEASON_DATA_AGENT_ID,
+  description: 'Translates the user input message into English.',
+  url: `${environment.apiUrl}/agui/hockey-season-data.agent`,
+});
+
+/**
+ * Root application configuration (zoneless Angular 22 + Ionic 9 + ngx-translate 18
+ * + CopilotKit Angular UI connected to the Microsoft Agent Framework backend).
  */
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -21,6 +40,12 @@ export const appConfig: ApplicationConfig = {
     provideTranslateHttpLoader({
       prefix: '/assets/i18n/',
       suffix: '.json',
+    }),
+    // CopilotKit UI wired to the backend AG-UI agent (no CopilotKit runtime server needed).
+    provideCopilotKit({
+      selfManagedAgents: {
+        [HOCKEY_SEASON_DATA_AGENT_ID]: hockeySeasonDataAgent,
+      },
     }),
   ],
 };

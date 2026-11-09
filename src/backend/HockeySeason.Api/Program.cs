@@ -1,7 +1,10 @@
+using HockeySeason.Agents;
 using HockeySeason.Application;
 using HockeySeason.Domain;
 using HockeySeason.Infrastructure;
 using HockeySeason.Mcp;
+using Microsoft.Agents.AI.Hosting;
+using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
 using ModelContextProtocol.Protocol;
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,6 +33,12 @@ builder.Services
     .WithHttpTransport()
     .WithTools<TimeTool>();
 
+// Microsoft Agent Framework: AG-UI server support plus the
+// "hockey-season-data.agent" translation agent (instructions loaded from
+// Agents/hockey-season-data.agent.md, model served through an Ollama-compatible API).
+builder.Services.AddAGUIServer();
+var hockeyAgentBuilder = builder.Services.AddHockeySeasonDataAgent(builder.Configuration);
+
 var app = builder.Build();
 
 app.UseCors(CorsPolicy);
@@ -47,6 +56,9 @@ app.MapGet("/api/health", (IHealthService healthService) =>
 
 // Streamable HTTP MCP endpoint.
 app.MapMcp("/mcp");
+
+// AG-UI endpoint consumed by the CopilotKit frontend (proxied through /api).
+app.MapAGUIServer(hockeyAgentBuilder, "/api/agui/hockey-season-data.agent");
 
 app.MapFallback(() => Results.NotFound(new { status = "not found" }));
 

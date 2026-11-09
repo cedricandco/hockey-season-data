@@ -10,6 +10,12 @@
     "STATUS": {
       "OK": "L'API répond",
       "ERROR": "L'API ne répond pas"
+    },
+    "CHAT": {
+      "OPEN": "Agent de traduction",
+      "TITLE": "Traduire vers l'anglais",
+      "PLACEHOLDER": "Écrivez un message à traduire en anglais…",
+      "DESCRIPTION": "L'agent traduit votre message en anglais (Microsoft Agent Framework + CopilotKit)."
     }
   },
   "LANGUAGE": {
