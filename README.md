@@ -15,7 +15,7 @@ hockey-season-data/
     ├── frontend/             # Angular 22 (zoneless) + Ionic 9 + ngx-translate 18
     │   ├── angular.json
     │   ├── package.json
-    │   ├── proxy.conf.json   # /api → http://localhost:5000 during ng serve
+    │   ├── proxy.conf.cjs    # /api → API_BACKEND_URL or localhost:5000
     │   └── src/
     │       ├── app/
     │       │   ├── app.config.ts      # providers (Ionic, HttpClient, ngx-translate)
@@ -32,10 +32,35 @@ hockey-season-data/
         ├── HockeySeason.Infrastructure/   # UtcTimeProvider
         ├── HockeySeason.Mcp/              # TimeTool → get-server-time
         ├── HockeySeason.Api/              # Minimal API host + /mcp endpoint
+        ├── HockeySeason.AppHost/          # Aspire orchestration
         └── HockeySeason.Tests/            # xUnit tests
 ```
 
 ## Run locally (backend + frontend)
+
+### Aspire
+
+Install the .NET 10 SDK and Node.js 22 or later, then install the frontend
+dependencies once:
+
+```bash
+cd src/frontend
+npm ci
+```
+
+From `src/backend`, start both applications and the Aspire dashboard:
+
+```bash
+dotnet run --project HockeySeason.AppHost
+```
+
+The AppHost builds the backend and starts Angular's development server, which
+builds the frontend. Angular starts only after the API's `/readyz` endpoint
+responds successfully. Open the dashboard URL shown in the console, or visit
+`http://localhost:4200`. The Angular proxy receives the API address from Aspire.
+Port 4200 must be available.
+
+### Separate terminals
 
 1. Start the API (from `src/backend`):
 

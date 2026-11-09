@@ -15,8 +15,10 @@ npm install
 npm start
 ```
 
-The dev server proxies `/api/*` to `http://localhost:5000` (see `proxy.conf.json`),
-so relative `apiUrl: '/api'` works out of the box.
+The dev server proxies `/api/*` to `http://localhost:5000` by default (see
+`proxy.conf.cjs`), so relative `apiUrl: '/api'` works out of the box. Set
+`API_BACKEND_URL` to use another backend address. The Aspire AppHost sets this
+automatically; see the root README for running both applications together.
 
 ## Build
 

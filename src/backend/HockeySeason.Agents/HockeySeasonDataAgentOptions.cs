@@ -11,7 +11,7 @@ public sealed class HockeySeasonDataAgentOptions
     /// <summary>Logical agent name exposed over AG-UI. Must match the frontend agent id.</summary>
     public string AgentName { get; set; } = "hockey-season-data.agent";
 
-    /// <summary>Path of the markdown file holding the agent instructions (relative to the content root).</summary>
+    /// <summary>Path of the agent instructions, relative to the content root or the application directory.</summary>
     public string InstructionsPath { get; set; } = "Agents/hockey-season-data.agent.md";
 
     /// <summary>Ollama-compatible API base URL, e.g. https://ollama.com/api.</summary>

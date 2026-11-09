@@ -8,9 +8,16 @@ using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
 using ModelContextProtocol.Protocol;
 var builder = WebApplication.CreateBuilder(args);
 
-// Bind to PORT (injected by Azure App Service / hosting environments), default 5000.
-var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
-builder.WebHost.UseUrls($"http://*:{port}");
+// Respect Aspire's URL configuration while retaining PORT for hosted deployments.
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(port))
+{
+    builder.WebHost.UseUrls($"http://*:{port}");
+}
+else if (string.IsNullOrEmpty(builder.Configuration["urls"]))
+{
+    builder.WebHost.UseUrls("http://*:5000");
+}
 
 // Clean Architecture composition root: infrastructure adapters and
 // application use cases are wired here only (Dependency Inversion).

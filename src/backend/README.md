@@ -12,6 +12,7 @@
 | `HockeySeason.Infrastructure` | `UtcTimeProvider` adapter over the system clock |
 | `HockeySeason.Mcp` | MCP tools (`TimeTool` → `get-server-time`) |
 | `HockeySeason.Api` | Composition root: endpoints, CORS, MCP host |
+| `HockeySeason.AppHost` | Aspire orchestration for the API and Angular frontend |
 | `HockeySeason.Tests` | xUnit tests for the application layer |
 
 Dependency direction: `Api` → (`Application`, `Infrastructure`, `Mcp`);
@@ -25,6 +26,9 @@ dotnet run --project HockeySeason.Api
 ```
 
 The API listens on `http://localhost:5000` (or `$PORT` when set), binding all interfaces.
+For Aspire orchestration of both applications, see the root README.
+Relative agent instruction paths are resolved from the API content root first,
+then from the application output directory containing the bundled instructions.
 
 ## Endpoints
 

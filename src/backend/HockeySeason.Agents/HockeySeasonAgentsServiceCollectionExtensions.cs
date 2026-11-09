@@ -32,6 +32,10 @@ public static class HockeySeasonAgentsServiceCollectionExtensions
                 var instructionsPath = Path.IsPathRooted(options.InstructionsPath)
                     ? options.InstructionsPath
                     : Path.Combine(contentRoot, options.InstructionsPath);
+                if (!Path.IsPathRooted(options.InstructionsPath) && !File.Exists(instructionsPath))
+                {
+                    instructionsPath = Path.Combine(AppContext.BaseDirectory, options.InstructionsPath);
+                }
 
                 var instructions = File.ReadAllText(instructionsPath);
                 var chatClient = TranslationChatClientFactory.Create(options);
