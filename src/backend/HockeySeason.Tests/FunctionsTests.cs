@@ -22,16 +22,14 @@ namespace HockeySeason.Tests;
 public sealed class FunctionsTests
 {
     [Fact]
-    public async Task WeeklyReport_ValidatesAndRequiresAuthentication()
+    public async Task WeeklyReport_ValidatesAndAllowsAnonymous()
     {
         var service = new TestWeeklyReportService();
         var function = new WeeklyReportFunction(service);
         var request = new DefaultHttpContext().Request;
         request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&divisionId=194901&teamId=182497");
 
-        Assert.IsType<UnauthorizedResult>(await function.Run(request, CreateAnonymousContext(), CancellationToken.None));
-        Assert.Null(service.Request);
-        var result = Assert.IsType<OkObjectResult>(await function.Run(request, CreateAuthenticatedContext(), CancellationToken.None));
+        var result = Assert.IsType<OkObjectResult>(await function.Run(request, CreateAnonymousContext(), CancellationToken.None));
         Assert.IsType<WeeklyReportResponse>(result.Value);
         Assert.Equal(new[] { 194899, 194901 }, service.Request!.DivisionIds);
 
@@ -94,12 +92,13 @@ public sealed class FunctionsTests
     }
 
     [Fact]
-    public async Task Agent_RejectsAnonymousCallerWithNoToken()
+    public async Task Agent_AllowsAnonymousCaller()
     {
         var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(
             """{"threadId":"thread","runId":"run","messages":[{"id":"message","role":"user","content":"Bonjour"}]}"""));
-        Assert.IsType<UnauthorizedResult>(await CreateAgentFunction().Run(context.Request, CreateAnonymousContext(), CancellationToken.None));
+        Assert.IsNotType<UnauthorizedResult>(await CreateAgentFunction().Run(context.Request, CreateAnonymousContext(), CancellationToken.None));
     }
 
     [Fact]
@@ -254,10 +253,10 @@ public sealed class FunctionsTests
     }
 
     [Fact]
-    public void Health_RequiresAuthenticatedUser()
+    public void Health_AllowsAnonymous()
     {
         var function = new HealthFunction(new HealthService(new FixedTimeProvider(DateTimeOffset.UtcNow)), new TestEnvironment());
-        Assert.IsType<UnauthorizedResult>(function.Run(new DefaultHttpContext().Request, CreateAnonymousContext()));
+        Assert.IsType<OkObjectResult>(function.Run(new DefaultHttpContext().Request, CreateAnonymousContext()));
     }
 
     private sealed class TestEnvironment : IHostEnvironment

@@ -11,8 +11,6 @@ public sealed class HealthFunction(IHealthService healthService, IHostEnvironmen
     [Function("Health")]
     public IActionResult Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "health")] HttpRequest request, FunctionContext context)
     {
-        if (!FunctionsAuthorization.IsAuthenticated(context))
-            return new UnauthorizedResult();
         return new OkObjectResult(new HealthReport(healthService.GetServerTime(), environment.EnvironmentName));
     }
 }

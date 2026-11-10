@@ -12,8 +12,6 @@ public sealed class WeeklyReportFunction(IWeeklyReportService reports)
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "weekly-report")] HttpRequest httpRequest,
         FunctionContext context, CancellationToken cancellationToken)
     {
-        if (!FunctionsAuthorization.IsAuthenticated(context))
-            return new UnauthorizedResult();
         var query = httpRequest.Query;
         if (!WeeklyReportRequest.TryParse(query["startDate"], query["endDate"], query["divisionId"], query["teamId"], out var request))
             return new BadRequestObjectResult(new ValidationProblemDetails(

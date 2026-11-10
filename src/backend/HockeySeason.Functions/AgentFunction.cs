@@ -23,8 +23,6 @@ public sealed class AgentFunction(
         FunctionContext context,
         CancellationToken cancellationToken)
     {
-        if (!FunctionsAuthorization.IsAuthenticated(context))
-            return new UnauthorizedResult();
         var options = jsonOptions.Value.SerializerOptions;
         RunAgentInput? input;
         try
