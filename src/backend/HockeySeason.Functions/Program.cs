@@ -10,11 +10,20 @@ using Microsoft.Agents.AI;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Azure.Functions.Worker.Builder;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.UserSecrets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 builder.ConfigureFunctionsWebApplication();
+
+if (builder.Environment.IsDevelopment())
+{
+    // Local development only: reuse the Api project's user secrets (PIN,
+    // signing key, Ollama key) so both hosts issue/validate identical tokens.
+    builder.Configuration.AddUserSecrets<LoginFunction>(optional: true);
+}
 
 builder.Services.AddSingleton<ITimeProvider, UtcTimeProvider>();
 builder.Services.AddSingleton<IHealthService, HealthService>();

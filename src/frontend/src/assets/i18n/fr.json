@@ -35,8 +35,8 @@
     "NO_GAMES": "Aucun match pour les équipes sélectionnées durant cette période.",
     "GAMES_UNAVAILABLE": "Matchs indisponibles : les données de la ligue n’ont pas pu être récupérées.",
     "SUSPENSIONS": "Suspensions",
-    "DIVISION_WIDE": "Toute la division · matchs purgés / requis",
-    "NO_SUSPENSIONS": "Aucune suspension publiée pour cette division.",
+    "TRACKED_TEAMS": "Équipes suivies · matchs purgés / requis",
+    "NO_SUSPENSIONS": "Aucune suspension pour les équipes suivies de cette division.",
     "SUSPENSIONS_UNAVAILABLE": "Suspensions indisponibles : les données de la ligue n’ont pas pu être récupérées.",
     "OFFICIAL": "Officiel d’équipe"
   },

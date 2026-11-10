@@ -2,7 +2,7 @@
 @token = replace-with-login-token
 
 ### Weekly report
-GET {{baseUrl}}/api/weekly-report?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&divisionId=194901&teamId=182497&teamId=182498&teamId=182220&teamId=194901
+GET {{baseUrl}}/api/weekly-report?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&divisionId=194901&divisionId=194890&divisionId=194891&divisionId=194892&divisionId=194893&divisionId=194894&divisionId=194895&teamId=182497&teamId=182498&teamId=182220&teamId=214187&teamId=181669&teamId=214186&teamId=214188&teamId=214189&teamId=180762&teamId=214191
 Authorization: Bearer {{token}}
 
 ### Invalid date range

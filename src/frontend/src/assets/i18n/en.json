@@ -35,8 +35,8 @@
     "NO_GAMES": "No games for the selected teams during this period.",
     "GAMES_UNAVAILABLE": "Games unavailable: league data could not be retrieved.",
     "SUSPENSIONS": "Suspensions",
-    "DIVISION_WIDE": "Entire division · games served / required",
-    "NO_SUSPENSIONS": "No suspensions published for this division.",
+    "TRACKED_TEAMS": "Tracked teams · games served / required",
+    "NO_SUSPENSIONS": "No suspensions for the tracked teams in this division.",
     "SUSPENSIONS_UNAVAILABLE": "Suspensions unavailable: league data could not be retrieved.",
     "OFFICIAL": "Team official"
   },

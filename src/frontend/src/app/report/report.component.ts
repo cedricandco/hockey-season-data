@@ -4,15 +4,27 @@ import { FormsModule } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { Subscription } from 'rxjs';
 import { ApiService } from '../core/api.service';
-import { Game, ReportDivision, Standing, WeeklyReport } from './weekly-report.models';
+import { Game, ReportDivision, Standing, Suspension, WeeklyReport } from './weekly-report.models';
 
 const DIVISION_IDS = [
   194899, 194901, 194906, 194908, 194910, 194930, 194934, 194936, 194940, 194942, 194944, 194931, 194937, 194945,
+  194890, 194891, 194892, 194893, 194894, 194895,
 ] as const;
 const TEAM_IDS = [
   182497, 182498, 182222, 182220, 181829, 181826, 181303, 181300, 185754, 185755, 185751, 181088, 181090,
   180492, 180494, 180322, 222322, 221751, 221750, 214757, 222320, 222321, 214756, 180671, 221752, 221749, 186200,
+  214187, 181669, 214186, 214188, 214189, 180762, 214191,
 ] as const;
+// AA leagues belong to other Spordle offices, so the default-office league
+// lookup cannot name them; fall back to the titles published by the league.
+const DIVISION_NAMES: Record<number, string> = {
+  194890: 'M11 AA Saison',
+  194891: 'M11 BB Saison Section Rives',
+  194892: 'M11 BB Saison Section Vallée',
+  194893: 'M13 AA Saison',
+  194894: 'M15 AA Saison',
+  194895: 'M17 AA Saison',
+} as const;
 
 @Component({
   selector: 'app-report',
@@ -111,11 +123,12 @@ const TEAM_IDS = [
                 }
               </section>
               <section class="report-section suspensions">
-                <div class="section-heading"><h4>{{ 'REPORT.SUSPENSIONS' | translate }}</h4><span>{{ 'REPORT.DIVISION_WIDE' | translate }}</span></div>
+                <div class="section-heading"><h4>{{ 'REPORT.SUSPENSIONS' | translate }}</h4><span>{{ 'REPORT.TRACKED_TEAMS' | translate }}</span></div>
                 @if (!division.suspensions.available) {
                   <p class="notice">{{ 'REPORT.SUSPENSIONS_UNAVAILABLE' | translate }} @if (division.suspensions.error) { <span class="notice-detail">{{ division.suspensions.error }}</span> }</p>
-                } @else if (division.suspensions.data?.length) {
-                  <div class="suspension-list">@for (suspension of division.suspensions.data; track suspension.id) {
+                } @else if (trackedSuspensions(division, result.teamIds); as suspensions) {
+                  @if (suspensions.length) {
+                    <div class="suspension-list">@for (suspension of suspensions; track suspension.id) {
                     <div class="suspension-row">
                       <span class="suspension-icon" aria-hidden="true">!</span>
                       <div class="suspension-person"><strong>{{ suspension.participant?.fullName ?? ('REPORT.OFFICIAL' | translate) }} @if (suspension.participant) { <span>#{{ suspension.participant.number }}</span> }</strong><small>{{ suspension.team.name }}</small></div>
@@ -123,6 +136,7 @@ const TEAM_IDS = [
                     </div>
                   }</div>
                 } @else { <p class="empty">{{ 'REPORT.NO_SUSPENSIONS' | translate }}</p> }
+                }
               </section>
             </div>
           </article>
@@ -169,6 +183,10 @@ export class ReportComponent implements OnInit {
       .sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
   }
 
+  trackedSuspensions(division: ReportDivision, teamIds: number[]): Suspension[] {
+    return (division.suspensions.data ?? []).filter(suspension => teamIds.includes(suspension.team.id));
+  }
+
   trackedTeamResult(game: Game, teamId: number, trackedTeamIds: number[]): 'win' | 'tie' | 'loss' | null {
     if (!trackedTeamIds.includes(teamId)) return null;
     const score = game.score?.[teamId];
@@ -180,8 +198,8 @@ export class ReportComponent implements OnInit {
   }
 
   divisionName(division: ReportDivision): string {
-    const leagueName = division.leagueName?.replace(/\bU11\s*([AB])\b/gi, (_, letter: string) => `M11${letter.toUpperCase()}`);
-    if (leagueName) return leagueName;
+    if (division.leagueName) return division.leagueName;
+    if (DIVISION_NAMES[division.divisionId]) return DIVISION_NAMES[division.divisionId];
     const name = division.standings.data?.find(row => row.team?.division)?.team.division;
     return name?.replace(/\bU11\s*([AB])\b/gi, (_, letter: string) => `M11${letter.toUpperCase()}`)
       || `${this.translate.instant('REPORT.DIVISION')} ${division.divisionId}`;
