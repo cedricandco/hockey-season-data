@@ -19,9 +19,10 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
     [Function("Offices")]
     public IActionResult Offices([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "offices")] HttpRequest request, FunctionContext context)
     {
-        if (!FunctionsAuthorization.IsAuthenticated(context))
+        var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
+        if (!authorization.IsAuthenticated)
         {
-            return UnauthorizedResult();
+            return UnauthorizedResult(authorization.Reason);
         }
         return new OkObjectResult(LeagueOffices.All);
     }
@@ -30,9 +31,9 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
     public async Task<IActionResult> Leagues([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "offices/{officeId:int}/leagues")] HttpRequest request,
         int officeId, FunctionContext context, CancellationToken cancellationToken)
     {
-        if (!FunctionsAuthorization.IsAuthenticated(context))
+        if (!FunctionsAuthorization.IsAuthenticatedV2(context).IsAuthenticated)
         {
-            return UnauthorizedResult();
+            return UnauthorizedResult(FunctionsAuthorization.IsAuthenticatedV2(context).Reason);
         }
         if (officeId <= 0) return InvalidIds();
         var season = request.Query["seasonId"].ToString();
@@ -43,9 +44,10 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
     public async Task<IActionResult> LeagueTeams([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "leagues/{leagueId:int}/teams")] HttpRequest request,
         int leagueId, FunctionContext context, CancellationToken cancellationToken)
     {
-        if (!FunctionsAuthorization.IsAuthenticated(context))
+        var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
+        if (!authorization.IsAuthenticated)
         {
-            return UnauthorizedResult();
+            return UnauthorizedResult(authorization.Reason);
         }
         if (leagueId <= 0) return InvalidIds();
         return new OkObjectResult(await league.GetLeagueTeamsAsync(leagueId, cancellationToken));
@@ -55,16 +57,22 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
     public async Task<IActionResult> TeamDetail([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "leagues/{leagueId:int}/teams/{teamId:int}")] HttpRequest request,
         int leagueId, int teamId, FunctionContext context, CancellationToken cancellationToken)
     {
-        if (!FunctionsAuthorization.IsAuthenticated(context))
+        var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
+        if (!authorization.IsAuthenticated)
         {
-            return UnauthorizedResult();
+            return UnauthorizedResult(authorization.Reason);
         }
         if (leagueId <= 0 || teamId <= 0) return InvalidIds();
         var result = await teams.GetAsync(leagueId, teamId, cancellationToken);
         return result is null ? new NotFoundResult() : new OkObjectResult(result);
     }
 
-    private static ObjectResult UnauthorizedResult() => new(new { error = "invalid_token", error_description = "Missing or invalid bearer token" })
+    private static ObjectResult UnauthorizedResult(string? reason) => new(new
+    {
+        error = "invalid_token",
+        error_description = "Missing or invalid bearer token",
+        reason,
+    })
     {
         StatusCode = StatusCodes.Status401Unauthorized,
     };

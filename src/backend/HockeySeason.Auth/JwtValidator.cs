@@ -22,6 +22,12 @@ public interface IJwtValidator
     /// <c>sub</c> claim (the Auth0 user id) on success.
     /// </summary>
     bool TryValidate(string? token, out string? subject);
+
+    /// <summary>
+    /// Same validation as <see cref="TryValidate"/>, additionally returning a
+    /// machine-readable failure reason (null when the token is valid).
+    /// </summary>
+    (bool IsValid, string? Reason) TryValidateV2(string? token, out string? subject);
 }
 
 /// <summary>
@@ -68,12 +74,14 @@ public sealed class JwtValidator : IJwtValidator
         };
     }
 
-    public bool TryValidate(string? token, out string? subject)
+    public bool TryValidate(string? token, out string? subject) => TryValidateV2(token, out subject).IsValid;
+
+    public (bool IsValid, string? Reason) TryValidateV2(string? token, out string? subject)
     {
         subject = null;
         if (string.IsNullOrWhiteSpace(token))
         {
-            return false;
+            return (false, "empty_token");
         }
 
         try
@@ -85,20 +93,41 @@ public sealed class JwtValidator : IJwtValidator
             var principal = _handler.ValidateToken(token, parameters, out _);
             if (principal.Identity?.IsAuthenticated != true)
             {
-                return false;
+                return (false, "not_authenticated");
             }
             var tokenType = principal.FindFirst("typ")?.Value;
             if (tokenType is not null && !_validTypes.Contains(tokenType, StringComparer.OrdinalIgnoreCase))
             {
-                return false;
+                return (false, "invalid_token_type");
             }
             subject = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                 ?? principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-            return subject is not null;
+            return subject is not null ? (true, null) : (false, "no_subject");
+        }
+        catch (SecurityTokenSignatureKeyNotFoundException)
+        {
+            // Signing key not found in JWKS: key rotated or token from another authority.
+            return (false, "unknown_signing_key");
+        }
+        catch (SecurityTokenExpiredException)
+        {
+            return (false, "token_expired");
+        }
+        catch (SecurityTokenInvalidIssuerException)
+        {
+            return (false, "invalid_issuer");
+        }
+        catch (SecurityTokenInvalidAudienceException)
+        {
+            return (false, "invalid_audience");
+        }
+        catch (SecurityTokenNotYetValidException)
+        {
+            return (false, "token_not_yet_valid");
         }
         catch (SecurityTokenException)
         {
-            return false;
+            return (false, "invalid_token");
         }
     }
 }

@@ -44,6 +44,29 @@ public static class FunctionsAuthorization
         return JwtBearerTokenParser.TryExtractBearerToken(httpContext.Request.Headers.Authorization.ToString(), out var token)
             && validator.TryValidate(token, out _);
     }
+
+    public static (bool IsAuthenticated, string? Reason) IsAuthenticatedV2(FunctionContext context)
+    {
+        var httpContext = context.GetHttpContext()
+            ?? throw new InvalidOperationException("Function context has no HttpContext.");
+        if (httpContext.User.Identity?.IsAuthenticated == true)
+        {
+            return (true, null);
+        }
+
+        if (context.InstanceServices is not { } services || services.GetService(typeof(IJwtValidator)) is not IJwtValidator validator)
+        {
+            return (false, "no_validator");
+        }
+
+        if (JwtBearerTokenParser.TryExtractBearerToken(httpContext.Request.Headers.Authorization.ToString(), out var token))
+        {
+            var (isValid, reason) = validator.TryValidateV2(token, out _);
+            return (isValid, reason);
+        }
+
+        return (false, "missing_token");
+    }
 }
 
 /// <summary>Parses the Bearer token out of a raw Authorization header value.</summary>
