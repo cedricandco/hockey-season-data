@@ -3,8 +3,22 @@
   "NAV": {
     "LABEL": "Navigation principale",
     "CHAT": "Chat",
+    "TEAM": "Équipes",
     "REPORT": "Rapport hebdomadaire",
     "CONFIG": "Configuration"
+  },
+  "TEAM": {
+    "TITLE": "Détail d’une équipe",
+    "SUBTITLE": "Choisissez un office, une ligue et une équipe.",
+    "OFFICE": "Office", "LEAGUE": "Ligue", "TEAM": "Équipe", "SELECT": "Sélectionner",
+    "LOADING": "Chargement des données…", "ERROR": "Impossible de charger les données de l’équipe.",
+    "RETRY": "Réessayer", "RANK": "Rang", "POINTS": "Points", "GOALS": "Buts",
+    "ASSISTS": "Passes", "POWERPLAY": "Buts en supériorité", "SHORTHANDED": "Buts en infériorité",
+    "PENALTIES": "Punitions", "RECENT": "Cinq derniers matchs", "NO_GAMES": "Aucun match joué.",
+    "WIN": "Victoire", "LOSS": "Défaite", "TIE": "Nul", "UNKNOWN": "Résultat inconnu",
+    "PLAYERS": "Classement des joueurs observés", "PLAYER": "Joueur",
+    "ROSTER_LIMIT": "Les statistiques proviennent des événements publiés : les joueurs sans but, passe ou punition ne figurent pas dans cette liste.",
+    "STANDINGS": "Classement de la division"
   },
   "REPORT": {
     "TITLE": "Rapport hebdomadaire",

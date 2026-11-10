@@ -1,0 +1,22 @@
+@baseUrl = http://localhost:5000
+@token = replace-with-login-token
+
+### Offices
+GET {{baseUrl}}/api/offices
+Authorization: Bearer {{token}}
+
+### Leagues
+GET {{baseUrl}}/api/offices/6193/leagues?seasonId=2026-27
+Authorization: Bearer {{token}}
+
+### Teams
+GET {{baseUrl}}/api/leagues/194908/teams
+Authorization: Bearer {{token}}
+
+### Team detail
+GET {{baseUrl}}/api/leagues/194908/teams/181303
+Authorization: Bearer {{token}}
+
+### Unknown team
+GET {{baseUrl}}/api/leagues/194908/teams/1
+Authorization: Bearer {{token}}

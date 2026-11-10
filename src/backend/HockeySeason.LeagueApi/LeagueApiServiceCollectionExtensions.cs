@@ -33,6 +33,7 @@ public static class LeagueApiServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(30);
         });
         services.AddTransient<IWeeklyReportService, WeeklyReportService>();
+        services.AddTransient<ITeamDetailService, TeamDetailService>();
 
         return services;
     }

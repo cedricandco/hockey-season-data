@@ -95,6 +95,25 @@ From `src/backend`:
 dotnet test
 ```
 
+## Team details
+
+The **Teams** tab selects one of the two Hockey Richelieu offices, a league
+and a team. It shows the division standings, the last five completed games
+and player scoring. The API exposes `GET /api/offices`,
+`GET /api/offices/{officeId}/leagues` (optional `seasonId`),
+`GET /api/leagues/{leagueId}/teams` and
+`GET /api/leagues/{leagueId}/teams/{teamId}`. The last response includes every
+completed game's box score and upcoming scheduled games. The MCP and assistant
+also expose `GetOffices` and `GetTeamDetail`.
+
+Player statistics are calculated from published goal and penalty events,
+using participant IDs. They are **not a complete roster**: players with no
+published goal, assist or penalty cannot be identified from these events and
+are omitted. `topScorers` and `topAssistProviders` contain all tied leaders,
+or are empty when there are no goals or assists. Points equal goals plus
+assists; penalty counts include bench penalties. In-progress games are
+excluded from the completed-game totals.
+
 ## Notes
 
 - Azure Static Web Apps deploys the separate .NET Functions host; configure

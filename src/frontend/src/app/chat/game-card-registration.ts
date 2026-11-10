@@ -4,6 +4,8 @@ import { GameCardComponent } from './game-card.component';
 import { StandingTableComponent } from './standing-table.component';
 import type { LeagueStandingArgs } from './standing-table.component';
 import { HOCKEY_SEASON_DATA_AGENT_ID } from '../app.config';
+import { TeamCardComponent } from './team-card.component';
+import type { TeamCardArgs } from './team-card.component';
 
 const gameDetailSchema = z.object({
   gameId: z.number().int().positive(),
@@ -27,6 +29,13 @@ const leagueStandingRowSchema = z.object({
 
 /** Call from an injection context when a chat surface supports tool rendering. */
 export function registerHockeySeasonComponents(): void {
+  registerComponent<TeamCardArgs>({
+    name: 'show_team_detail',
+    description: 'Displays the team overview, recent games, division standings and player scoring. Pass the exact leagueId and teamId from GetTeamDetail; the component loads the data itself.',
+    parameters: z.object({ leagueId: z.number().int().positive(), teamId: z.number().int().positive() }),
+    component: TeamCardComponent,
+    agentId: HOCKEY_SEASON_DATA_AGENT_ID,
+  });
   registerComponent({
     name: 'show_game_detail',
     description:

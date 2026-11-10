@@ -10,6 +10,7 @@ using HockeySeason.Mcp;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
 using ModelContextProtocol.Protocol;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -101,6 +102,26 @@ app.MapGet("/api/games/{gameId:int}", async (int gameId, LeagueApiService league
 })
     .WithName("GetGameDetail")
     .WithSummary("Retrieve the complete game detail, including goals by period and events.");
+
+app.MapGet("/api/offices", () => Results.Ok(LeagueOffices.All))
+    .WithName("GetOffices").WithSummary("List supported league offices.");
+app.MapGet("/api/offices/{officeId:int}/leagues", async (int officeId, string? seasonId, LeagueApiService league,
+    IOptions<LeagueApiOptions> options, CancellationToken cancellationToken) =>
+{
+    if (officeId <= 0) return Results.ValidationProblem(new Dictionary<string, string[]> { ["officeId"] = ["The office ID must be positive."] });
+    return Results.Ok(await league.GetLeaguesAsync(officeId, string.IsNullOrWhiteSpace(seasonId) ? options.Value.DefaultSeasonId : seasonId, cancellationToken));
+}).WithName("GetOfficeLeagues").WithSummary("List leagues for an office and season.");
+app.MapGet("/api/leagues/{leagueId:int}/teams", async (int leagueId, LeagueApiService league, CancellationToken cancellationToken) =>
+{
+    if (leagueId <= 0) return Results.ValidationProblem(new Dictionary<string, string[]> { ["leagueId"] = ["The league ID must be positive."] });
+    return Results.Ok(await league.GetLeagueTeamsAsync(leagueId, cancellationToken));
+}).WithName("GetLeagueTeams").WithSummary("List teams in a league.");
+app.MapGet("/api/leagues/{leagueId:int}/teams/{teamId:int}", async (int leagueId, int teamId, ITeamDetailService teams, CancellationToken cancellationToken) =>
+{
+    if (leagueId <= 0 || teamId <= 0) return Results.ValidationProblem(new Dictionary<string, string[]> { ["ids"] = ["League and team IDs must be positive."] });
+    var result = await teams.GetAsync(leagueId, teamId, cancellationToken);
+    return result is null ? Results.NotFound() : Results.Ok(result);
+}).WithName("GetTeamDetail").WithSummary("Retrieve team standings, games and event-based player statistics.");
 
 // Streamable HTTP MCP endpoint.
 app.MapMcp("/mcp");

@@ -25,7 +25,8 @@ public sealed record LeagueStanding(
     int GoalDifferential,
     int PenaltyMinutes,
     double PowerPlayPercentage,
-    double PenaltyKillPercentage);
+    double PenaltyKillPercentage,
+    int? GroupId = null);
 
 /// <summary>
 /// A team belonging to a league, as published by the standings endpoint.
@@ -46,7 +47,8 @@ public sealed record LeagueGame(
     string AwayTeamName,
     string? AwayTeamLogoUrl,
     int? HomeScore,
-    int? AwayScore);
+    int? AwayScore,
+    bool IsLive = false);
 
 /// <summary>
 /// A suspension published by the league for one of its games.
@@ -92,7 +94,8 @@ public sealed record LeagueGameTeamStats(
 public sealed record LeagueGameParticipant(
     string Name,
     int Number,
-    bool IsAffiliate);
+    bool IsAffiliate,
+    int ParticipantId = 0);
 
 /// <summary>
 /// A goal, placed on the game clock.

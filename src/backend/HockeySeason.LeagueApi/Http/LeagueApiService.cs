@@ -153,6 +153,19 @@ public sealed partial class LeagueApiService
             .ThenBy(game => game.Time, StringComparer.Ordinal)];
     }
 
+    /// <summary>Lists all games for a team in a schedule, without a date restriction.</summary>
+    public async Task<IReadOnlyList<LeagueGame>> GetAllTeamGamesAsync(
+        int leagueId, int teamId, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(leagueId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(teamId);
+        var filter = BuildGamesFilter(leagueId, teamId, null, null);
+        var rows = await GetJsonAsync<GameRowDto[]>(
+            $"sp/games?filter={Uri.EscapeDataString(filter)}", cancellationToken).ConfigureAwait(false);
+        return [.. rows.Select(MapGame).OrderBy(game => game.Date, StringComparer.Ordinal)
+            .ThenBy(game => game.Time, StringComparer.Ordinal)];
+    }
+
     /// <summary>
     /// Reads the box score of one game: both teams, their scoreboard figures,
     /// every goal and every penalty. Nothing is cached, because a box score is
@@ -257,7 +270,8 @@ public sealed partial class LeagueApiService
                 row.GoalDifferential,
                 row.PenaltyMinutes,
                 row.PowerPlayPercentage,
-                row.PenaltyKillPercentage))
+                row.PenaltyKillPercentage,
+                row.GroupId))
             .OrderBy(row => row.Ranking)];
 
     private static LeagueGame MapGame(GameRowDto row)
@@ -277,7 +291,8 @@ public sealed partial class LeagueApiService
             row.AwayTeam.LogoUrl,
             // The league omits "score" entirely until the game is played.
             row.Score.TryGetValue(homeKey, out var homeScore) ? homeScore : null,
-            row.Score.TryGetValue(awayKey, out var awayScore) ? awayScore : null);
+            row.Score.TryGetValue(awayKey, out var awayScore) ? awayScore : null,
+            row.IsLive);
     }
 
     private static LeagueGameDetail MapGameDetail(GameDetailRowDto? row, BoxScoreRowDto detail, int gameId)
@@ -354,29 +369,33 @@ public sealed partial class LeagueApiService
     private static LeagueGameParticipant MapParticipant(ParticipantRowDto participant) => new(
         participant.FullName,
         participant.Number,
-        participant.IsAffiliate);
+        participant.IsAffiliate,
+        participant.ParticipantId);
 
     private static string ToElapsed(GameTimeRowDto clock) => string.Create(
         CultureInfo.InvariantCulture,
         $"{clock.ElapsedMinutes}:{clock.ElapsedSeconds:D2}");
 
-    private static string BuildGamesFilter(int leagueId, int? teamId, DateOnly startDate, DateOnly endDate)
+    private static string BuildGamesFilter(int leagueId, int? teamId, DateOnly? startDate, DateOnly? endDate)
     {
         // Built as a document: the filter is nested JSON and string interpolation
         // is how braces end up unbalanced.
         var clauses = new List<JsonNode>
         {
             new JsonObject { ["scheduleId"] = leagueId },
-            new JsonObject
+        };
+        if (startDate is { } start && endDate is { } end)
+        {
+            clauses.Add(new JsonObject
             {
                 ["date"] = new JsonObject
                 {
                     ["between"] = new JsonArray(
-                        startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                        endDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                        start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        end.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
                 },
-            },
-        };
+            });
+        }
 
         if (teamId is { } id)
         {

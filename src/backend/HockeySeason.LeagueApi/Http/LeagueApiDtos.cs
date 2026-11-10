@@ -18,6 +18,8 @@ internal sealed record StandingsRowDto
 {
     public required int TeamId { get; init; }
 
+    public int? GroupId { get; init; }
+
     public required int Ranking { get; init; }
 
     [JsonPropertyName("manualRanking")]
@@ -86,6 +88,8 @@ internal sealed record GameRowDto
     public required GameTeamDto HomeTeam { get; init; }
 
     public required GameTeamDto AwayTeam { get; init; }
+
+    public bool IsLive { get; init; }
 
     /// <summary>Goals per team identifier. Absent until the game is played.</summary>
     public Dictionary<string, int> Score { get; init; } = new(StringComparer.Ordinal);

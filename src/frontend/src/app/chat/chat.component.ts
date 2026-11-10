@@ -3,6 +3,7 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { CopilotKit, injectAgentStore, RenderToolCalls } from '@copilotkit/angular';
 import { HOCKEY_SEASON_DATA_AGENT_ID } from '../app.config';
 import { registerHockeySeasonComponents } from './game-card-registration';
+import { assistantMarkdown } from './assistant-markdown';
 
 /**
  * Chat page: conversation with the Hockey Assistant. The page fills the
@@ -46,11 +47,11 @@ import { registerHockeySeasonComponents } from './game-card-registration';
               (hasMessageText(message.content) || hasRenderableToolCalls(message))) {
             <div class="message-row">
               <div class="message-avatar" aria-hidden="true">✦</div>
-              <div class="message-content">
+              <div class="message-content" [class.rich-message-content]="hasRenderableToolCalls(message)">
                 <span class="message-author">{{ 'CHAT.AGENT' | translate }}</span>
                 <div class="message-bubble assistant-bubble">
                   @if (hasMessageText(message.content)) {
-                    <p>{{ messageText(message.content) }}</p>
+                    <div class="assistant-markdown" [innerHTML]="formatMessage(message.content)"></div>
                   }
                   @if (hasRenderableToolCalls(message)) {
                     <copilot-render-tool-calls [message]="message" [messages]="store().messages()"
@@ -152,11 +153,15 @@ export class ChatComponent {
     return this.messageText(content).trim().length > 0;
   }
 
+  formatMessage(content: unknown): string {
+    return assistantMarkdown(this.messageText(content));
+  }
+
   hasRenderableToolCalls(message: {
     toolCalls?: readonly { function?: { name?: string } }[];
   }): boolean {
     return message.toolCalls?.some(({ function: tool }) =>
-      tool?.name === 'show_game_detail' || tool?.name === 'show_league_standing',
+      tool?.name === 'show_game_detail' || tool?.name === 'show_league_standing' || tool?.name === 'show_team_detail',
     ) ?? false;
   }
 

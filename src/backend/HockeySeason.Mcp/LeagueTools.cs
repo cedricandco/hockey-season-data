@@ -19,11 +19,28 @@ public sealed class LeagueTools
 {
     private readonly LeagueApiService _leagueApiService;
     private readonly LeagueApiOptions _options;
+    private readonly ITeamDetailService _teamDetails;
 
-    public LeagueTools(LeagueApiService leagueApiService, IOptions<LeagueApiOptions> options)
+    public LeagueTools(LeagueApiService leagueApiService, IOptions<LeagueApiOptions> options, ITeamDetailService teamDetails)
     {
         _leagueApiService = leagueApiService ?? throw new ArgumentNullException(nameof(leagueApiService));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _teamDetails = teamDetails ?? throw new ArgumentNullException(nameof(teamDetails));
+    }
+
+    [McpServerTool(Name = "GetOffices", Title = "Get Offices", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
+    [Description("Returns the supported Hockey Richelieu offices for finding leagues.")]
+    public IReadOnlyList<LeagueOffice> GetOffices() => LeagueOffices.All;
+
+    [McpServerTool(Name = "GetTeamDetail", Title = "Get Team Detail", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = true, UseStructuredContent = true)]
+    [Description("Returns a team's division standings, completed games with full box scores, upcoming games, event-based player scoring and special-teams and penalty totals. Players without game events are not included. Resolve league and team IDs first.")]
+    public async Task<TeamDetailResponse> GetTeamDetail(
+        [Description("League schedule identifier.")] int leagueId,
+        [Description("Team identifier within the schedule.")] int teamId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _teamDetails.GetAsync(leagueId, teamId, cancellationToken)
+            ?? throw new ModelContextProtocol.McpException("Team not found in the league standings.");
     }
 
     /// <summary>

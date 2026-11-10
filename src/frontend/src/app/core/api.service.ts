@@ -5,6 +5,7 @@ import { environment } from '../../environments/environment';
 import { HealthReport } from './models';
 import { WeeklyReport } from '../report/weekly-report.models';
 import { HttpParams } from '@angular/common/http';
+import { Choice, TeamDetail } from '../team/team.models';
 
 /**
  * Thin wrapper around HttpClient for the Hockey Season API.
@@ -21,6 +22,22 @@ export class ApiService {
 
   getGameDetail(gameId: number): Observable<unknown> {
     return this.http.get<unknown>(`${this.baseUrl}/games/${gameId}`);
+  }
+
+  getOffices(): Observable<Choice[]> {
+    return this.http.get<Choice[]>(`${this.baseUrl}/offices`);
+  }
+
+  getLeagues(officeId: number): Observable<Choice[]> {
+    return this.http.get<Choice[]>(`${this.baseUrl}/offices/${officeId}/leagues`);
+  }
+
+  getTeams(leagueId: number): Observable<Choice[]> {
+    return this.http.get<Choice[]>(`${this.baseUrl}/leagues/${leagueId}/teams`);
+  }
+
+  getTeamDetail(leagueId: number, teamId: number): Observable<TeamDetail> {
+    return this.http.get<TeamDetail>(`${this.baseUrl}/leagues/${leagueId}/teams/${teamId}`);
   }
 
   getWeeklyReport(startDate: string, endDate: string, divisionIds: readonly number[], teamIds: readonly number[]): Observable<WeeklyReport> {

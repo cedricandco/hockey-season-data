@@ -3,8 +3,21 @@
   "NAV": {
     "LABEL": "Main navigation",
     "CHAT": "Chat",
+    "TEAM": "Teams",
     "REPORT": "Weekly report",
     "CONFIG": "Settings"
+  },
+  "TEAM": {
+    "TITLE": "Team details", "SUBTITLE": "Choose an office, league and team.",
+    "OFFICE": "Office", "LEAGUE": "League", "TEAM": "Team", "SELECT": "Select",
+    "LOADING": "Loading data…", "ERROR": "Unable to load team data.",
+    "RETRY": "Retry", "RANK": "Rank", "POINTS": "Points", "GOALS": "Goals",
+    "ASSISTS": "Assists", "POWERPLAY": "Power-play goals", "SHORTHANDED": "Shorthanded goals",
+    "PENALTIES": "Penalties", "RECENT": "Last five games", "NO_GAMES": "No games played.",
+    "WIN": "Win", "LOSS": "Loss", "TIE": "Tie", "UNKNOWN": "Unknown result",
+    "PLAYERS": "Players observed in game events", "PLAYER": "Player",
+    "ROSTER_LIMIT": "Statistics are based on published events: players without a goal, assist or penalty are not included.",
+    "STANDINGS": "Division standings"
   },
   "REPORT": {
     "TITLE": "Weekly report",
