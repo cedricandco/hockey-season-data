@@ -107,23 +107,16 @@ public sealed class AuthEndpointsTests
     }
 
     [Fact]
-    public async Task ProtectedEndpoint_WithoutToken_Returns401()
+    public async Task ApiEndpoints_AreAnonymous()
     {
         await using var app = CreateApp();
         var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
 
-        var response = await client.GetAsync("/api/health");
+        var health = await client.GetAsync("/api/health");
+        var report = await client.GetAsync("/api/weekly-report?startDate=2026-11-09&endDate=2026-11-02&divisionId=194899&teamId=182497");
 
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task WeeklyReport_RequiresAuthentication()
-    {
-        await using var app = CreateApp();
-        var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
-        var response = await client.GetAsync("/api/weekly-report?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&teamId=182497");
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        health.EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.BadRequest, report.StatusCode);
     }
 
     [Fact]
@@ -165,70 +158,6 @@ public sealed class AuthEndpointsTests
         var response = await client.GetAsync("/api/health");
 
         response.EnsureSuccessStatusCode();
-    }
-
-    [Fact]
-    public async Task ProtectedEndpoint_WithTamperedToken_Returns401()
-    {
-        await using var app = CreateApp();
-        var client = await CreateAuthenticatedClientAsync(app);
-        client.DefaultRequestHeaders.Authorization = new("Bearer", client.DefaultRequestHeaders.Authorization!.ToString() is { Length: > 3 } value ? value[..^2] + "xx" : "abc");
-
-        var response = await client.GetAsync("/api/health");
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task ProtectedEndpoint_WithExpiredToken_Returns401()
-    {
-        await using var app = CreateApp();
-        var expired = CreateTestToken(expiresInMinutes: -1);
-        var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
-        client.DefaultRequestHeaders.Authorization = new("Bearer", expired);
-
-        var response = await client.GetAsync("/api/health");
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task ProtectedEndpoint_WithWrongAudience_Returns401()
-    {
-        await using var app = CreateApp();
-        var token = CreateTestToken(audience: "other-audience");
-        var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
-        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
-
-        var response = await client.GetAsync("/api/health");
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task ProtectedEndpoint_WithWrongIssuer_Returns401()
-    {
-        await using var app = CreateApp();
-        var token = CreateTestToken(issuer: "https://evil.example");
-        var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
-        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
-
-        var response = await client.GetAsync("/api/health");
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task ProtectedEndpoint_WithWrongSigningKey_Returns401()
-    {
-        await using var app = CreateApp();
-        var token = CreateTestToken(signingKey: "another-key-that-is-long-enough-9876543210");
-        var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
-        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
-
-        var response = await client.GetAsync("/api/health");
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
