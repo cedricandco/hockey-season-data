@@ -82,8 +82,9 @@ const DIVISION_NAMES: Record<number, string> = {
                   <p class="notice">{{ 'REPORT.STANDINGS_UNAVAILABLE' | translate }} @if (division.standings.error) { <span class="notice-detail">{{ division.standings.error }}</span> }</p>
                 } @else if (selectedStandings(division, result.teamIds); as standings) {
                   @if (standings.length) {
-                    <div class="table-wrap"><table>
-                      <thead><tr><th>{{ 'REPORT.RANK' | translate }}</th><th>{{ 'REPORT.TEAM' | translate }}</th><th>{{ 'REPORT.PLAYED' | translate }}</th><th>{{ 'REPORT.RECORD' | translate }}</th><th>{{ 'REPORT.POINTS' | translate }}</th></tr></thead>
+                    <p class="table-scroll-hint">{{ 'TABLE.SCROLL_HINT' | translate }}</p>
+                    <div class="table-wrap" role="region" tabindex="0" [attr.aria-label]="'REPORT.STANDINGS' | translate"><table>
+                      <thead><tr><th scope="col">{{ 'REPORT.RANK' | translate }}</th><th scope="col">{{ 'REPORT.TEAM' | translate }}</th><th scope="col">{{ 'REPORT.PLAYED' | translate }}</th><th scope="col">{{ 'REPORT.RECORD' | translate }}</th><th scope="col">{{ 'REPORT.POINTS' | translate }}</th></tr></thead>
                       <tbody>@for (standing of standings; track standing.teamId) {
                         <tr><td class="rank">{{ standing.manualRanking ?? standing.ranking }}</td><td class="team-name">{{ standing.team.name }}</td><td>{{ standing.gamesPlayed }}</td><td>{{ standing.wins }}–{{ standing.losses }}–{{ standing.ties }}</td><td class="points">{{ standing.points }}</td></tr>
                       }</tbody>

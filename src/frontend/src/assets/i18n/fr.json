@@ -5,7 +5,9 @@
     "CHAT": "Chat",
     "TEAM": "Équipes",
     "REPORT": "Rapport hebdomadaire",
-    "CONFIG": "Configuration"
+    "REPORT_SHORT": "Rapport",
+    "CONFIG": "Configuration",
+    "CONFIG_SHORT": "Réglages"
   },
   "TEAM": {
     "TITLE": "Détail d’une équipe",
@@ -88,8 +90,10 @@
     "PENALTY_KILL": "DN %",
     "LOADING": "Chargement du classement…",
     "EMPTY": "Aucune donnée de classement disponible.",
-    "INVALID_DATA": "Les données reçues ne peuvent pas être affichées comme un classement."
+    "INVALID_DATA": "Les données reçues ne peuvent pas être affichées comme un classement.",
+    "MORE_STATS": "Voir les statistiques détaillées"
   },
+  "TABLE": { "SCROLL_HINT": "Faites défiler le tableau horizontalement pour voir toutes les colonnes." },
   "LANGUAGE": { "BUTTON": "Switch to English" },
   "LOGOUT": { "BUTTON": "Se déconnecter" },
   "LOGIN": {

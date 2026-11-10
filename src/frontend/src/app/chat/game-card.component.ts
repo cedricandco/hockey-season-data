@@ -114,7 +114,7 @@ const REGULATION_PERIODS = 3;
             } @else {
               <span class="team-logo logo-fallback" aria-hidden="true">🏒</span>
             }
-            <span class="team-name">{{ homeName() }}</span>
+            <span class="team-name" [attr.title]="homeName()">{{ homeName() }}</span>
           </div>
           <div class="score-versus" role="cell">
             <span class="score-main">{{ homeScore() }} - {{ awayScore() }}</span>
@@ -128,32 +128,37 @@ const REGULATION_PERIODS = 3;
             } @else {
               <span class="team-logo logo-fallback" aria-hidden="true">🏒</span>
             }
-            <span class="team-name">{{ awayName() }}</span>
+            <span class="team-name" [attr.title]="awayName()">{{ awayName() }}</span>
           </div>
         </div>
 
-        <div class="periods-table" role="table" [attr.aria-label]="'GAMECARD.PERIOD_TABLE_LABEL' | translate"
-          [style.--gc-periods]="periodLabels().length">
-          <div class="periods-row periods-head" role="row">
-            <span class="periods-lead" role="columnheader"></span>
-            @for (label of periodLabels(); track $index) {
-              <span class="periods-cell head" role="columnheader">{{ label }}</span>
-            }
-            <span class="periods-cell total" role="columnheader">{{ 'GAMECARD.FINAL' | translate }}</span>
-          </div>
-          <div class="periods-row" role="row">
-            <span class="periods-lead" role="rowheader">{{ homeName() }}</span>
-            @for (value of homePeriods(); track $index) {
-              <span class="periods-cell" role="cell">{{ value }}</span>
-            }
-            <span class="periods-cell total" role="cell">{{ homeScore() }}</span>
-          </div>
-          <div class="periods-row" role="row">
-            <span class="periods-lead" role="rowheader">{{ awayName() }}</span>
-            @for (value of awayPeriods(); track $index) {
-              <span class="periods-cell" role="cell">{{ value }}</span>
-            }
-            <span class="periods-cell total" role="cell">{{ awayScore() }}</span>
+        @if (periodLabels().length > 3) {
+          <p class="periods-scroll-hint">{{ 'TABLE.SCROLL_HINT' | translate }}</p>
+        }
+        <div class="periods-scroll" role="region" tabindex="0" [attr.aria-label]="'GAMECARD.PERIOD_TABLE_LABEL' | translate">
+          <div class="periods-table" role="table" [attr.aria-label]="'GAMECARD.PERIOD_TABLE_LABEL' | translate"
+            [style.--gc-periods]="periodLabels().length">
+            <div class="periods-row periods-head" role="row">
+              <span class="periods-lead" role="columnheader"></span>
+              @for (label of periodLabels(); track $index) {
+                <span class="periods-cell head" role="columnheader">{{ label }}</span>
+              }
+              <span class="periods-cell total" role="columnheader">{{ 'GAMECARD.FINAL' | translate }}</span>
+            </div>
+            <div class="periods-row" role="row">
+              <span class="periods-lead" role="rowheader" [attr.title]="homeName()">{{ homeName() }}</span>
+              @for (value of homePeriods(); track $index) {
+                <span class="periods-cell" role="cell">{{ value }}</span>
+              }
+              <span class="periods-cell total" role="cell">{{ homeScore() }}</span>
+            </div>
+            <div class="periods-row" role="row">
+              <span class="periods-lead" role="rowheader" [attr.title]="awayName()">{{ awayName() }}</span>
+              @for (value of awayPeriods(); track $index) {
+                <span class="periods-cell" role="cell">{{ value }}</span>
+              }
+              <span class="periods-cell total" role="cell">{{ awayScore() }}</span>
+            </div>
           </div>
         </div>
         @if (periodsUnavailable()) {

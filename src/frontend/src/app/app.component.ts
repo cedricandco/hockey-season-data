@@ -30,10 +30,18 @@ import { AuthService } from './core/auth.service';
             </a>
             <div class="header-actions">
               <nav class="main-nav" [attr.aria-label]="'NAV.LABEL' | translate">
-                <a routerLink="/chat" routerLinkActive="nav-active">{{ 'NAV.CHAT' | translate }}</a>
-                <a routerLink="/team" routerLinkActive="nav-active">{{ 'NAV.TEAM' | translate }}</a>
-                <a routerLink="/teams-weekly-report" routerLinkActive="nav-active">{{ 'NAV.REPORT' | translate }}</a>
-                <a routerLink="/configuration" routerLinkActive="nav-active">{{ 'NAV.CONFIG' | translate }}</a>
+                <a routerLink="/chat" routerLinkActive="nav-active" ariaCurrentWhenActive="page">
+                  <svg class="nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8M8 12h5"/></svg><span>{{ 'NAV.CHAT' | translate }}</span>
+                </a>
+                <a routerLink="/team" routerLinkActive="nav-active" ariaCurrentWhenActive="page">
+                  <svg class="nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 19v-1a6 6 0 0 1 12 0v1H3ZM16 5a3 3 0 0 1 0 6M17 13a5 5 0 0 1 4 5v1h-3"/></svg><span>{{ 'NAV.TEAM' | translate }}</span>
+                </a>
+                <a routerLink="/teams-weekly-report" routerLinkActive="nav-active" ariaCurrentWhenActive="page">
+                  <svg class="nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18H5zM8 8h8M8 12h8M8 16h6"/></svg><span class="nav-desktop-label">{{ 'NAV.REPORT' | translate }}</span><span class="nav-mobile-label">{{ 'NAV.REPORT_SHORT' | translate }}</span>
+                </a>
+                <a routerLink="/configuration" routerLinkActive="nav-active" ariaCurrentWhenActive="page">
+                  <svg class="nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 17h16M7 4v6M17 14v6"/></svg><span class="nav-desktop-label">{{ 'NAV.CONFIG' | translate }}</span><span class="nav-mobile-label">{{ 'NAV.CONFIG_SHORT' | translate }}</span>
+                </a>
               </nav>
               <button class="header-button language-button" type="button" (click)="toggleLanguage()"
                 [attr.aria-label]="'LANGUAGE.BUTTON' | translate">

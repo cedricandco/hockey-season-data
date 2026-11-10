@@ -1,9 +1,8 @@
 # Hockey Season Frontend
 
 Angular 22 (standalone, zoneless) responsive frontend with French/English
-translation via `@ngx-translate/core` 18. The app has three routed pages:
-a chat page (Hockey Assistant), a weekly report, and a
-configuration page for the colors.
+translation via `@ngx-translate/core` 18. The app has four routed pages:
+chat, team details, weekly report, and color configuration.
 
 ## Prerequisites
 
@@ -30,6 +29,28 @@ npm run build
 
 The deployable browser bundle, including `index.html`, lands in
 `dist/hockey-frontend/browser`.
+
+## Responsive layout and tests
+
+The same routes and functionality are used on desktop and mobile. Up to
+900px, the primary navigation moves to a bottom bar and accounts for device
+safe areas. The chat standings show a compact table on narrow screens, with
+the remaining statistics under a details control. Other wide tables remain
+scrollable horizontally.
+
+Run the existing unit tests and the browser layout checks with:
+
+```bash
+npm test
+npm run test:responsive
+```
+
+The responsive checks start their own frontend server, use simulated API
+responses, and run in a locally installed Chrome or Edge; they do not require
+the backend. If the browser is not found automatically, set
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its executable. Browser emulation
+does not replace checking the virtual keyboard and safe areas on real iOS
+and Android devices.
 
 ## Authentication gate
 
@@ -110,8 +131,9 @@ src/
   app/
     app.config.ts        # zoneless, routed, HttpClient(fetch)+interceptors, translation and agent providers
     app.component.ts     # login gate ↔ header + router outlet based on auth state
-    app.routes.ts        # /chat, /teams-weekly-report, /configuration
+    app.routes.ts        # /chat, /team, /teams-weekly-report, /configuration
     chat/chat.component.ts     # agent chat page, composer pinned at the bottom
+    team/team.component.ts     # association, league and team selection
     report/report.component.ts # weekly report page and current ID selection
     config/config.component.ts # configuration page (colors)
     core/theme.service.ts   # primary/secondary colors, localStorage persistence

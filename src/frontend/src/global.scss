@@ -62,6 +62,7 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 }
 .main-nav a:hover { color: #fff; background: #ffffff18; }
 .main-nav a.nav-active { color: #fff; background: #ffffff22; }
+.nav-icon, .nav-mobile-label { display: none; }
 
 /* Routed content pages (report, configuration). */
 .page-container { flex: 1 1 auto; min-height: 0; padding-bottom: 24px; }
@@ -179,6 +180,7 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
 .standing-table-wrap .standing-record { color: #51667b; font-variant-numeric: tabular-nums; }
 .standing-table-wrap .standing-points { color: var(--color-primary); font-size: .88rem; font-weight: 900; }
 .standing-empty { margin: 0; padding: 18px; color: #718196; }
+.standing-mobile-details { display: none; }
 
 /* Login gate */
 .login-shell {
@@ -294,6 +296,9 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
 
 /* Per-period grid: header P1/P2/P3 + one row per team. */
 .periods-table { margin-top: 14px; display: grid; row-gap: 2px; }
+.periods-scroll-hint { display: none; }
+.periods-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+.periods-scroll:focus-visible { outline: 3px solid #edaa30; outline-offset: -3px; }
 .periods-row { display: grid; grid-template-columns: minmax(90px, 1fr) repeat(var(--gc-periods, 3), 44px) 52px; align-items: center; }
 .periods-row.periods-head { margin-bottom: 2px; }
 .periods-lead { color: #617185; font-size: .74rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px; }
@@ -353,4 +358,113 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
   .score-main { font-size: 1.6rem; }
   .periods-row { grid-template-columns: minmax(72px, 1fr) repeat(var(--gc-periods, 3), 34px) 44px; }
   .moment-time { min-width: 62px; font-size: .68rem; }
+}
+
+@media (max-width: 900px) {
+  .app-shell { --mobile-nav-height: calc(64px + env(safe-area-inset-bottom, 0px)); padding-bottom: var(--mobile-nav-height); }
+  .header-inner { min-height: 60px; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); }
+  .header-actions { gap: 6px; }
+  .header-button { min-width: 44px; min-height: 44px; justify-content: center; padding: 0 9px; }
+  .settings-label { display: none; }
+  .main-nav {
+    position: fixed; z-index: 10; bottom: 0; left: 0; right: 0;
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    height: var(--mobile-nav-height); margin: 0;
+    padding: 3px max(4px, env(safe-area-inset-right, 0px)) calc(3px + env(safe-area-inset-bottom, 0px)) max(4px, env(safe-area-inset-left, 0px));
+    border-top: 1px solid #ffffff38; background: var(--color-primary); box-shadow: 0 -3px 14px #102f4c20;
+  }
+  .main-nav a {
+    display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0;
+    min-height: 44px; padding: 4px; font-size: .7rem; line-height: 1.2; text-align: center;
+  }
+  .nav-icon { display: block; width: 19px; height: 19px; flex: 0 0 auto; }
+  .nav-desktop-label { display: none; }
+  .nav-mobile-label { display: inline; }
+  .app-outlet { padding: 12px max(12px, env(safe-area-inset-right, 0px)) 0 max(12px, env(safe-area-inset-left, 0px)); }
+  .app-shell:has(app-chat) { padding-bottom: var(--mobile-nav-height); }
+  .chat-card { border-radius: 12px 12px 0 0; }
+  .chat-header { gap: 9px; padding: 10px 12px; }
+  .agent-avatar { width: 36px; height: 36px; }
+  .agent-badge { padding: 6px 8px; }
+  .conversation { padding: 12px; }
+  .welcome-message, .message-row { gap: 8px; margin-bottom: 16px; }
+  .message-content { max-width: 92%; }
+  .message-row:has(.rich-message-content) > .message-avatar { display: none; }
+  .rich-message-content { width: 100%; max-width: 100%; }
+  .message-bubble:has(copilot-render-tool-calls) { padding: 8px; }
+  .composer-area { padding: 8px 10px; }
+  .composer { gap: 8px; padding: 6px; }
+  .composer textarea { font-size: 1rem; }
+  .send-button { width: 44px; height: 44px; }
+  .composer-hint { display: none; }
+  .login-shell { min-height: 100vh; min-height: 100dvh; padding: 16px; }
+  .login-card { padding: 28px 22px; }
+  .config-card .reset-button { min-height: 44px; }
+}
+
+@media (max-width: 600px) {
+  .standing-table-wrap table { min-width: 0; table-layout: auto; }
+  .standing-table-wrap th, .standing-table-wrap td { padding: 8px 4px; }
+  .standing-table-wrap thead th { font-size: .68rem; }
+  .standing-table-wrap th:nth-child(n + 6), .standing-table-wrap td:nth-child(n + 6) { display: none; }
+  .standing-table-wrap .standing-team { white-space: normal; overflow-wrap: anywhere; }
+  .standing-rank { width: auto; }
+  .standing-rank-badge { min-width: 23px; padding: 0 3px; }
+  .standing-mobile-details { display: block; border-top: 1px solid #edf1f5; }
+  .standing-mobile-details summary { padding: 12px; color: var(--color-primary); font-weight: 700; cursor: pointer; }
+  .standing-mobile-details summary:focus-visible { outline: 3px solid #edaa30; outline-offset: -3px; }
+  .standing-extra { padding: 10px 12px; border-top: 1px solid #edf1f5; }
+  .standing-extra h4 { margin: 0 0 8px; overflow-wrap: anywhere; }
+  .standing-extra dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+  .standing-extra dt { color: #617185; font-size: .68rem; }
+  .standing-extra dd { margin: 2px 0 0; font-weight: 700; }
+  .game-card-header, .game-scoreboard, .game-timeline { padding-left: 12px; padding-right: 12px; }
+  .score-row.score-teams { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 6px; }
+  .score-team, .score-team.away { flex-direction: column; text-align: center; }
+  .team-name { max-width: none; white-space: normal; overflow-wrap: anywhere; }
+  .score-main { font-size: 1.4rem; white-space: nowrap; }
+  .periods-table { min-width: calc(72px + var(--gc-periods, 3) * 34px + 44px); }
+  .periods-row { grid-template-columns: minmax(72px, 1fr) repeat(var(--gc-periods, 3), 34px) 44px; }
+  .periods-scroll-hint { display: block; margin: 12px 0 0; color: #617185; font-size: .72rem; }
+  .timeline-item { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 4px 10px; }
+  .moment-icon { grid-row: 1 / span 2; }
+  .moment-time, .moment-body { grid-column: 2; min-width: 0; }
+  .moment-body { grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
+  .moment-team { overflow-wrap: anywhere; }
+  .moment-tags { flex-wrap: wrap; }
+}
+
+@media (max-width: 480px) {
+  .report .report-heading { margin-top: 4px; }
+  .report .heading-icon { display: none; }
+  .report .results-heading { align-items: start; flex-direction: column; }
+  .report .division-header { padding: 16px; }
+  .report .division-header > div:nth-child(2) { min-width: 0; overflow-wrap: anywhere; }
+  .report .division-id { flex: 0 0 auto; }
+  .report .division-content { padding: 0 16px 18px; }
+  .report .game-row { align-items: stretch; flex-direction: column; gap: 10px; }
+  .report .game-date { display: flex; justify-content: center; gap: 8px; }
+  .report .matchup { font-size: .72rem; gap: 8px; }
+  .report .matchup > span { overflow-wrap: anywhere; }
+  .report .table-scroll-hint { display: block; margin: 0 0 6px; color: #617389; font-size: .72rem; }
+  .report .period-card input { font-size: 1rem; }
+  .report .period-card label { min-width: 0; }
+  .report .suspension-row { flex-wrap: wrap; }
+  .report .suspension-meta { margin-left: auto; }
+}
+
+@media (max-width: 900px) and (max-height: 450px) {
+  .app-shell { --mobile-nav-height: calc(52px + env(safe-area-inset-bottom, 0px)); }
+  .header-inner { min-height: 48px; }
+  .brand-mark { width: 32px; height: 32px; }
+  .brand-mark svg { width: 25px; height: 25px; }
+  .app-outlet { padding-top: 4px; }
+  .chat-header { padding: 6px 10px; }
+  .chat-header .agent-avatar, .agent-details p, .agent-badge { display: none; }
+  .agent-details h2 { margin: 0; }
+  .composer textarea { height: 38px; min-height: 38px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
 }

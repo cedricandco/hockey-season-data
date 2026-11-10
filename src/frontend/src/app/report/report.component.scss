@@ -62,6 +62,8 @@ td.rank, td.points { color: var(--color-primary); font-weight: 800; }
 .notice-error { margin-top: 16px; border-color: #f0cfcb; background: #fff4f3; color: #9c2c2c; }
 .notice-detail { display: block; margin-top: 5px; color: #a02020; font-weight: 700; font-size: .74rem; word-break: break-word; }
 .loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 55px 15px; color: #728396; font-size: .82rem; }
+.table-scroll-hint { display: none; }
+.table-wrap:focus-visible { outline: 3px solid #edaa30; outline-offset: -3px; }
 .spinner { width: 17px; height: 17px; border: 2px solid #d8e6ef; border-top-color: var(--color-primary); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 700px) {
@@ -69,15 +71,5 @@ td.rank, td.points { color: var(--color-primary); font-weight: 800; }
   .period-intro, .period-card button { grid-column: 1 / -1; }
   .period-card button { min-height: 43px; }
   .period-card input { width: 100%; }
-}
-@media (max-width: 480px) {
-  .report-heading { margin-top: 4px; }
-  .heading-icon { display: none; }
-  .results-heading { align-items: start; flex-direction: column; }
-  .division-header { padding: 16px; }
-  .division-content { padding: 0 16px 18px; }
-  .game-row { align-items: stretch; flex-direction: column; gap: 10px; }
-  .game-date { display: flex; justify-content: center; gap: 8px; }
-  .matchup { font-size: .72rem; gap: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }

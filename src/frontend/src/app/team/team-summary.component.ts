@@ -43,6 +43,7 @@ import { recentGames, teamResult } from './team-results';
           <section>
             <h3>{{ 'TEAM.PLAYERS' | translate }}</h3>
             @if (!data.completeRosterAvailable) { <p class="notice">{{ 'TEAM.ROSTER_LIMIT' | translate }}</p> }
+            <p class="table-scroll-hint">{{ 'TABLE.SCROLL_HINT' | translate }}</p>
             <div class="table-wrap" role="region" tabindex="0" [attr.aria-label]="'TEAM.PLAYERS' | translate"><table>
               <thead><tr><th scope="col">#</th><th scope="col">{{ 'TEAM.PLAYER' | translate }}</th><th scope="col">{{ 'TEAM.GOALS' | translate }}</th><th scope="col">{{ 'TEAM.ASSISTS' | translate }}</th><th scope="col">{{ 'TEAM.POINTS' | translate }}</th></tr></thead>
               <tbody>@for (player of data.players; track player.participantId) {
@@ -52,6 +53,7 @@ import { recentGames, teamResult } from './team-results';
           </section>
           <section>
             <h3>{{ 'TEAM.STANDINGS' | translate }}</h3>
+            <p class="table-scroll-hint">{{ 'TABLE.SCROLL_HINT' | translate }}</p>
             <div class="table-wrap" role="region" tabindex="0" [attr.aria-label]="'TEAM.STANDINGS' | translate"><table>
               <thead><tr><th scope="col">{{ 'TEAM.RANK' | translate }}</th><th scope="col">{{ 'TEAM.TEAM' | translate }}</th><th scope="col">{{ 'STANDING.PLAYED' | translate }}</th><th scope="col">{{ 'STANDING.RECORD' | translate }}</th><th scope="col">{{ 'TEAM.POINTS' | translate }}</th></tr></thead>
               <tbody>@for (row of data.standings; track row.teamId) {

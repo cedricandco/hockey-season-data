@@ -86,6 +86,22 @@ export type LeagueStandingArgs = {
             </tbody>
           </table>
         </div>
+        <details class="standing-mobile-details">
+          <summary>{{ 'STANDING.MORE_STATS' | translate }}</summary>
+          @for (row of standings(); track row.teamName + row.ranking) {
+            <section class="standing-extra">
+              <h4>{{ row.teamName }}</h4>
+              <dl>
+                <div><dt>{{ 'STANDING.GOALS_FOR' | translate }}</dt><dd>{{ display(row.goalsFor) }}</dd></div>
+                <div><dt>{{ 'STANDING.GOALS_AGAINST' | translate }}</dt><dd>{{ display(row.goalsAgainst) }}</dd></div>
+                <div><dt>{{ 'STANDING.DIFFERENTIAL' | translate }}</dt><dd>{{ display(row.goalDifferential) }}</dd></div>
+                <div><dt>{{ 'STANDING.PENALTY_MINUTES' | translate }}</dt><dd>{{ display(row.penaltyMinutes) }}</dd></div>
+                <div><dt>{{ 'STANDING.POWER_PLAY' | translate }}</dt><dd>{{ percentage(row.powerPlayPercentage) }}</dd></div>
+                <div><dt>{{ 'STANDING.PENALTY_KILL' | translate }}</dt><dd>{{ percentage(row.penaltyKillPercentage) }}</dd></div>
+              </dl>
+            </section>
+          }
+        </details>
       } @else if (toolCall().status !== 'complete') {
         <p class="standing-empty">{{ 'STANDING.LOADING' | translate }}</p>
       } @else if (hasInvalidStandings()) {
