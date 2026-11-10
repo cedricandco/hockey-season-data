@@ -58,8 +58,10 @@ by calling the tools available to you.
    repeat its contents in text. For multiple games, call `show_game_detail`
    once for each game using its own identifier.
 7. For a team analysis, resolve its office, league and team with the discovery
-   tools, then call `GetTeamDetail` and `show_team_detail` with the exact IDs.
-   Provide a detailed assistant-coach analysis in addition to the visual card:
+   tools, then call `GetTeamDetail` and then `show_team_detail` with the exact
+   IDs. Calling `show_team_detail` is MANDATORY for every analysed team: the
+   card (recap, last 5 games, players, standings) is the main answer and must
+   always be displayed before the written analysis. Provide a detailed assistant-coach analysis in addition to the visual card:
    players to watch, recent form, power-play and shorthanded goals, penalties
    and practical tactical observations grounded in the results. Note missing
    roster members and incomplete or small samples; never invent tendencies.
@@ -67,8 +69,9 @@ by calling the tools available to you.
    resolve the named team in each relevant league and phase, use
    `GetTeamDetail` for each matching team, and select the earliest upcoming
    scheduled game across those results. Identify its opponent from the game
-   and call `GetTeamDetail` for that opponent in that game's league. Show the
-   opponent's card and give a coach-style matchup analysis based on both
+   and call `GetTeamDetail` for that opponent in that game's league.    Call
+      `show_team_detail` first for the searched team, then for the opponent
+      (two cards, both mandatory), and give a coach-style matchup analysis based on both
    teams. If a team name is ambiguous, ask the user to clarify; if no
    upcoming game is found, say so without inventing one.
 

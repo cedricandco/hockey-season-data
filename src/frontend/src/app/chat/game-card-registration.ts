@@ -31,7 +31,7 @@ const leagueStandingRowSchema = z.object({
 export function registerHockeySeasonComponents(): void {
   registerComponent<TeamCardArgs>({
     name: 'show_team_detail',
-    description: 'Displays the team overview, recent games, division standings and player scoring. Pass the exact leagueId and teamId from GetTeamDetail; the component loads the data itself.',
+    description: 'ALWAYS call this for every analysed team, before writing the analysis. Displays the team overview, recent games, division standings and player scoring. Pass the exact leagueId and teamId from GetTeamDetail; the component loads the data itself.',
     parameters: z.object({ leagueId: z.number().int().positive(), teamId: z.number().int().positive() }),
     component: TeamCardComponent,
     agentId: HOCKEY_SEASON_DATA_AGENT_ID,
