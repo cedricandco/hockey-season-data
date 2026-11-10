@@ -1,7 +1,16 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using HockeySeason.Functions;
 using HockeySeason.LeagueApi;
 using HockeySeason.LeagueApi.Http;
+using HockeySeason.LeagueApi.Models;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -140,6 +149,9 @@ public sealed class LeagueApiGameDetailTests
         Assert.Equal("U13", detail.Division);
 
         Assert.Equal(2, detail.Goals.Count);
+        Assert.Equal(
+            new[] { (181303, 1, 1), (181311, 3, 1) },
+            detail.PeriodGoals.Select(goals => (goals.TeamId, goals.Period, goals.Goals)));
 
         // The box score lists the third-period goal first; the detail orders by clock.
         var opener = detail.Goals[0];
@@ -177,6 +189,28 @@ public sealed class LeagueApiGameDetailTests
     }
 
     [Fact]
+    public async Task GetLeagueGameDetail_CountsEveryGoalByTeamAndPeriodAndSortsTimesNumerically()
+    {
+        var boxScore = JsonNode.Parse(BoxScorePayload)!.AsObject();
+        var goals = boxScore["goals"]!.AsArray();
+        var homeGoal = goals[1]!.DeepClone();
+        homeGoal["gameTime"]!["elapsedMinutes"] = 10;
+        homeGoal["gameTime"]!["elapsedSeconds"] = 0;
+        goals.Add(homeGoal);
+        var awayGoal = goals[0]!.DeepClone();
+        awayGoal["gameTime"]!["period"] = "4";
+        goals.Add(awayGoal);
+        var handler = new RoutingHandler { BoxScorePayload = boxScore.ToJsonString() };
+
+        var detail = await CreateService(handler).GetLeagueGameDetailAsync(942131);
+
+        Assert.Equal(new[] { "7:27", "10:00", "9:08", "9:08" }, detail.Goals.Select(goal => goal.Time));
+        Assert.Equal(
+            new[] { (181303, 1, 2), (181311, 3, 1), (181311, 4, 1) },
+            detail.PeriodGoals.Select(goals => (goals.TeamId, goals.Period, goals.Goals)));
+    }
+
+    [Fact]
     public async Task GetLeagueGameDetail_MapsAnUnplayedGameToNoGoalsAndNoStats()
     {
         var handler = new RoutingHandler
@@ -189,10 +223,61 @@ public sealed class LeagueApiGameDetailTests
         var detail = await service.GetLeagueGameDetailAsync(942067);
 
         Assert.Empty(detail.Goals);
+        Assert.Empty(detail.PeriodGoals);
         Assert.Empty(detail.Penalties);
         Assert.Empty(detail.TeamStats);
         Assert.False(detail.IsLive);
         Assert.False(detail.IsApproved);
+    }
+
+    [Fact]
+    public async Task GameDetailFunction_ReturnsCompleteGoalsAndPeriodCounts()
+    {
+        var handler = new RoutingHandler();
+        var function = new GameDetailFunction(CreateService(handler));
+        var request = new DefaultHttpContext().Request;
+
+        Assert.IsType<BadRequestObjectResult>(await function.Run(request, 0, CancellationToken.None));
+        Assert.Empty(handler.Requests);
+        var response = Assert.IsType<OkObjectResult>(await function.Run(request, 942131, CancellationToken.None));
+        var detail = Assert.IsType<LeagueGameDetail>(response.Value);
+        Assert.Equal(2, detail.Goals.Count);
+        Assert.Equal("LOUIS-THOMAS DESMARCHAIS", detail.Goals[0].Scorer.Name);
+        Assert.Equal("THOMAS BELOIN", Assert.Single(detail.Goals[0].Assists).Name);
+        Assert.Equal(2, detail.PeriodGoals.Sum(goal => goal.Goals));
+    }
+
+    [Fact]
+    public async Task GameDetailEndpoint_ReturnsAllEventsAndCalculatedPeriodsAsJson()
+    {
+        var handler = new RoutingHandler();
+        await using var app = new WebApplicationFactory<HockeySeason.Api.Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("Auth:PinCode", "654321");
+            builder.UseSetting("Auth:SigningKey", "test-signing-key-that-is-long-enough-1234567890");
+            builder.UseSetting("Auth:Issuer", "https://tests.hockey-season-data");
+            builder.UseSetting("Auth:Audience", "hockey-season-api-tests");
+            builder.UseSetting("LeagueApi:ApiKey", "test-league-key");
+            builder.ConfigureServices(services => services.AddSingleton(CreateService(handler)));
+        });
+        var client = app.CreateClient();
+
+        var invalid = await client.GetAsync("/api/games/0");
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.Empty(handler.Requests);
+
+        var response = await client.GetAsync("/api/games/942131");
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+        Assert.Equal(942131, root.GetProperty("id").GetInt32());
+        Assert.Equal(2, root.GetProperty("goals").GetArrayLength());
+        Assert.Equal("LOUIS-THOMAS DESMARCHAIS", root.GetProperty("goals")[0].GetProperty("scorer").GetProperty("name").GetString());
+        Assert.Equal("THOMAS BELOIN", root.GetProperty("goals")[0].GetProperty("assists")[0].GetProperty("name").GetString());
+        Assert.Equal(1, root.GetProperty("penalties").GetArrayLength());
+        Assert.Equal(2, root.GetProperty("periodGoals").GetArrayLength());
+        Assert.Equal(1, root.GetProperty("periodGoals")[0].GetProperty("goals").GetInt32());
     }
 
     [Fact]

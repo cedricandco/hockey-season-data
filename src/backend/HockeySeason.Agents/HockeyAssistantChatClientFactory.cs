@@ -5,10 +5,10 @@ using OllamaSharp;
 namespace HockeySeason.Agents;
 
 /// <summary>
-/// Creates the <see cref="IChatClient"/> used by the translation agent
+/// Creates the <see cref="IChatClient"/> used by the Hockey Assistant
 /// (an Ollama-compatible chat API such as Ollama Cloud or a local Ollama).
 /// </summary>
-public static class TranslationChatClientFactory
+public static class HockeyAssistantChatClientFactory
 {
     public static IChatClient Create(HockeySeasonDataAgentOptions options)
     {

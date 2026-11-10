@@ -2,7 +2,7 @@
 
 Angular 22 (standalone, zoneless) responsive frontend with French/English
 translation via `@ngx-translate/core` 18. The app has three routed pages:
-a chat page (translation agent), a weekly report, and a
+a chat page (Hockey Assistant), a weekly report, and a
 configuration page for the colors.
 
 ## Prerequisites
@@ -38,7 +38,7 @@ for the shared 6-digit access code (`LOGIN` translations), posts it to
 `POST /api/auth/login`, and stores the returned bearer token in local storage
 (`core/auth-storage.ts`). Each HTTP request adds
 `Authorization: Bearer <token>` (`core/auth.interceptor.ts`) and the AG-UI
-agent adds the same header in `agent/translation-http-agent.ts`. A rejected
+agent adds the same header in `agent/hockey-assistant-http-agent.ts`. A rejected
 token (401) clears the session and flips the app back to the login screen; the
 header button logs out explicitly.
 
@@ -76,8 +76,10 @@ sync if changing them. The chat displays connection errors and offers a retry.
 The chat page (`/chat`) is the default route and fills the viewport below the
 header: the transcript scrolls and the composer stays pinned at the bottom of
 the page. Enter sends a message and Shift+Enter inserts a new line.
-The current backend agent translates messages into English; it does not yet
-answer questions about hockey data.
+The Hockey Assistant answers questions about league data. Match cards use the
+game ID chosen by the agent to load `GET /api/games/{gameId}` directly, so their
+goals, penalties and per-period totals do not depend on the model copying them.
+Both the local API and Functions host support the endpoint.
 
 ## Weekly report page
 

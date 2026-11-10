@@ -5,6 +5,7 @@ using HockeySeason.Domain;
 using HockeySeason.Infrastructure;
 using HockeySeason.LeagueApi.Extensions;
 using HockeySeason.LeagueApi;
+using HockeySeason.LeagueApi.Http;
 using HockeySeason.Mcp;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
@@ -91,6 +92,15 @@ app.MapGet("/api/weekly-report", async (HttpRequest httpRequest, IWeeklyReportSe
 })
     .WithName("GetWeeklyReport")
     .WithSummary("Retrieve raw Spordle data for a weekly report.");
+
+app.MapGet("/api/games/{gameId:int}", async (int gameId, LeagueApiService league, CancellationToken cancellationToken) =>
+{
+    if (gameId <= 0)
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["gameId"] = ["The game ID must be positive."] });
+    return Results.Ok(await league.GetLeagueGameDetailAsync(gameId, cancellationToken));
+})
+    .WithName("GetGameDetail")
+    .WithSummary("Retrieve the complete game detail, including goals by period and events.");
 
 // Streamable HTTP MCP endpoint.
 app.MapMcp("/mcp");

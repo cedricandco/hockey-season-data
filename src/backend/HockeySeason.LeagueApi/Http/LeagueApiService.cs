@@ -284,6 +284,13 @@ public sealed partial class LeagueApiService
     {
         ArgumentNullException.ThrowIfNull(row);
 
+        var goals = detail.Goals
+            .OrderBy(goal => int.Parse(goal.GameTime.Period, CultureInfo.InvariantCulture))
+            .ThenBy(goal => goal.GameTime.ElapsedMinutes)
+            .ThenBy(goal => goal.GameTime.ElapsedSeconds)
+            .Select(MapGoal)
+            .ToArray();
+
         return new LeagueGameDetail(
             row.Id,
             row.Number,
@@ -297,12 +304,17 @@ public sealed partial class LeagueApiService
             new LeagueGameTeam(row.AwayTeam.Id, row.AwayTeam.Name, row.AwayTeam.LogoUrl),
             [.. row.TeamStats.Select(MapGameTeamStats)
                 .OrderBy(stats => stats.TeamId)],
-            [.. detail.Goals.Select(MapGoal)
-                .OrderBy(goal => goal.Period)
-                .ThenBy(goal => goal.Time, StringComparer.Ordinal)],
-            [.. detail.Penalties.Select(MapPenalty)
-                .OrderBy(penalty => penalty.Period)
-                .ThenBy(penalty => penalty.Time, StringComparer.Ordinal)]);
+            [.. goals
+                .GroupBy(goal => (goal.TeamId, goal.Period))
+                .Select(group => new LeagueGamePeriodGoals(group.Key.TeamId, group.Key.Period, group.Count()))
+                .OrderBy(periodGoals => periodGoals.TeamId)
+                .ThenBy(periodGoals => periodGoals.Period)],
+            goals,
+            [.. detail.Penalties
+                .OrderBy(penalty => int.Parse(penalty.GameTime.Period, CultureInfo.InvariantCulture))
+                .ThenBy(penalty => penalty.GameTime.ElapsedMinutes)
+                .ThenBy(penalty => penalty.GameTime.ElapsedSeconds)
+                .Select(MapPenalty)]);
     }
 
     private static LeagueGameTeamStats MapGameTeamStats(GameTeamStatsRowDto stats) => new(

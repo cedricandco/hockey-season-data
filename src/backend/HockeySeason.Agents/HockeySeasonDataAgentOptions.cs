@@ -1,7 +1,7 @@
 namespace HockeySeason.Agents;
 
 /// <summary>
-/// Settings for the <c>hockey-season-data.agent</c> translation agent.
+/// Settings for the <c>hockey-season-data.agent</c> Hockey Assistant.
 /// Bound from configuration section "Agents:HockeySeasonData".
 /// </summary>
 public sealed class HockeySeasonDataAgentOptions
@@ -20,6 +20,6 @@ public sealed class HockeySeasonDataAgentOptions
     /// <summary>API key used as Bearer token (optional for local Ollama).</summary>
     public string? OllamaApiKey { get; set; }
 
-    /// <summary>Model used for translation, e.g. glm-5.3-flash:cloud.</summary>
+    /// <summary>Model used by the Hockey Assistant, e.g. glm-5.3-flash:cloud.</summary>
     public string OllamaModel { get; set; } = "glm-5.3-flash:cloud";
 }

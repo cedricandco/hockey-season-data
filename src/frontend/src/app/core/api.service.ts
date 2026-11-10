@@ -19,6 +19,10 @@ export class ApiService {
     return this.http.get<HealthReport>(`${this.baseUrl}/health`);
   }
 
+  getGameDetail(gameId: number): Observable<unknown> {
+    return this.http.get<unknown>(`${this.baseUrl}/games/${gameId}`);
+  }
+
   getWeeklyReport(startDate: string, endDate: string, divisionIds: readonly number[], teamIds: readonly number[]): Observable<WeeklyReport> {
     let params = new HttpParams().set('startDate', startDate).set('endDate', endDate);
     for (const id of divisionIds) params = params.append('divisionId', id);

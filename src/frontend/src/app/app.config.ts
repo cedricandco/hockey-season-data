@@ -5,12 +5,12 @@ import { provideTranslateService } from '@ngx-translate/core';
 import { provideTranslateHttpLoader } from '@ngx-translate/http-loader';
 import { provideCopilotChatConfiguration, provideCopilotKit } from '@copilotkit/angular';
 import { environment } from '../environments/environment';
-import { TranslationHttpAgent } from './agent/translation-http-agent';
+import { HockeyAssistantHttpAgent } from './agent/hockey-assistant-http-agent';
 import { authInterceptor } from './core/auth.interceptor';
 import { AuthStorage } from './core/auth-storage';
 import { routes } from './app.routes';
 
-/** Logical id of the translation agent exposed by the backend over AG-UI. */
+/** Logical id of the Hockey Assistant agent exposed by the backend over AG-UI. */
 export const HOCKEY_SEASON_DATA_AGENT_ID = 'hockey-season-data.agent';
 
 /**
@@ -19,15 +19,15 @@ export const HOCKEY_SEASON_DATA_AGENT_ID = 'hockey-season-data.agent';
  * in dev (proxy.conf.cjs → http://localhost:5000) and with the Azure Static
  * Web Apps managed Functions API.
  */
-export const hockeySeasonDataAgent = new TranslationHttpAgent({
+export const hockeySeasonDataAgent = new HockeyAssistantHttpAgent({
   agentId: HOCKEY_SEASON_DATA_AGENT_ID,
-  description: 'Translates the user input message into English.',
+  description: 'Answers questions about hockey leagues, teams, games, standings and suspensions.',
   url: `${environment.apiUrl}/agui/hockey-season-data.agent`,
 });
 
 // The AG-UI agent resolves the bearer token lazily at request time so logins
 // and token refreshes apply to subsequent agent runs without re-creating it.
-TranslationHttpAgent.accessTokenProvider = () => new AuthStorage().accessToken;
+HockeyAssistantHttpAgent.accessTokenProvider = () => new AuthStorage().accessToken;
 
 /**
  * Root application configuration (zoneless Angular 22 + ngx-translate 18

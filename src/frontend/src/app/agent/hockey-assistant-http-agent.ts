@@ -13,7 +13,7 @@ import { HttpAgent } from '@ag-ui/client';
  * and `messages` must stay untouched while a run streams so replies received
  * during the run are replayed in the next turn's history.
  */
-export class TranslationHttpAgent extends HttpAgent {
+export class HockeyAssistantHttpAgent extends HttpAgent {
   /** Source of the current access token; set once at app startup. */
   static accessTokenProvider: () => string | null = () => null;
 
@@ -23,12 +23,11 @@ export class TranslationHttpAgent extends HttpAgent {
       messages: input.messages.filter((message) => message.role !== 'reasoning'),
     };
     const init = super.requestInit(outbound);
-    const token = TranslationHttpAgent.accessTokenProvider();
+    const token = HockeyAssistantHttpAgent.accessTokenProvider();
     if (!token) return init;
     const headers = new Headers(init.headers ?? this.headers);
     headers.set('Authorization', `Bearer ${token}`);
     return { ...init, headers };
   }
 }
-
 

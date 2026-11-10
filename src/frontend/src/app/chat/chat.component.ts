@@ -5,7 +5,7 @@ import { HOCKEY_SEASON_DATA_AGENT_ID } from '../app.config';
 import { registerHockeySeasonComponents } from './game-card-registration';
 
 /**
- * Chat page: conversation with the translation agent. The page fills the
+ * Chat page: conversation with the Hockey Assistant. The page fills the
  * space below the header, the transcript scrolls and the composer stays
  * pinned at the bottom of the viewport.
  */
@@ -35,23 +35,24 @@ import { registerHockeySeasonComponents } from './game-card-registration';
           </div>
         </div>
         @for (message of store().messages(); track message.id) {
-          @if (message.role === 'user' && messageText(message.content)) {
+          @if (message.role === 'user' && hasMessageText(message.content)) {
             <div class="message-row" [class.user-row]="message.role === 'user'">
               <div class="message-content">
                 <span class="message-author">{{ 'CHAT.YOU' | translate }}</span>
                 <div class="message-bubble user-bubble">{{ messageText(message.content) }}</div>
               </div>
             </div>
-          } @else if (message.role === 'assistant' && (messageText(message.content) || message.toolCalls?.length)) {
+          } @else if (message.role === 'assistant' &&
+              (hasMessageText(message.content) || hasRenderableToolCalls(message))) {
             <div class="message-row">
               <div class="message-avatar" aria-hidden="true">✦</div>
               <div class="message-content">
                 <span class="message-author">{{ 'CHAT.AGENT' | translate }}</span>
                 <div class="message-bubble assistant-bubble">
-                  @if (messageText(message.content)) {
+                  @if (hasMessageText(message.content)) {
                     <p>{{ messageText(message.content) }}</p>
                   }
-                  @if (message.toolCalls?.length) {
+                  @if (hasRenderableToolCalls(message)) {
                     <copilot-render-tool-calls [message]="message" [messages]="store().messages()"
                       [isLoading]="sending()" [agentId]="agentId" />
                   }
@@ -145,6 +146,18 @@ export class ChatComponent {
 
   messageText(content: unknown): string {
     return typeof content === 'string' ? content : '';
+  }
+
+  hasMessageText(content: unknown): boolean {
+    return this.messageText(content).trim().length > 0;
+  }
+
+  hasRenderableToolCalls(message: {
+    toolCalls?: readonly { function?: { name?: string } }[];
+  }): boolean {
+    return message.toolCalls?.some(({ function: tool }) =>
+      tool?.name === 'show_game_detail' || tool?.name === 'show_league_standing',
+    ) ?? false;
   }
 
   private async runAgent(restoreOnFailure?: string): Promise<void> {

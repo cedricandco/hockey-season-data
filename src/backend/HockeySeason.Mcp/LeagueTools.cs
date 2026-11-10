@@ -196,7 +196,8 @@ public sealed class LeagueTools
         UseStructuredContent = true)]
     [Description(
         "Returns the box score of one game: both teams, scoreboard figures per team (result, " +
-        "penalty minutes, power play and penalty kill), every goal (period, elapsed time, scorer, " +
+        "penalty minutes, power play and penalty kill), goals scored per team per period in " +
+        "PeriodGoals, every goal (period, elapsed time, scorer, " +
         "assists, power play and shorthanded flags) and every penalty (period, elapsed time, " +
         "player, infraction in French, duration). Use GetTeamGames to find the game id.")]
     public async Task<LeagueGameDetail> GetGameDetail(

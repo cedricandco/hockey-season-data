@@ -1,6 +1,10 @@
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import type { AngularToolCall } from '@copilotkit/angular';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { ApiService } from '../core/api.service';
+import { gameDetailResponseSchema, gameMoments, periodGoalsForTeam } from './game-detail-data';
+import type { GameDetailResponse, GameMoment } from './game-detail-data';
 
 /** A team on the game scoreboard. */
 export interface GameTeam {
@@ -8,6 +12,11 @@ export interface GameTeam {
   teamId?: number;
   name: string;
   logoUrl?: string | null;
+}
+
+interface PeriodSection {
+  period: number;
+  moments: GameMoment[];
 }
 
 /** A player mentioned by a game event (scorer, assist or penalized player). */
@@ -42,21 +51,15 @@ export interface GamePenalty {
 
 /** Arguments the agent passes to the show_game_detail tool. */
 export type GameDetailArgs = {
-  gameId?: number;
-  gameNumber?: string;
-  date?: string;
-  time?: string;
-  division?: string;
-  isLive?: boolean;
-  isApproved?: boolean;
-  homeTeam: GameTeam | string;
-  awayTeam: GameTeam | string;
-  homeScore?: number;
-  awayScore?: number;
-  teamStats?: GameTeamStats[];
-  goals?: GameGoal[];
-  penalties?: GamePenalty[];
+  gameId: number;
 };
+
+/** Server-computed goal count for one team in one period. */
+export interface GamePeriodGoals {
+  teamId: number;
+  period: number;
+  goals: number;
+}
 
 /** How a close game was decided: in regulation, overtime or a shootout. */
 export interface GameTeamStats {
@@ -69,18 +72,6 @@ export interface GameTeamStats {
   winLossType?: string;
 }
 
-/** A goal or penalty merged into one chronological key moment. */
-interface KeyMoment {
-  kind: 'goal' | 'penalty';
-  period: number;
-  /** Seconds elapsed in the period, for ordering. */
-  seconds: number;
-  time: string;
-  teamId: number;
-  goal?: GameGoal;
-  penalty?: GamePenalty;
-}
-
 /** Regulation game ends after period 3. */
 const REGULATION_PERIODS = 3;
 
@@ -89,6 +80,14 @@ const REGULATION_PERIODS = 3;
   standalone: true,
   imports: [TranslatePipe],
   template: `
+    @if (loading()) {
+      <p class="game-card-message" role="status">{{ 'GAMECARD.LOADING' | translate }}</p>
+    } @else if (error()) {
+      <div class="game-card-message" role="alert">
+        {{ error()! | translate }}
+        <button type="button" (click)="retry()">{{ 'GAMECARD.RETRY' | translate }}</button>
+      </div>
+    } @else if (gameDetail()) {
     <article class="game-card" [class.live]="detail().isLive">
       <header class="game-card-header">
         <div class="game-card-meta">
@@ -107,7 +106,7 @@ const REGULATION_PERIODS = 3;
         </div>
       </header>
 
-      <div class="game-scoreboard" role="table" aria-label="Score final">
+      <div class="game-scoreboard" role="table" [attr.aria-label]="'GAMECARD.SCORE_LABEL' | translate">
         <div class="score-row score-teams" role="row">
           <div class="score-team home" role="cell">
             @if (homeLogo()) {
@@ -133,20 +132,14 @@ const REGULATION_PERIODS = 3;
           </div>
         </div>
 
-        <div class="periods-table" role="table" aria-label="Points par période">
+        <div class="periods-table" role="table" [attr.aria-label]="'GAMECARD.PERIOD_TABLE_LABEL' | translate"
+          [style.--gc-periods]="periodLabels().length">
           <div class="periods-row periods-head" role="row">
             <span class="periods-lead" role="columnheader"></span>
             @for (label of periodLabels(); track $index) {
               <span class="periods-cell head" role="columnheader">{{ label }}</span>
             }
-            <span class="periods-cell total" role="columnheader">{{ 'GAMECARD.TOTAL' | translate }}</span>
-          </div>
-          <div class="periods-row" role="row">
-            <span class="periods-lead" role="rowheader">{{ awayName() }}</span>
-            @for (value of awayPeriods(); track $index) {
-              <span class="periods-cell" role="cell">{{ value }}</span>
-            }
-            <span class="periods-cell total" role="cell">{{ awayScore() }}</span>
+            <span class="periods-cell total" role="columnheader">{{ 'GAMECARD.FINAL' | translate }}</span>
           </div>
           <div class="periods-row" role="row">
             <span class="periods-lead" role="rowheader">{{ homeName() }}</span>
@@ -155,73 +148,153 @@ const REGULATION_PERIODS = 3;
             }
             <span class="periods-cell total" role="cell">{{ homeScore() }}</span>
           </div>
+          <div class="periods-row" role="row">
+            <span class="periods-lead" role="rowheader">{{ awayName() }}</span>
+            @for (value of awayPeriods(); track $index) {
+              <span class="periods-cell" role="cell">{{ value }}</span>
+            }
+            <span class="periods-cell total" role="cell">{{ awayScore() }}</span>
+          </div>
         </div>
+        @if (periodsUnavailable()) {
+          <p class="periods-unavailable">{{ 'GAMECARD.PERIODS_UNAVAILABLE' | translate }}</p>
+        }
       </div>
 
-      @if (moments().length) {
-        <section class="game-timeline" aria-label="Moments clés">
-          <h3>{{ 'GAMECARD.MOMENTS' | translate }}</h3>
-          <ol class="timeline-list">
-            @for (moment of moments(); track $index) {
-              <li class="timeline-item" [class.goal-item]="moment.kind === 'goal'" [class.penalty-item]="moment.kind === 'penalty'">
-                <span class="moment-icon" [attr.data-kind]="moment.kind" aria-hidden="true">
-                  @if (moment.kind === 'goal') {
-                    <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg>
-                  } @else {
-                    <svg viewBox="0 0 24 24" fill="none"><rect x="5" y="4" width="14" height="16" rx="3" stroke="currentColor" stroke-width="1.6"/><text x="12" y="16.4" text-anchor="middle" font-size="8" font-weight="700" fill="currentColor">{{ penaltyShortLabel(moment) }}</text></svg>
-                  }
-                </span>
-                <span class="moment-time">{{ momentPeriodLabel(moment) }} {{ moment.time }}</span>
-                <span class="moment-body">
-                  @if (moment.kind === 'goal' && moment.goal) {
-                    <span class="moment-team">{{ teamNameOf(moment.teamId) }}</span>
-                    <span class="moment-desc">{{ 'GAMECARD.GOAL_BY' | translate }} {{ participantLabel(moment.goal.scorer) }}</span>
-                    @if (moment.goal.assists?.length) {
-                      <span class="moment-sub">{{ 'GAMECARD.ASSISTED_BY' | translate }} {{ assistLabel(moment.goal.assists!) }}</span>
-                    }
-                    @if (momentTags(moment).length) {
-                      <span class="moment-tags">
-                        @for (tag of momentTags(moment); track tag.label) {
-                          <em class="tag" [attr.title]="tag.detail">{{ tag.label }}</em>
+      @if (periodSections().length) {
+        <section class="game-timeline" [attr.aria-label]="'GAMECARD.CHRONOLOGICAL_SUMMARY' | translate">
+          <h3>{{ 'GAMECARD.CHRONOLOGICAL_SUMMARY' | translate }}</h3>
+          @for (section of periodSections(); track section.period) {
+            <section class="period-timeline" [attr.aria-label]="periodTitle(section.period)">
+              <h4>{{ periodTitle(section.period) }}</h4>
+              <ol class="timeline-list">
+                @for (moment of section.moments; track $index) {
+                  <li class="timeline-item" [class.goal-item]="moment.kind === 'goal'" [class.penalty-item]="moment.kind === 'penalty'">
+                    <span class="moment-icon" [attr.data-kind]="moment.kind" aria-hidden="true">
+                      @if (moment.kind === 'goal') {
+                        <svg viewBox="0 0 24 24" fill="none">
+                          <ellipse cx="12" cy="7.5" rx="8" ry="3.5" fill="currentColor"/>
+                          <path d="M4 7.5v8c0 1.95 3.58 3.5 8 3.5s8-1.55 8-3.5v-8" fill="currentColor"/>
+                          <ellipse cx="12" cy="15.5" rx="8" ry="3.5" fill="currentColor"/>
+                          <path d="M6.5 7.5c1.25 1 3.25 1.5 5.5 1.5" stroke="white" stroke-opacity=".7" stroke-width="1.2" stroke-linecap="round"/>
+                        </svg>
+                      } @else {
+                        <svg viewBox="0 0 24 24" fill="none"><rect x="5" y="4" width="14" height="16" rx="3" stroke="currentColor" stroke-width="1.6"/><text x="12" y="16.4" text-anchor="middle" font-size="8" font-weight="700" fill="currentColor">{{ penaltyShortLabel(moment) }}</text></svg>
+                      }
+                    </span>
+                    <span class="moment-time">{{ moment.time }}</span>
+                    <span class="moment-body">
+                      <span class="moment-kind">{{ (moment.kind === 'goal' ? 'GAMECARD.GOAL' : 'GAMECARD.PENALTY') | translate }}</span>
+                      <span class="moment-team">{{ teamNameOf(moment.teamId) }}:</span>
+                      @if (moment.kind === 'goal' && moment.goal) {
+                        <span class="moment-desc">
+                          {{ participantLabel(moment.goal.scorer) }}
+                          @if (moment.goal.assists.length) {
+                            , {{ 'GAMECARD.ASSISTED_BY' | translate }} {{ assistLabel(moment.goal.assists) }}
+                          }
+                        </span>
+                        @if (momentTags(moment).length) {
+                          <span class="moment-tags">
+                            @for (tag of momentTags(moment); track tag.label) {
+                              <em class="tag" [attr.title]="tag.detail">{{ tag.label }}</em>
+                            }
+                          </span>
                         }
-                      </span>
-                    }
-                  } @else if (moment.kind === 'penalty' && moment.penalty) {
-                    <span class="moment-team">{{ teamNameOf(moment.teamId) }}</span>
-                    <span class="moment-desc">{{ penaltySubject(moment.penalty) }} {{ penaltySubject(moment.penalty) ? ('GAMECARD.PENALTY_FOR' | translate) : ('GAMECARD.BENCH_PENALTY_FOR' | translate) }} {{ moment.penalty.infraction }}</span>
-                    @if (moment.penalty.duration) {
-                      <span class="moment-sub">{{ moment.penalty.duration }}</span>
-                    }
-                  }
-                </span>
-              </li>
-            }
-          </ol>
+                      } @else if (moment.kind === 'penalty' && moment.penalty) {
+                        <span class="moment-desc">
+                          @if (penaltySubject(moment.penalty)) {
+                            {{ participantLabel(moment.penalty.player) }} {{ 'GAMECARD.INFRACTION_FOR' | translate }}
+                          } @else {
+                            {{ 'GAMECARD.BENCH_PENALTY_FOR' | translate }}
+                          }
+                          {{ moment.penalty.infraction }}
+                        </span>
+                        @if (moment.penalty.duration) {
+                          <span class="moment-sub">{{ moment.penalty.duration }}</span>
+                        }
+                      }
+                    </span>
+                  </li>
+                }
+              </ol>
+            </section>
+          }
         </section>
       }
     </article>
+    }
   `,
 })
 export class GameCardComponent {
   private readonly translate = inject(TranslateService);
+  private readonly api = inject(ApiService);
+  private readonly retryCount = signal(0);
 
   /** Tool-call arguments can be partial while the agent is streaming them. */
   readonly toolCall = input.required<AngularToolCall<GameDetailArgs>>();
 
-  readonly detail = computed<Partial<GameDetailArgs>>(() => this.toolCall().args);
+  private readonly gameId = computed(() => {
+    const call = this.toolCall();
+    return call.status === 'in-progress' ? undefined : call.args.gameId;
+  });
+  readonly gameDetail = signal<GameDetailResponse | null>(null);
+  readonly loading = signal(true);
+  readonly error = signal<string | null>(null);
+  readonly detail = computed<Partial<GameDetailResponse>>(() => this.gameDetail() ?? {});
   readonly participantLabel = participantLabel;
   readonly assistLabel = assistLabel;
   readonly penaltySubject = penaltySubject;
   readonly penaltyShortLabel = penaltyShortLabel;
-  readonly momentPeriodLabel = momentPeriodLabel;
 
   readonly homeName = computed(() => teamNameOf(this.detail().homeTeam, this.translate.instant('GAMECARD.HOME')));
   readonly awayName = computed(() => teamNameOf(this.detail().awayTeam, this.translate.instant('GAMECARD.AWAY')));
   readonly homeLogo = computed(() => logoOf(this.detail().homeTeam));
   readonly awayLogo = computed(() => logoOf(this.detail().awayTeam));
 
-  readonly homeScore = computed(() => this.statsOf(true)?.goalsFor ?? this.detail().homeScore ?? 0);
-  readonly awayScore = computed(() => this.statsOf(false)?.goalsFor ?? this.detail().awayScore ?? 0);
+  readonly homeScore = computed(() => this.statsOf(true)?.goalsFor ?? '—');
+  readonly awayScore = computed(() => this.statsOf(false)?.goalsFor ?? '—');
+
+  constructor() {
+    effect((onCleanup) => {
+      const gameId = this.gameId();
+      this.retryCount();
+      this.gameDetail.set(null);
+      this.error.set(null);
+      this.loading.set(true);
+      if (gameId === undefined && this.toolCall().status === 'in-progress') return;
+      if (!Number.isSafeInteger(gameId) || !gameId || gameId <= 0) {
+        console.error('Game detail renderer received an invalid game ID', gameId);
+        this.loading.set(false);
+        this.error.set('GAMECARD.INVALID_GAME_ID');
+        return;
+      }
+
+      const subscription = this.api.getGameDetail(gameId).subscribe({
+        next: (response) => {
+          const parsed = gameDetailResponseSchema.safeParse(response);
+          if (!parsed.success || parsed.data.id !== gameId) {
+            console.error('Invalid game detail response', parsed.success ? 'Game ID mismatch' : parsed.error);
+            this.error.set('GAMECARD.INVALID_RESPONSE');
+          } else {
+            this.gameDetail.set(parsed.data);
+          }
+          this.loading.set(false);
+        },
+        error: (error: unknown) => {
+          console.error('Could not load game detail', error);
+          this.loading.set(false);
+          this.error.set(error instanceof HttpErrorResponse && error.status === 404
+            ? 'GAMECARD.NOT_FOUND'
+            : 'GAMECARD.ERROR');
+        },
+      });
+      onCleanup(() => subscription.unsubscribe());
+    });
+  }
+
+  retry(): void {
+    this.retryCount.update((count) => count + 1);
+  }
 
   readonly statusLabel = computed(() => {
     const args = this.detail();
@@ -244,6 +317,7 @@ export class GameCardComponent {
     let max = REGULATION_PERIODS;
     for (const goal of args.goals ?? []) max = Math.max(max, goal.period);
     for (const penalty of args.penalties ?? []) max = Math.max(max, penalty.period);
+    for (const periodGoals of args.periodGoals ?? []) max = Math.max(max, periodGoals.period);
     for (const stats of args.teamStats ?? []) {
       if (stats.winLossType === 'overtime' || stats.winLossType === 'shootout') max = Math.max(max, REGULATION_PERIODS + 1);
     }
@@ -260,34 +334,24 @@ export class GameCardComponent {
 
   readonly homePeriods = computed(() => this.periodsFor(true));
   readonly awayPeriods = computed(() => this.periodsFor(false));
+  readonly periodsUnavailable = computed(() =>
+    this.homePeriods().includes('—') || this.awayPeriods().includes('—'),
+  );
+
+  readonly periodSections = computed<PeriodSection[]>(() => {
+    const sections = new Map<number, GameMoment[]>();
+    for (const moment of this.moments()) {
+      const periodMoments = sections.get(moment.period) ?? [];
+      periodMoments.push(moment);
+      sections.set(moment.period, periodMoments);
+    }
+    return Array.from(sections, ([period, periodMoments]) => ({ period, moments: periodMoments }));
+  });
 
   /** Goals and penalties merged, ordered by period then clock. */
-  readonly moments = computed<KeyMoment[]>(() => {
-    const args = this.detail();
-    const list: KeyMoment[] = [];
-
-    for (const goal of args.goals ?? []) {
-      list.push({
-        kind: 'goal',
-        period: goal.period,
-        seconds: clockSeconds(goal.time),
-        time: goal.time ?? '',
-        teamId: goal.teamId,
-        goal,
-      });
-    }
-    for (const penalty of args.penalties ?? []) {
-      list.push({
-        kind: 'penalty',
-        period: penalty.period,
-        seconds: clockSeconds(penalty.time),
-        time: penalty.time ?? '',
-        teamId: penalty.teamId,
-        penalty,
-      });
-    }
-
-    return list.sort(byMomentOrder);
+  readonly moments = computed<GameMoment[]>(() => {
+    const detail = this.gameDetail();
+    return detail ? gameMoments(detail) : [];
   });
 
   private statsOf(home: boolean): GameTeamStats | undefined {
@@ -295,8 +359,7 @@ export class GameCardComponent {
     const stats = args.teamStats ?? [];
     if (!stats.length) return undefined;
     const wanted = home ? resolveTeamId(args.homeTeam) : resolveTeamId(args.awayTeam);
-    const match = stats.find((entry) => entry.teamId === wanted);
-    return match ?? (home ? stats[0] : stats[1]);
+    return stats.find((entry) => entry.teamId === wanted);
   }
 
   teamNameOf(teamId: number): string {
@@ -304,27 +367,21 @@ export class GameCardComponent {
     return resolveTeamName(teamId === resolveTeamId(args.homeTeam) ? args.homeTeam : args.awayTeam);
   }
 
-  private periodsFor(home: boolean): number[] {
-    const stats = this.statsOf(home);
-    const cells: number[] = [];
-    for (let period = 1; period <= this.periodCount(); period++) {
-      cells.push(this.goalsInPeriod(home, period));
-    }
-    const scored = cells.reduce((sum, value) => sum + value, 0);
-    if (stats && scored === 0 && stats.goalsFor > 0) {
-      // Box score without goal times: show the total in the last column only.
-      return this.fillUnknown(stats.goalsFor, cells.length);
-    }
-    return cells;
+  periodTitle(period: number): string {
+    if (period === 1) return this.translate.instant('GAMECARD.PERIOD_1');
+    if (period === 2) return this.translate.instant('GAMECARD.PERIOD_2');
+    if (period === 3) return this.translate.instant('GAMECARD.PERIOD_3');
+    if (period === REGULATION_PERIODS + 1) return this.translate.instant('GAMECARD.OVERTIME');
+    return this.translate.instant('GAMECARD.EXTRA_PERIOD', { period: period - REGULATION_PERIODS });
   }
 
-  private fillUnknown(total: number, length: number): number[] {
-    const cells = Array.from({ length }, () => 0);
-    cells[length - 1] = total;
-    return cells;
+  private periodsFor(home: boolean): (number | string)[] {
+    const detail = this.gameDetail();
+    if (!detail) return [];
+    return periodGoalsForTeam(detail, home ? detail.homeTeam.id : detail.awayTeam.id, this.periodCount());
   }
 
-  momentTags(moment: KeyMoment): MomentTag[] {
+  momentTags(moment: GameMoment): MomentTag[] {
     const goal = moment.goal;
     if (!goal) return [];
     const tags: MomentTag[] = [];
@@ -335,11 +392,6 @@ export class GameCardComponent {
     return tags;
   }
 
-  private goalsInPeriod(home: boolean, period: number): number {
-    const args = this.detail();
-    const teamId = home ? resolveTeamId(args.homeTeam) : resolveTeamId(args.awayTeam);
-    return (args.goals ?? []).filter((goal) => goal.teamId === teamId && goal.period === period).length;
-  }
 }
 
 /** Small badge attached to a goal describing special situations. */
@@ -367,18 +419,6 @@ function resolveTeamName(team: GameTeam | string | undefined): string {
   return teamNameOf(team, '');
 }
 
-/** "12:45" → 765 seconds, used to order moments on the game clock. */
-function clockSeconds(time?: string): number {
-  if (!time) return Number.MAX_SAFE_INTEGER;
-  const parts = time.split(':').map((part) => Number.parseInt(part, 10));
-  if (parts.some((part) => Number.isNaN(part))) return Number.MAX_SAFE_INTEGER;
-  return parts.length === 2 ? parts[0] * 60 + parts[1] : parts[parts.length - 1] ?? Number.MAX_SAFE_INTEGER;
-}
-
-function byMomentOrder(a: KeyMoment, b: KeyMoment): number {
-  return a.period - b.period || a.seconds - b.seconds;
-}
-
 /** Participant as "Nathan (11)" or "Georges". */
 function participantLabel(participant: GameParticipant | undefined): string {
   if (!participant?.name) return '';
@@ -394,12 +434,8 @@ function penaltySubject(penalty: GamePenalty): string {
 }
 
 /** Penalty durations rendered inside the icon, minutes when a number is available. */
-function penaltyShortLabel(moment: KeyMoment): string {
+function penaltyShortLabel(moment: GameMoment): string {
   const raw = moment.penalty?.duration ?? '';
   const minutes = raw.match(/(\d+)/);
   return minutes ? minutes[1] : 'P';
-}
-
-function momentPeriodLabel(moment: KeyMoment): string {
-  return moment.period <= REGULATION_PERIODS ? `P${moment.period}` : 'PROL';
 }

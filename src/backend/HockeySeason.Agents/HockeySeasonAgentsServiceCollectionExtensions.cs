@@ -9,7 +9,7 @@ namespace HockeySeason.Agents;
 public static class HockeySeasonAgentsServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the <c>hockey-season-data.agent</c> translation agent as a
+    /// Registers the <c>hockey-season-data.agent</c> Hockey Assistant as a
     /// keyed hosted agent so it can be exposed over AG-UI with
     /// <c>MapAGUIServer</c>. Instructions are loaded from the markdown file
     /// referenced by <see cref="HockeySeasonDataAgentOptions.InstructionsPath"/>.
@@ -44,7 +44,7 @@ public static class HockeySeasonAgentsServiceCollectionExtensions
         }
 
         var instructions = File.ReadAllText(instructionsPath);
-        var chatClient = TranslationChatClientFactory.Create(options);
+        var chatClient = HockeyAssistantChatClientFactory.Create(options);
         var tools = ResolveAgentTools(serviceProvider);
         return HockeySeasonDataAgentFactory.Create(chatClient, instructions, name, tools);
     }
@@ -53,7 +53,7 @@ public static class HockeySeasonAgentsServiceCollectionExtensions
     /// Resolves the MCP tools the agent may call. Registered as
     /// <see cref="AITool"/> functions from <see cref="HockeySeason.Mcp.LeagueTools"/>,
     /// resolved lazily so the agent still builds when the league API is not
-    /// registered (tests, translation-only deployments).
+    /// registered (for example, in tests).
     /// </summary>
     private static System.Collections.Generic.IList<Microsoft.Extensions.AI.AITool>? ResolveAgentTools(IServiceProvider serviceProvider)
     {

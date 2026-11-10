@@ -109,6 +109,14 @@ public sealed record LeagueGameGoal(
     bool IsPenaltyShot);
 
 /// <summary>
+/// Number of regulation or overtime goals scored by one team in one period.
+/// </summary>
+public sealed record LeagueGamePeriodGoals(
+    int TeamId,
+    int Period,
+    int Goals);
+
+/// <summary>
 /// A penalty, placed on the game clock.
 /// </summary>
 public sealed record LeagueGamePenalty(
@@ -136,5 +144,6 @@ public sealed record LeagueGameDetail(
     LeagueGameTeam HomeTeam,
     LeagueGameTeam AwayTeam,
     IReadOnlyList<LeagueGameTeamStats> TeamStats,
+    IReadOnlyList<LeagueGamePeriodGoals> PeriodGoals,
     IReadOnlyList<LeagueGameGoal> Goals,
     IReadOnlyList<LeagueGamePenalty> Penalties);

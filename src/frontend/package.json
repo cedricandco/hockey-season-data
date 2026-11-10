@@ -5,7 +5,7 @@
   "scripts": {
     "start": "ng serve",
     "build": "ng build",
-    "test": "echo \"No unit tests configured yet\""
+    "test": "node --experimental-strip-types --test src/app/chat/game-detail-data.test.mjs"
   },
   "engines": {
     "node": ">=22"

@@ -1,0 +1,7 @@
+@baseUrl = http://localhost:5000
+
+### Complete game detail
+GET {{baseUrl}}/api/games/942131
+
+### Invalid game ID
+GET {{baseUrl}}/api/games/0

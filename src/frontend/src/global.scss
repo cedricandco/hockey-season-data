@@ -83,6 +83,8 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 
 /* Chat page: transcript fills the space, composer pinned at the bottom. */
 app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.app-shell:has(app-chat) { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+.app-outlet:has(app-chat) { min-height: 0; overflow: hidden; }
 .chat-card {
   flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; overflow: hidden;
   border: 1px solid #e0e7ee; border-radius: 17px; background: #fff; box-shadow: 0 12px 35px #1836500d;
@@ -95,7 +97,7 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
 .agent-details p { margin: 0; color: #778698; font-size: .76rem; }
 .agent-badge { display: flex; align-items: center; gap: 7px; color: #496258; background: #f0f7f1; padding: 7px 10px; border-radius: 20px; font-size: .68rem; font-weight: 700; white-space: nowrap; }
 .agent-badge span { width: 7px; height: 7px; border-radius: 50%; background: var(--color-secondary); }
-.conversation { flex: 1 1 auto; min-height: 180px; overflow-y: auto; overscroll-behavior: contain; padding: 24px; background: #fbfcfe; }
+.conversation { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px; background: #fbfcfe; }
 .welcome-message, .message-row { display: flex; align-items: flex-start; gap: 11px; margin-bottom: 22px; }
 .message-avatar { width: 32px; height: 32px; border-radius: 10px; font-size: .95rem; }
 .message-author { display: block; margin: 1px 0 7px; color: #68798c; font-size: .72rem; font-weight: 700; }
@@ -218,9 +220,11 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
 }
 
 /* ===== Game detail card (show_game_detail tool renderer) ===== */
+.game-card-message { margin: 0; padding: 18px; color: #617185; }
+.game-card-message button { border: 0; background: none; color: var(--color-primary); font-weight: 700; text-decoration: underline; }
 .game-card {
   --gc-accent: var(--color-primary);
-  width: 100%; max-width: 560px; margin: 0; overflow: hidden;
+  width: 100%; max-width: 860px; margin: 0; overflow: hidden;
   border: 0; border-radius: 15px; background: #fff;
   box-shadow: 0 16px 38px #102f4c1c;
   font-size: .86rem;
@@ -283,10 +287,13 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
   font-weight: 800; color: #1d3548;
 }
 .periods-head .periods-cell.total { font-size: .64rem; font-weight: 800; letter-spacing: .08em; color: #8395a7; }
+.periods-unavailable { margin: 8px 0 0; color: #617185; font-size: .72rem; }
 
-/* Key moments (goals and penalties) on a vertical timeline. */
+/* Goals and penalties, grouped by period on a vertical timeline. */
 .game-timeline { padding: 14px 18px 16px; background: #fbfcfe; }
 .game-timeline h3 { margin: 0 0 12px; color: #617185; font-size: .68rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.period-timeline + .period-timeline { margin-top: 16px; padding-top: 13px; border-top: 1px solid #e8eef4; }
+.period-timeline h4 { margin: 0 0 5px; color: #263a50; font-size: .8rem; font-weight: 800; }
 .timeline-list { margin: 0; padding: 0; list-style: none; }
 .timeline-item {
   position: relative; display: flex; align-items: flex-start; gap: 10px;
@@ -310,9 +317,10 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
   flex: 0 0 auto; min-width: 74px; margin-top: 1px;
   color: #8395a7; font-size: .73rem; font-weight: 800; font-variant-numeric: tabular-nums;
 }
-.moment-body { flex: 1; min-width: 0; display: grid; row-gap: 1px; }
+.moment-body { flex: 1; min-width: 0; display: grid; grid-template-columns: max-content 1fr; column-gap: 5px; row-gap: 1px; }
+.moment-kind { color: #617185; font-size: .72rem; font-weight: 800; }
 .moment-team { color: #17283e; font-size: .78rem; font-weight: 800; }
-.moment-desc { color: #405267; font-size: .82rem; line-height: 1.45; overflow-wrap: anywhere; }
+.moment-desc { grid-column: 1 / -1; color: #405267; font-size: .82rem; line-height: 1.45; overflow-wrap: anywhere; }
 .moment-sub { color: #778698; font-size: .76rem; line-height: 1.4; overflow-wrap: anywhere; }
 .moment-tags { display: flex; gap: 5px; }
 .tag {
