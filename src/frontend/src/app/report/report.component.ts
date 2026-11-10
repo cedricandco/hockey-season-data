@@ -129,13 +129,13 @@ const DIVISION_NAMES: Record<number, string> = {
                 } @else if (trackedSuspensions(division, result.teamIds); as suspensions) {
                   @if (suspensions.length) {
                     <div class="suspension-list">@for (suspension of suspensions; track suspension.id) {
-                    <div class="suspension-row">
-                      <span class="suspension-icon" aria-hidden="true">!</span>
-                      <div class="suspension-person"><strong>{{ suspension.participant?.fullName ?? ('REPORT.OFFICIAL' | translate) }} @if (suspension.participant) { <span>#{{ suspension.participant.number }}</span> }</strong><small>{{ suspension.team.name }}</small></div>
-                      <div class="suspension-meta"><strong>{{ suspension.code }}</strong><small>{{ suspension.status }} · {{ suspension.purgedGames?.length ?? 0 }}/{{ suspension.requiredGames }}</small></div>
-                    </div>
-                  }</div>
-                } @else { <p class="empty">{{ 'REPORT.NO_SUSPENSIONS' | translate }}</p> }
+                      <div class="suspension-row">
+                        <span class="suspension-icon" aria-hidden="true">!</span>
+                        <div class="suspension-person"><strong>{{ suspension.participant?.fullName ?? ('REPORT.OFFICIAL' | translate) }} @if (suspension.participant) { <span>#{{ suspension.participant.number }}</span> }</strong><small>{{ suspension.team.name }}</small></div>
+                        <div class="suspension-meta"><strong>{{ suspension.code }}</strong><small>{{ suspension.status }} · {{ suspension.purgedGames?.length ?? 0 }}/{{ suspension.requiredGames }}</small></div>
+                      </div>
+                    }</div>
+                  } @else { <p class="empty">{{ 'REPORT.NO_SUSPENSIONS' | translate }}</p> }
                 }
               </section>
             </div>
