@@ -28,11 +28,13 @@ public sealed class AuthEndpointsTests : IAsyncLifetime
         await using var app = CreateApp();
         var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
 
-        var health = await client.GetAsync("/api/health");
         var report = await client.GetAsync("/api/weekly-report?startDate=2026-11-09&endDate=2026-11-02&divisionId=194899&teamId=182497");
 
-        health.EnsureSuccessStatusCode();
-        Assert.Equal(HttpStatusCode.BadRequest, report.StatusCode);
+        // The business endpoints are protected: an unauthenticated request
+        // reaches the endpoint only in the sense that it gets challenged with
+        // 401 before any business logic runs; a bad query would have returned
+        // 400 from validation, so 401 proves the policy applies.
+        Assert.Equal(HttpStatusCode.Unauthorized, report.StatusCode);
     }
 
     [Fact]
@@ -68,9 +70,6 @@ public sealed class AuthEndpointsTests : IAsyncLifetime
     [Fact]
     public async Task ProtectedEndpoint_WithValidIdToken_Returns200()
     {
-        // The JwtBearer middleware challenges with 401 JSON for missing
-        // tokens; request pipelines that authenticate (Functions host) are
-        // covered by FunctionsTests.
         await using var app = CreateApp();
         var client = await CreateClientWithTokenAsync(app, sub: "user-a");
 
@@ -80,16 +79,28 @@ public sealed class AuthEndpointsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ApiEndpoints_DoNotChallengeAnonymousCallers()
+    public async Task BusinessEndpoint_WithoutToken_Returns401Json()
     {
-        // Business endpoints are anonymous by design (see README): the JwtBearer
-        // challenge only fires for pipelines that require authentication.
         await using var app = CreateApp();
         var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
 
         var response = await client.GetAsync("/api/health");
 
-        response.EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("invalid_token", body);
+    }
+
+    [Fact]
+    public async Task BusinessEndpoint_RejectsWrongAudience()
+    {
+        await using var app = CreateApp();
+        var client = await CreateClientWithTokenAsync(app, sub: "user-a", audience: "https://other-audience.test");
+
+        var response = await client.GetAsync("/api/health");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]

@@ -21,19 +21,34 @@ namespace HockeySeason.Tests;
 public sealed class FunctionsTests
 {
     [Fact]
-    public async Task WeeklyReport_ValidatesAndAllowsAnonymous()
+    public async Task WeeklyReport_ValidatesAndAllowsAuthenticatedCallers()
     {
+        await using var identityProvider = new OidcTestServer();
         var service = new TestWeeklyReportService();
         var function = new WeeklyReportFunction(service);
         var request = new DefaultHttpContext().Request;
         request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&divisionId=194901&teamId=182497");
 
-        var result = Assert.IsType<OkObjectResult>(await function.Run(request, CreateAnonymousContext(), CancellationToken.None));
+        var bearerContext = CreateBearerRequestContext(request, identityProvider);
+        var result = Assert.IsType<OkObjectResult>(await function.Run(request, bearerContext, CancellationToken.None));
         Assert.IsType<WeeklyReportResponse>(result.Value);
         Assert.Equal(new[] { 194899, 194901 }, service.Request!.DivisionIds);
 
         request.QueryString = new QueryString("?startDate=2026-11-09&endDate=2026-11-02&divisionId=194899&teamId=182497");
         Assert.IsType<BadRequestObjectResult>(await function.Run(request, CreateAuthenticatedContext(), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WeeklyReport_RejectsAnonymousCaller()
+    {
+        var function = new WeeklyReportFunction(new TestWeeklyReportService());
+        var request = new DefaultHttpContext().Request;
+        request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&teamId=182497");
+
+        var result = await function.Run(request, CreateAnonymousContext(), CancellationToken.None);
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status401Unauthorized, objectResult.StatusCode);
     }
 
     private sealed class TestWeeklyReportService : IWeeklyReportService
@@ -91,13 +106,15 @@ public sealed class FunctionsTests
     }
 
     [Fact]
-    public async Task Agent_AllowsAnonymousCaller()
+    public async Task Agent_RejectsAnonymousCaller()
     {
         var context = new DefaultHttpContext();
         context.Response.Body = new MemoryStream();
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(
             """{"threadId":"thread","runId":"run","messages":[{"id":"message","role":"user","content":"Bonjour"}]}"""));
-        Assert.IsNotType<UnauthorizedResult>(await CreateAgentFunction().Run(context.Request, CreateAnonymousContext(), CancellationToken.None));
+        var result = await CreateAgentFunction().Run(context.Request, CreateAnonymousContext(), CancellationToken.None);
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status401Unauthorized, objectResult.StatusCode);
     }
 
     [Fact]
@@ -162,6 +179,13 @@ public sealed class FunctionsTests
         return stub;
     }
 
+    private static FunctionContext CreateBearerRequestContext(HttpRequest request, OidcTestServer identityProvider)
+    {
+        var token = identityProvider.CreateToken();
+        request.Headers.Authorization = $"Bearer {token}";
+        return CreateAnonymousBearerContext((DefaultHttpContext)request.HttpContext, token, identityProvider);
+    }
+
     private static IServiceProvider ConfigureAuthServices(OidcTestServer identityProvider) =>
         new ServiceCollection()
             .Configure<HockeySeason.Auth.AuthOptions>(options =>
@@ -182,6 +206,31 @@ public sealed class FunctionsTests
             authenticationType: "Bearer");
         httpContext.User = new System.Security.Claims.ClaimsPrincipal(identity);
         return CreateContext(httpContext);
+    }
+
+    /// <summary>Exposed for sibling test classes sharing the Functions host stubs.</summary>
+    internal static FunctionContext CreateFunctionContextForRequest(HttpRequest request)
+    {
+        var httpContext = (DefaultHttpContext)request.HttpContext;
+        var identity = new System.Security.Claims.ClaimsIdentity(
+            [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "auth0|test-user")],
+            authenticationType: "Bearer");
+        httpContext.User = new System.Security.Claims.ClaimsPrincipal(identity);
+        return CreateContext(httpContext);
+    }
+
+    /// <summary>Stub exposed for sibling test classes; the auth check requires an HttpContext.</summary>
+    internal sealed class FunctionContextStubPublicForTests : FunctionContext
+    {
+        public override IServiceProvider InstanceServices { get; set; } = new ServiceCollection().BuildServiceProvider();
+        public override string InvocationId => "test-invocation";
+        public override string FunctionId => "test-function";
+        public override TraceContext TraceContext => new TraceContextStub();
+        public override BindingContext BindingContext => throw new NotImplementedException();
+        public override RetryContext RetryContext => throw new NotImplementedException();
+        public override FunctionDefinition FunctionDefinition => throw new NotImplementedException();
+        public override IDictionary<object, object> Items { get; set; } = new Dictionary<object, object>();
+        public override IInvocationFeatures Features => throw new NotImplementedException();
     }
 
     private static FunctionContext CreateAnonymousContext() => CreateContext(new DefaultHttpContext());
@@ -233,6 +282,15 @@ public sealed class FunctionsTests
     {
         var function = new HealthFunction(new HealthService(new FixedTimeProvider(DateTimeOffset.UtcNow)), new TestEnvironment());
         Assert.IsType<OkObjectResult>(function.Run(new DefaultHttpContext().Request, CreateAnonymousContext()));
+    }
+
+    [Fact]
+    public void WeeklyReportFunction_AuthorizationRequiresHttpContext()
+    {
+        // Guards the FunctionsAuthorization contract: without an HttpContext
+        // the check cannot pass (defense against accidental null traversal).
+        var context = new FunctionContextStubPublicForTests();
+        Assert.Throws<InvalidOperationException>(() => FunctionsAuthorization.IsAuthenticated(context));
     }
 
     private sealed class TestEnvironment : IHostEnvironment

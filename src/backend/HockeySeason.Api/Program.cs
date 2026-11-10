@@ -32,7 +32,10 @@ builder.Services.AddSingleton<IHealthService, HealthService>();
 builder.Services.AddLeagueApi();
 
 // JWT security backed by Auth0 (OIDC): RS256 access tokens validated
-// against the authority metadata (issuer/audience/JWKS discovery).
+// against the authority metadata (issuer/audience/JWKS discovery). The
+// fallback policy requires authentication on every endpoint unless it is
+// explicitly marked [AllowAnonymous] — /healthz and /readyz are the only
+// anonymous probes.
 builder.Services.AddHockeySeasonAuth(builder.Configuration);
 
 // LeagueTools must be registered explicitly: WithTools<LeagueTools>() exposes
@@ -71,8 +74,8 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 // Liveness and readiness probes (anonymous, no redirects).
-app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
-app.MapGet("/readyz", () => Results.Ok(new { status = "ready" }));
+app.MapGet("/healthz", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+app.MapGet("/readyz", () => Results.Ok(new { status = "ready" })).AllowAnonymous();
 
 // Health report consumed by the frontend "Ping API" button.
 app.MapGet("/api/health", (IHealthService healthService) =>

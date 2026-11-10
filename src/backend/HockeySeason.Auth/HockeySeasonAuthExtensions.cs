@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,6 +37,14 @@ public static class HockeySeasonAuthExtensions
         services
             .AddAuthorizationBuilder()
             .AddPolicy(AuthenticatedPolicy, policy => policy.RequireAuthenticatedUser());
+        // Endpoints are secured by default: the fallback policy applies to
+        // every endpoint without explicit authorization metadata, leaving
+        // only [AllowAnonymous] probes (health checks) open.
+        services.AddAuthorization(options =>
+        {
+            options.FallbackPolicy = options.GetPolicy(AuthenticatedPolicy)
+                ?? new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
+        });
 
         services
             .AddAuthentication(options =>

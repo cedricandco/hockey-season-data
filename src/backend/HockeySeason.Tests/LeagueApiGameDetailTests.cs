@@ -24,6 +24,8 @@ namespace HockeySeason.Tests;
 /// </summary>
 public sealed class LeagueApiGameDetailTests
 {
+    private readonly OidcTestServer _identityServerForTests = new();
+
     private const string ApiKey = "test-api-key";
 
     private const string GamePayload =
@@ -236,10 +238,11 @@ public sealed class LeagueApiGameDetailTests
         var handler = new RoutingHandler();
         var function = new GameDetailFunction(CreateService(handler));
         var request = new DefaultHttpContext().Request;
+        var authContext = FunctionsTests.CreateFunctionContextForRequest(request);
 
-        Assert.IsType<BadRequestObjectResult>(await function.Run(request, 0, CancellationToken.None));
+        Assert.IsType<BadRequestObjectResult>(await function.Run(request, authContext, 0, CancellationToken.None));
         Assert.Empty(handler.Requests);
-        var response = Assert.IsType<OkObjectResult>(await function.Run(request, 942131, CancellationToken.None));
+        var response = Assert.IsType<OkObjectResult>(await function.Run(request, authContext, 942131, CancellationToken.None));
         var detail = Assert.IsType<LeagueGameDetail>(response.Value);
         Assert.Equal(2, detail.Goals.Count);
         Assert.Equal("LOUIS-THOMAS DESMARCHAIS", detail.Goals[0].Scorer.Name);
@@ -254,14 +257,16 @@ public sealed class LeagueApiGameDetailTests
         await using var app = new WebApplicationFactory<HockeySeason.Api.Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
-            builder.UseSetting("Auth:Authority", "https://tests.hockey-season-data");
-            builder.UseSetting("Auth:Issuer", "https://tests.hockey-season-data");
-            builder.UseSetting("Auth:Audience", "hockey-season-api-tests");
+            builder.UseSetting("Auth:Authority", _identityServerForTests.Authority);
+            builder.UseSetting("Auth:Issuer", _identityServerForTests.Issuer);
+            builder.UseSetting("Auth:Audience", _identityServerForTests.Audience);
             builder.UseSetting("Auth:AllowHttpAuthority", "true");
             builder.UseSetting("LeagueApi:ApiKey", "test-league-key");
             builder.ConfigureServices(services => services.AddSingleton(CreateService(handler)));
         });
         var client = app.CreateClient();
+        var token = _identityServerForTests.CreateToken();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
 
         var invalid = await client.GetAsync("/api/games/0");
         Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);

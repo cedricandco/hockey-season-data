@@ -16,6 +16,8 @@ namespace HockeySeason.Tests;
 
 public sealed class TeamDetailTests
 {
+    private readonly OidcTestServer _identityServerForTests = new();
+
     [Fact]
     public async Task TeamDetail_AggregatesOnlyTeamEventsAndKeepsFullGames()
     {
@@ -60,9 +62,9 @@ public sealed class TeamDetailTests
         await using var app = new WebApplicationFactory<HockeySeason.Api.Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
-            builder.UseSetting("Auth:Authority", "https://tests.hockey-season-data");
-            builder.UseSetting("Auth:Issuer", "https://tests.hockey-season-data");
-            builder.UseSetting("Auth:Audience", "hockey-season-api-tests");
+            builder.UseSetting("Auth:Authority", _identityServerForTests.Authority);
+            builder.UseSetting("Auth:Issuer", _identityServerForTests.Issuer);
+            builder.UseSetting("Auth:Audience", _identityServerForTests.Audience);
             builder.UseSetting("Auth:AllowHttpAuthority", "true");
             builder.UseSetting("LeagueApi:ApiKey", "test");
             builder.ConfigureServices(services =>
@@ -72,6 +74,8 @@ public sealed class TeamDetailTests
             });
         });
         var client = app.CreateClient();
+        var token = _identityServerForTests.CreateToken();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/offices")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/offices/6193/leagues")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/leagues/100/teams")).StatusCode);
@@ -86,17 +90,25 @@ public sealed class TeamDetailTests
     }
 
     [Fact]
+    public void FunctionsAuthorization_RejectsContextWithoutHttpContext()
+    {
+        var context = new FunctionsTests.FunctionContextStubPublicForTests();
+        Assert.Throws<InvalidOperationException>(() => HockeySeason.Functions.FunctionsAuthorization.IsAuthenticated(context));
+    }
+
+    [Fact]
     public async Task Functions_ExposeSameDiscoveryAndTeamDetail()
     {
         var league = CreateLeague(new TeamHandler());
         var function = new TeamFunctions(league, new TeamDetailService(league), Options.Create(new LeagueApiOptions()));
         var request = new DefaultHttpContext().Request;
-        Assert.IsType<OkObjectResult>(function.Offices(request));
-        Assert.IsType<OkObjectResult>(await function.Leagues(request, 6193, CancellationToken.None));
-        Assert.IsType<OkObjectResult>(await function.LeagueTeams(request, 100, CancellationToken.None));
-        Assert.IsType<BadRequestObjectResult>(await function.TeamDetail(request, 100, 0, CancellationToken.None));
-        Assert.IsType<NotFoundResult>(await function.TeamDetail(request, 100, 999, CancellationToken.None));
-        var result = Assert.IsType<OkObjectResult>(await function.TeamDetail(request, 100, 1, CancellationToken.None));
+        var authContext = FunctionsTests.CreateFunctionContextForRequest(request);
+        Assert.IsType<OkObjectResult>(function.Offices(request, authContext));
+        Assert.IsType<OkObjectResult>(await function.Leagues(request, 6193, authContext, CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await function.LeagueTeams(request, 100, authContext, CancellationToken.None));
+        Assert.IsType<BadRequestObjectResult>(await function.TeamDetail(request, 100, 0, authContext, CancellationToken.None));
+        Assert.IsType<NotFoundResult>(await function.TeamDetail(request, 100, 999, authContext, CancellationToken.None));
+        var result = Assert.IsType<OkObjectResult>(await function.TeamDetail(request, 100, 1, authContext, CancellationToken.None));
         Assert.Equal(3, Assert.IsType<TeamDetailResponse>(result.Value).TotalPoints);
     }
 
