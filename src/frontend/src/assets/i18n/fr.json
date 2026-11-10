@@ -9,8 +9,8 @@
   },
   "TEAM": {
     "TITLE": "Détail d’une équipe",
-    "SUBTITLE": "Choisissez un office, une ligue et une équipe.",
-    "OFFICE": "Office", "LEAGUE": "Ligue", "TEAM": "Équipe", "SELECT": "Sélectionner",
+    "SUBTITLE": "Choisissez une association, une ligue et une équipe.",
+    "OFFICE": "Association", "OPEN_PAGE": "Voir la page de l’équipe", "LEAGUE": "Ligue", "TEAM": "Équipe", "SELECT": "Sélectionner",
     "LOADING": "Chargement des données…", "ERROR": "Impossible de charger les données de l’équipe.",
     "RETRY": "Réessayer", "RANK": "Rang", "POINTS": "Points", "GOALS": "Buts",
     "ASSISTS": "Passes", "POWERPLAY": "Buts en supériorité", "SHORTHANDED": "Buts en infériorité",

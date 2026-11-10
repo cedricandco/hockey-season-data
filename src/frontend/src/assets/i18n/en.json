@@ -8,8 +8,8 @@
     "CONFIG": "Settings"
   },
   "TEAM": {
-    "TITLE": "Team details", "SUBTITLE": "Choose an office, league and team.",
-    "OFFICE": "Office", "LEAGUE": "League", "TEAM": "Team", "SELECT": "Select",
+    "TITLE": "Team details",     "SUBTITLE": "Choose an association, league and team.",
+        "OFFICE": "Association", "OPEN_PAGE": "View team page", "LEAGUE": "League", "TEAM": "Team", "SELECT": "Select",
     "LOADING": "Loading data…", "ERROR": "Unable to load team data.",
     "RETRY": "Retry", "RANK": "Rank", "POINTS": "Points", "GOALS": "Goals",
     "ASSISTS": "Assists", "POWERPLAY": "Power-play goals", "SHORTHANDED": "Shorthanded goals",
