@@ -1,11 +1,12 @@
-import { Component, computed, inject, signal } from '@angular/core';
-import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { AuthService, LoginOutcome } from './auth.service';
+import { Component, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { TranslatePipe } from '@ngx-translate/core';
+import { AuthService as Auth0AuthService } from '@auth0/auth0-angular';
 
 /**
- * Login gate: collects the 6-digit access code (one input per digit style is
- * unnecessary here — a single numeric field keeps keyboard and paste flows
- * working) and exchanges it for the OIDC-style JWT at /api/auth/login.
+ * Login gate: hands the visitor over to Auth0 Universal Login (email +
+ * password, signup included) and lands back on `window.location.origin` via
+ * the OIDC Authorization Code + PKCE flow handled by the SDK.
  */
 @Component({
   selector: 'app-login',
@@ -23,28 +24,11 @@ import { AuthService, LoginOutcome } from './auth.service';
         <h1 id="login-title">{{ 'LOGIN.TITLE' | translate }}</h1>
         <p class="login-subtitle">{{ 'LOGIN.SUBTITLE' | translate }}</p>
 
-        <label class="login-label" for="access-code">{{ 'LOGIN.CODE_LABEL' | translate }}</label>
-        <input
-          id="access-code"
-          class="login-input"
-          type="text"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          maxlength="6"
-          [value]="code()"
-          (input)="onInput($event)"
-          [placeholder]="'LOGIN.PLACEHOLDER' | translate"
-          [attr.aria-invalid]="outcome() === 'invalid'"
-          autofocus />
-        @if (outcome() === 'invalid') {
-          <p class="login-error" role="alert">{{ 'LOGIN.INVALID' | translate }}</p>
-        } @else if (outcome() === 'throttled') {
-          <p class="login-error" role="alert">{{ 'LOGIN.THROTTLED' | translate }}</p>
-        } @else if (outcome() === 'network') {
+        @if (error()) {
           <p class="login-error" role="alert">{{ 'LOGIN.NETWORK' | translate }}</p>
         }
 
-        <button class="login-submit" type="submit" [disabled]="!valid() || busy()">
+        <button class="login-submit" type="submit" [disabled]="busy()">
           @if (busy()) {
             <span aria-hidden="true">⌛</span> {{ 'LOGIN.BUSY' | translate }}
           } @else {
@@ -56,27 +40,13 @@ import { AuthService, LoginOutcome } from './auth.service';
   `,
 })
 export class LoginComponent {
-  private readonly auth = inject(AuthService);
-  private readonly translate = inject(TranslateService);
+  private readonly auth = inject(Auth0AuthService);
 
-  readonly code = signal('');
-  readonly busy = signal(false);
-  readonly outcome = this.auth.outcome;
-
-  readonly valid = computed(() => /^\d{6}$/.test(this.code()));
-
-  onInput(event: Event): void {
-    const value = (event.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 6);
-    this.code.set(value);
-    if (this.outcome() !== 'idle') {
-      this.auth.outcome.set('idle');
-    }
-  }
+  readonly busy = toSignal(this.auth.isLoading$, { initialValue: true });
+  readonly error = toSignal(this.auth.error$, { initialValue: undefined });
 
   submit(event: Event): void {
     event.preventDefault();
-    if (!this.valid() || this.busy()) return;
-    this.busy.set(true);
-    void this.auth.login(this.code()).finally(() => this.busy.set(false));
+    this.auth.loginWithRedirect();
   }
 }

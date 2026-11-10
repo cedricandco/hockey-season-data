@@ -20,9 +20,9 @@ builder.ConfigureFunctionsWebApplication();
 
 if (builder.Environment.IsDevelopment())
 {
-    // Local development only: reuse the Api project's user secrets (PIN,
-    // signing key, Ollama key) so both hosts issue/validate identical tokens.
-    builder.Configuration.AddUserSecrets<LoginFunction>(optional: true);
+    // Local development only: reuse the Api project's user secrets (OIDC
+    // authority overrides, Ollama key) so both hosts share configuration.
+    builder.Configuration.AddUserSecrets<HealthFunction>(optional: true);
 }
 
 builder.Services.AddSingleton<ITimeProvider, UtcTimeProvider>();
@@ -36,11 +36,11 @@ builder.Services.AddHockeySeasonDataAgent(builder.Configuration);
 builder.Services.AddSingleton<AIAgent>(services =>
     HockeySeasonAgentsServiceCollectionExtensions.CreateAgent(services, HockeySeasonDataAgentFactory.DefaultName));
 
-// OIDC-style JWT security (same shared implementation as the minimal API):
-// login with the shared 6-digit access code issues an HS256 bearer token that
-// the Function endpoints validate. The startup filter inserts
-// UseAuthentication/UseAuthorization ahead of the Functions routing
-// middleware because the integration does not add them itself.
+// JWT security backed by Auth0 (OIDC), same shared implementation as the
+// minimal API: RS256 access tokens validated against the authority metadata.
+// The startup filter inserts UseAuthentication/UseAuthorization ahead of the
+// Functions routing middleware because the integration does not add them
+// itself.
 builder.Services.AddHockeySeasonAuth(builder.Configuration);
 builder.Services.AddTransient<IStartupFilter, UseAuthenticationStartupFilter>();
 

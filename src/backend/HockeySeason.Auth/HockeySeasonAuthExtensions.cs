@@ -1,8 +1,5 @@
-using System.Text;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -11,10 +8,11 @@ using Microsoft.IdentityModel.Tokens;
 namespace HockeySeason.Auth;
 
 /// <summary>
-/// Registers the OIDC-style JWT security layer: options binding/validation,
-/// HS256 token issuance, JwtBearer authentication and authorization policies.
-/// Every protected endpoint requires a Bearer token created by
-/// <c>POST /api/auth/login</c> with the shared 6-digit access code.
+/// JWT bearer security backed by an OIDC identity provider (Auth0): the API
+/// validates RS256 access tokens against the provider authority metadata —
+/// issuer, audience and signing keys come from JWKS discovery, no signing
+/// secret lives in this codebase. Token issuance and the login UI belong to
+/// the identity provider (Universal Login).
 /// </summary>
 public static class HockeySeasonAuthExtensions
 {
@@ -29,10 +27,7 @@ public static class HockeySeasonAuthExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        services.AddSingleton<ITokenService, TokenService>();
-        services.AddSingleton<IAuthService, AuthService>();
         services.AddSingleton<IJwtValidator, JwtValidator>();
-        services.AddSingleton<LoginRateGuard>();
 
         var authOptions = configuration
             .GetSection(AuthOptions.SectionName)
@@ -50,8 +45,11 @@ public static class HockeySeasonAuthExtensions
             })
             .AddJwtBearer(options =>
             {
+                options.Authority = authOptions.Authority;
+                options.RequireHttpsMetadata = !authOptions.AllowHttpAuthority;
+                options.MapInboundClaims = false;
                 options.TokenValidationParameters = CreateValidationParameters(authOptions);
-                // 401 responses instead of redirecting to an OIDC authority page.
+                // 401 JSON responses instead of redirecting to the authority page.
                 options.Events = new JwtBearerEvents
                 {
                     OnChallenge = async context =>
@@ -61,7 +59,7 @@ public static class HockeySeasonAuthExtensions
                         context.Response.ContentType = "application/json";
                         await context.Response.WriteAsync(
                             """{"error":"invalid_token","error_description":"Missing or invalid bearer token"}""",
-                            Encoding.UTF8);
+                            System.Text.Encoding.UTF8);
                     },
                 };
             });
@@ -70,18 +68,10 @@ public static class HockeySeasonAuthExtensions
     }
 
     /// <summary>
-    /// Wires the auth login endpoint. Call after
-    /// <see cref="AddHockeySeasonAuth"/>; brute-force limiting is handled
-    /// inside the endpoint so it works identically in the minimal-API host
-    /// and Azure Functions.
+    /// Validation parameters keyed to the provider configuration: issuer and
+    /// audience must match, signing keys come from JWKS discovery (RS256
+    /// only, asymmetric — no shared secret is configured here).
     /// </summary>
-    public static IEndpointConventionBuilder MapHockeySeasonLogin(
-        this IEndpointRouteBuilder endpoints,
-        LoginRateGuard rateGuard)
-    {
-        return endpoints.MapLoginEndpoint(rateGuard);
-    }
-
     internal static TokenValidationParameters CreateValidationParameters(AuthOptions options) => new()
     {
         ValidateIssuer = true,
@@ -89,12 +79,11 @@ public static class HockeySeasonAuthExtensions
         ValidateAudience = true,
         ValidAudience = options.Audience,
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.SigningKey)),
+        RequireSignedTokens = true,
         ValidateLifetime = true,
         RequireExpirationTime = true,
-        RequireSignedTokens = true,
         ClockSkew = TimeSpan.FromMinutes(1),
-        ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+        ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
         ValidTypes = ["JWT"],
     };
 }

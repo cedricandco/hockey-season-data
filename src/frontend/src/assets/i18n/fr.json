@@ -98,13 +98,12 @@
   "LOGOUT": { "BUTTON": "Se déconnecter" },
   "LOGIN": {
     "TITLE": "Accès réservé",
-    "SUBTITLE": "Entrez votre code d'accès à 6 chiffres pour continuer.",
-    "CODE_LABEL": "Code d'accès",
-    "PLACEHOLDER": "••••••",
-    "INVALID": "Code incorrect. Réessayez.",
+    "SUBTITLE": "Connectez-vous avec votre courriel et votre mot de passe pour continuer.",
+    "PLACEHOLDER": "",
+    "INVALID": "Connexion refusée. Réessayez.",
     "THROTTLED": "Trop de tentatives. Patientez une minute avant de réessayer.",
-    "NETWORK": "Impossible de joindre le serveur. Vérifiez votre connexion.",
-    "BUSY": "Vérification…",
+    "NETWORK": "Impossible de joindre le service de connexion. Vérifiez votre connexion.",
+    "BUSY": "Redirection vers la page de connexion…",
     "ACTION": "Se connecter"
   },
   "GAMECARD": {

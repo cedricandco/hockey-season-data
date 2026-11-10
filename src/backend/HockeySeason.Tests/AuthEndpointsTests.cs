@@ -1,110 +1,26 @@
-using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Json;
-using System.Security.Claims;
-using System.Text;
 using HockeySeason.Api;
 using HockeySeason.Auth;
 using HockeySeason.LeagueApi;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.IdentityModel.Tokens;
 using Xunit;
 
 namespace HockeySeason.Tests;
 
 /// <summary>
-/// End-to-end coverage of the OIDC-style JWT security layer using the
-/// composition root of HockeySeason.Api with an in-memory test configuration.
+/// End-to-end coverage of the Auth0-backed JWT security layer using the
+/// composition root of HockeySeason.Api with an in-memory OIDC provider.
 /// </summary>
-public sealed class AuthEndpointsTests
+public sealed class AuthEndpointsTests : IAsyncLifetime
 {
-    private const string PinCode = "654321";
-    private const string SigningKey = "test-signing-key-that-is-long-enough-1234567890";
-    private const string Issuer = "https://tests.hockey-season-data";
-    private const string Audience = "hockey-season-api-tests";
+    private readonly OidcTestServer _identityProvider = new();
 
-    [Fact]
-    public async Task Login_WithWrongCode_Returns401()
-    {
-        await using var app = CreateApp();
-        var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
+    public Task InitializeAsync() => Task.CompletedTask;
 
-        var response = await client.PostAsJsonAsync("/api/auth/login", new { code = "111111" });
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Login_WithShortCode_Returns401()
-    {
-        await using var app = CreateApp();
-        var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
-
-        var response = await client.PostAsJsonAsync("/api/auth/login", new { code = "12" });
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Login_WithCorrectCode_ReturnsValidBearerTokenWithExpectedClaims()
-    {
-        await using var app = CreateApp();
-        var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
-
-        var response = await client.PostAsJsonAsync("/api/auth/login", new { code = PinCode });
-
-        response.EnsureSuccessStatusCode();
-        var result = await response.Content.ReadFromJsonAsync<LoginResult>();
-        Assert.NotNull(result);
-        Assert.True(result!.Success);
-        Assert.Equal("Bearer", result.TokenType);
-        Assert.True(result.ExpiresInSeconds > 0);
-
-        var handler = new JwtSecurityTokenHandler();
-        Assert.True(handler.CanReadToken(result.AccessToken));
-        var token = handler.ReadJwtToken(result.AccessToken);
-        Assert.Equal(Issuer, token.Issuer);
-        Assert.Contains(Audience, token.Audiences);
-        Assert.Contains(token.Claims, c => c.Type == JwtRegisteredClaimNames.Sub && c.Value == "pin-user");
-        Assert.Contains(token.Claims, c => c.Type == "amr" && c.Value == AuthConstants.CodeAuthenticationMethod);
-        Assert.True(token.ValidTo > DateTime.UtcNow.AddMinutes(50));
-    }
-
-    [Fact]
-    public async Task Login_BlocksMoreThanFiveAttemptsPerMinutePerIp()
-    {
-        await using var app = CreateApp();
-        var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
-
-        for (var attempt = 0; attempt < LoginRateGuard.AttemptLimit; attempt++)
-        {
-            var blocked = await client.PostAsJsonAsync("/api/auth/login", new { code = "000000" });
-            Assert.Equal(HttpStatusCode.Unauthorized, blocked.StatusCode);
-        }
-
-        var throttled = await client.PostAsJsonAsync("/api/auth/login", new { code = PinCode });
-        Assert.Equal(HttpStatusCode.TooManyRequests, throttled.StatusCode);
-        Assert.True(throttled.Headers.RetryAfter is not null);
-    }
-
-    [Fact]
-    public async Task Login_AuthenticatedCallerStillRequiresCorrectCode()
-    {
-        await using var app = CreateApp();
-        var client = await CreateAuthenticatedClientAsync(app);
-
-        var withWrongCode = await client.PostAsJsonAsync("/api/auth/login", new { code = "000000" });
-        Assert.Equal(HttpStatusCode.Unauthorized, withWrongCode.StatusCode);
-
-        // A valid token alone never grants a fresh token: the correct code is
-        // still mandatory (standard OIDC behavior for token-issuing endpoints).
-        var withOldToken = await client.PostAsJsonAsync("/api/auth/login", new { code = PinCode });
-        withOldToken.EnsureSuccessStatusCode();
-    }
+    public async Task DisposeAsync() => await _identityProvider.DisposeAsync();
 
     [Fact]
     public async Task ApiEndpoints_AreAnonymous()
@@ -125,7 +41,7 @@ public sealed class AuthEndpointsTests
         var service = new FakeWeeklyReportService();
         await using var app = CreateApp().WithWebHostBuilder(builder =>
             builder.ConfigureServices(services => services.AddSingleton<IWeeklyReportService>(service)));
-        var client = await CreateAuthenticatedClientAsync(app);
+        var client = await CreateClientWithTokenAsync(app, sub: "user-a");
 
         var invalid = await client.GetAsync("/api/weekly-report?startDate=2026-11-09&endDate=2026-11-02&divisionId=194899&teamId=182497");
         Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
@@ -150,14 +66,98 @@ public sealed class AuthEndpointsTests
     }
 
     [Fact]
-    public async Task ProtectedEndpoint_WithToken_Returns200()
+    public async Task ProtectedEndpoint_WithValidIdToken_Returns200()
     {
+        // The JwtBearer middleware challenges with 401 JSON for missing
+        // tokens; request pipelines that authenticate (Functions host) are
+        // covered by FunctionsTests.
         await using var app = CreateApp();
-        var client = await CreateAuthenticatedClientAsync(app);
+        var client = await CreateClientWithTokenAsync(app, sub: "user-a");
 
         var response = await client.GetAsync("/api/health");
 
         response.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task ApiEndpoints_DoNotChallengeAnonymousCallers()
+    {
+        // Business endpoints are anonymous by design (see README): the JwtBearer
+        // challenge only fires for pipelines that require authentication.
+        await using var app = CreateApp();
+        var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
+
+        var response = await client.GetAsync("/api/health");
+
+        response.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public void JwtValidator_AcceptsTokenForConfiguredAudience()
+    {
+        var options = Microsoft.Extensions.Options.Options.Create(new AuthOptions
+        {
+            Authority = _identityProvider.Authority,
+            Issuer = _identityProvider.Issuer,
+            Audience = _identityProvider.Audience,
+            AllowHttpAuthority = true,
+        });
+        var validator = new JwtValidator(options);
+
+        var token = _identityProvider.CreateToken(subject: "auth0|user-a");
+        Assert.True(validator.TryValidate(token, out var subject));
+        Assert.Equal("auth0|user-a", subject);
+    }
+
+    [Fact]
+    public void JwtValidator_RejectsTokenForWrongAudience()
+    {
+        var options = Microsoft.Extensions.Options.Options.Create(new AuthOptions
+        {
+            Authority = _identityProvider.Authority,
+            Issuer = _identityProvider.Issuer,
+            Audience = _identityProvider.Audience,
+            AllowHttpAuthority = true,
+        });
+        var validator = new JwtValidator(options);
+
+        var token = _identityProvider.CreateToken(audience: "https://other-audience.test");
+        Assert.False(validator.TryValidate(token, out _));
+    }
+
+    [Fact]
+    public void JwtValidator_RejectsExpiredToken()
+    {
+        var options = Microsoft.Extensions.Options.Options.Create(new AuthOptions
+        {
+            Authority = _identityProvider.Authority,
+            Issuer = _identityProvider.Issuer,
+            Audience = _identityProvider.Audience,
+            AllowHttpAuthority = true,
+        });
+        var validator = new JwtValidator(options);
+
+        var token = _identityProvider.CreateToken(
+            expires: DateTimeOffset.UtcNow.AddHours(-1),
+            notBefore: DateTime.UtcNow.AddHours(-2));
+        Assert.False(validator.TryValidate(token, out _));
+    }
+
+    [Fact]
+    public void JwtValidator_RejectsForgedSignature()
+    {
+        var options = Microsoft.Extensions.Options.Options.Create(new AuthOptions
+        {
+            Authority = _identityProvider.Authority,
+            Issuer = _identityProvider.Issuer,
+            Audience = _identityProvider.Audience,
+            AllowHttpAuthority = true,
+        });
+        var validator = new JwtValidator(options);
+
+        var otherProvider = new OidcTestServer();
+        var token = otherProvider.CreateToken();
+        Assert.False(validator.TryValidate(token, out _));
     }
 
     [Fact]
@@ -173,52 +173,35 @@ public sealed class AuthEndpointsTests
         readiness.EnsureSuccessStatusCode();
     }
 
-    private static WebApplicationFactory<HockeySeason.Api.Program> CreateApp() =>
-        new TestApiFactory();
+    private TestApiFactory CreateApp() => new(_identityProvider);
 
-    private static async Task<HttpClient> CreateAuthenticatedClientAsync(WebApplicationFactory<HockeySeason.Api.Program> app)
+    private async Task<HttpClient> CreateClientWithTokenAsync(
+        WebApplicationFactory<HockeySeason.Api.Program> app,
+        string sub,
+        string? audience = null)
     {
         var client = app.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
-        var response = await client.PostAsJsonAsync("/api/auth/login", new { code = PinCode });
-        response.EnsureSuccessStatusCode();
-        var result = await response.Content.ReadFromJsonAsync<LoginResult>();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", result!.AccessToken);
-        return client;
-    }
-
-    private static string CreateTestToken(
-        string? issuer = null,
-        string? audience = null,
-        string? signingKey = null,
-        int expiresInMinutes = 10)
-    {
-        var handler = new JwtSecurityTokenHandler();
-        var credentials = new SigningCredentials(
-            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey ?? SigningKey)),
-            SecurityAlgorithms.HmacSha256);
-        var now = DateTime.UtcNow;
-        var token = new JwtSecurityToken(
-            issuer: issuer ?? Issuer,
-            audience: audience ?? Audience,
-            claims: [new Claim(JwtRegisteredClaimNames.Sub, "pin-user")],
-            notBefore: now.AddMinutes(Math.Min(-1, expiresInMinutes) - 5),
-            expires: now.AddMinutes(expiresInMinutes),
-            signingCredentials: credentials);
-        return handler.WriteToken(token);
+        var token = _identityProvider.CreateToken(subject: sub, audience: audience);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
+        return await Task.FromResult(client);
     }
 
     private sealed class TestApiFactory : WebApplicationFactory<HockeySeason.Api.Program>
     {
+        private readonly OidcTestServer _identityProvider;
+
+        public TestApiFactory(OidcTestServer identityProvider)
+        {
+            _identityProvider = identityProvider;
+        }
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
-            // Remove user-secret / environment overrides loaded in Development so
-            // the fixed test credentials are the single source of truth.
-            builder.UseSetting("Auth:PinCode", PinCode);
-            builder.UseSetting("Auth:SigningKey", SigningKey);
-            builder.UseSetting("Auth:Issuer", Issuer);
-            builder.UseSetting("Auth:Audience", Audience);
-            builder.UseSetting("Auth:AccessTokenMinutes", "60");
+            builder.UseSetting("Auth:Authority", _identityProvider.Authority);
+            builder.UseSetting("Auth:Issuer", _identityProvider.Issuer);
+            builder.UseSetting("Auth:Audience", _identityProvider.Audience);
+            builder.UseSetting("Auth:AllowHttpAuthority", "true");
             builder.UseSetting("LeagueApi:ApiKey", "test-league-key");
         }
     }

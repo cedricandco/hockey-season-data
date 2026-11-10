@@ -1,21 +1,24 @@
 import { Component, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { AuthService as Auth0AuthService } from '@auth0/auth0-angular';
 import { LoginComponent } from './core/login.component';
-import { AuthService } from './core/auth.service';
 
 /**
- * Application root: shows a login gate until the user authenticates, then a
- * full-height shell with three tab pages (Chat / Weekly report / Settings).
- * Authentication state is reactive, so a 401 anywhere in the app
- * (token expired/revoked) flips back to the login screen automatically.
+ * Application root: shows a login gate until the visitor authenticates with
+ * Auth0 Universal Login, then the full-height shell with the tab pages
+ * (Chat / Team / Weekly report / Settings). Login state stays reactive via
+ * the SDK's observables converted to signals for zoneless change detection.
  */
 @Component({
   selector: 'app-root',
   standalone: true,
   imports: [RouterOutlet, RouterLink, RouterLinkActive, TranslatePipe, LoginComponent],
   template: `
-    @if (auth.isLoggedIn) {
+    @if (isLoading()) {
+      <!-- Universal Login redirect in progress -->
+    } @else if (isLoggedIn()) {
       <div class="app-shell">
         <header class="site-header">
           <div class="header-inner">
@@ -66,9 +69,11 @@ import { AuthService } from './core/auth.service';
 export class AppComponent {
   private readonly translate = inject(TranslateService);
   private readonly router = inject(Router);
-  readonly auth = inject(AuthService);
+  private readonly auth0 = inject(Auth0AuthService);
+  /** Reactive login state for the zoneless template (Auth0 observables). */
+  readonly isLoggedIn = toSignal(this.auth0.isAuthenticated$, { initialValue: false });
+  readonly isLoading = toSignal(this.auth0.isLoading$, { initialValue: true });
   readonly language = signal<'fr' | 'en'>('fr');
-
   toggleLanguage(): void {
     const next: 'fr' | 'en' = this.language() === 'fr' ? 'en' : 'fr';
     this.language.set(next);
@@ -77,7 +82,8 @@ export class AppComponent {
   }
 
   logout(): void {
-    this.auth.logout();
-    void this.router.navigate(['/chat']);
+    // Full Auth0 logout also clears the identity provider session; the
+    // router navigation is moot because the browser leaves the app.
+    void this.auth0.logout({ logoutParams: { returnTo: window.location.origin } });
   }
 }

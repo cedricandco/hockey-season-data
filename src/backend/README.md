@@ -47,55 +47,44 @@ See `HockeySeason.Api/weekly-report.http` for example requests.
 
 - `GET /healthz` — liveness: `{ "status": "ok" }`
 - `GET /readyz` — readiness: `{ "status": "ready" }`
-- `POST /api/auth/login` — exchanges the shared 6-digit access code for a signed
-  JWT: `{ "code": "…6 digits…" }` → `{ "success": true, "accessToken": "…", "expiresInSeconds": 3600, "tokenType": "Bearer" }`
-- `GET /api/health` — health report consumed by the frontend (Bearer token required)
-- `POST /mcp` — MCP Streamable HTTP endpoint protected by the Bearer token
-- `POST /api/agui/hockey-season-data.agent` — AG-UI league data agent (Bearer token required)
-
-Anonymous endpoints: `/healthz`, `/readyz` and `/api/auth/login` only.
+- `GET /api/health` — health report consumed by the frontend
+- `POST /mcp` — MCP Streamable HTTP endpoint
+- `POST /api/agui/hockey-season-data.agent` — AG-UI league data agent
 
 ## Authentication (HockeySeason.Auth)
 
-Until a real identity provider and user database exist, the backend implements
-an OIDC-style flow with a shared access code:
+The backend is an OAuth2 resource server backed by **Auth0**: the Angular SPA
+runs Authorization Code + PKCE against Auth0 Universal Login, then calls the
+API with the access token issued for the registered API audience.
 
-1. The client posts the 6-digit code to `POST /api/auth/login`.
-2. `AuthService` compares the code against the configured `Auth:PinCode`
-   (constant-time SHA-256 comparison) and `TokenService` mints an HS256 JWT
-   carrying `iss`, `sub`, `aud`, `iat`, `exp`, `jti` and an `amr=code` claim.
-3. All other endpoints require `Authorization: Bearer <jwt>` (JwtBearer
-   middleware validates issuer, audience, lifetime and signature; algorithms
-   are pinned to HS256 and the token type to `JWT`).
-4. The login endpoint is brute-force guarded: 5 attempts per minute per client
-   IP (`LoginRateGuard`), answered with `429` + `Retry-After` beyond that.
+1. The SPA acquires a token via `@auth0/auth0-angular` (`getAccessTokenSilently`
+   or the HTTP interceptor) with `audience: https://api.hockeyseason.dev`.
+2. Requests carry `Authorization: Bearer <token>` (JwtBearer middleware).
+3. The middleware validates issuer, audience, lifetime and signature; keys
+   come from Auth0's JWKS discovery (RS256 only) and no signing secret is
+   stored in this repository.
+4. `IJwtValidator` performs the same validation directly against the
+   authorization header for the Azure Functions host (same JWKS discovery).
 
 JWTs are rejected with `401 { "error": "invalid_token", … }` when missing,
-expired, forged or issued for another audience/issuer. An authenticated caller
-cannot mint additional tokens without providing the correct code again.
+expired, forged or issued for another audience/issuer.
 
 ### Configuration
 
 | Key | Meaning | Where |
 |---|---|---|
-| `Auth:PinCode` | Shared 6-digit access code | user secrets (`dotnet user-secrets set "Auth:PinCode" "202627"`) |
-| `Auth:SigningKey` | HS256 signing key (≥ 32 chars) | user secrets / environment variables |
-| `Auth:Issuer` | `iss` of issued tokens | `appsettings.json` (`https://hockey-season-data`) |
-| `Auth:Audience` | `aud` of issued tokens | `appsettings.json` (`hockey-season-api`) |
-| `Auth:AccessTokenMinutes` | Access-token lifetime (minutes) | `appsettings.json` (`60`) |
+| `Auth:Authority` | OIDC authority base URL, e.g. `https://dev-xyz.us.auth0.com/` | `appsettings.json` |
+| `Auth:Issuer` | Expected `iss` claim (defaults to the authority) | `appsettings.json` |
+| `Auth:Audience` | Registered API identifier (`aud`) | `appsettings.json` (`https://api.hockeyseason.dev`) |
+| `Auth:AllowHttpAuthority` | Dev-only escape hatch for http:// authorities (tests) | `appsettings.json` (default `false`) |
 
-Never commit `PinCode` or `SigningKey`; configure them with user secrets in
-development and environment variables / Key Vault in production. Rotating the
-signing key invalidates every previously issued token.
+No client secret is involved: the SPA is a public client and the API only
+verifies tokens. The Auth0 tenant owns user accounts (email + password),
+signup/password-reset flows and brute-force protection.
 
-When swapping to a real OIDC provider (Entra ID, Auth0, …), replace the login
-endpoint with the provider's authorization-code flow and point
-`TokenValidationParameters` at its JWKS — the JwtBearer wiring stays unchanged.
-
-The managed Azure Functions deployment exposes `/api/auth/login`, `/api/health`
-and the AG-UI endpoint (same JWT protection as the local API). It does not host
-`/mcp`, `/healthz`, or `/readyz`; these remain available from the local
-ASP.NET Core host.
+The managed Azure Functions deployment exposes `/api/health` and the AG-UI
+endpoint with the same token validation. It does not host `/mcp`, `/healthz`,
+or `/readyz`; these remain available from the local ASP.NET Core host.
 
 ## Run tests
 

@@ -1,6 +1,5 @@
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.IdentityModel.Tokens.Jwt;
 using HockeySeason.Agents;
 using HockeySeason.Application;
 using HockeySeason.Functions;
@@ -107,15 +106,15 @@ public sealed class FunctionsTests
         // Reproduces the Static Web Apps managed-host behavior: UseAuthentication
         // is not applied to the trigger invocation, HttpContext.User stays
         // anonymous, but the raw Authorization header carries a valid JWT.
-        const string signingKey = "test-signing-key-that-is-long-enough-1234567890";
-        var token = CreateToken(signingKey);
+        await using var identityProvider = new OidcTestServer();
+        var token = identityProvider.CreateToken();
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = $"Bearer {token}";
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(
             """{"threadId":"thread","runId":"run","messages":[{"id":"message","role":"user","content":"Bonjour"}]}"""));
         context.Response.Body = new MemoryStream();
 
-        var result = await CreateAgentFunction(ConfigureAuthServices(signingKey)).Run(context.Request, CreateAnonymousBearerContext(context, token), CancellationToken.None);
+        var result = await CreateAgentFunction(ConfigureAuthServices(identityProvider)).Run(context.Request, CreateAnonymousBearerContext(context, token, identityProvider), CancellationToken.None);
 
         Assert.IsType<EmptyResult>(result);
         context.Response.Body.Position = 0;
@@ -125,84 +124,61 @@ public sealed class FunctionsTests
     }
 
     [Fact]
-    public void AgentAuthorization_RejectsExpiredBearerHeader_WhenMiddlewareAuthenticationIsMissing()
+    public async Task AgentAuthorization_RejectsExpiredBearerHeader_WhenMiddlewareAuthenticationIsMissing()
     {
-        const string signingKey = "test-signing-key-that-is-long-enough-1234567890";
-        var token = CreateToken(signingKey, expires: DateTimeOffset.UtcNow.AddHours(-1));
+        await using var identityProvider = new OidcTestServer();
+        var token = identityProvider.CreateToken(expires: DateTimeOffset.UtcNow.AddHours(-1), notBefore: DateTime.UtcNow.AddHours(-2));
         var context = new DefaultHttpContext();
-        context.Request.Headers.Authorization = $"Bearer {token}";
 
-        Assert.False(FunctionsAuthorization.IsAuthenticated(CreateAnonymousBearerContext(context, token)));
+        Assert.False(FunctionsAuthorization.IsAuthenticated(CreateAnonymousBearerContext(context, token, identityProvider)));
     }
 
     [Fact]
-    public void AgentAuthorization_RejectsForgedSignatures()
-    {
-        var token = CreateToken("forged-signing-key-that-is-long-enough-9876543210");
+    public void AgentAuthorization_RejectsWrongAudience()    {
+        var identityProvider = new OidcTestServer();
+        var token = identityProvider.CreateToken(audience: "https://other-audience.test");
         var context = new DefaultHttpContext();
-        context.Request.Headers.Authorization = $"Bearer {token}";
 
-        Assert.False(FunctionsAuthorization.IsAuthenticated(CreateAnonymousBearerContext(context, token, signingKey: "test-signing-key-that-is-long-enough-1234567890")));
+        Assert.False(FunctionsAuthorization.IsAuthenticated(CreateAnonymousBearerContext(context, token, identityProvider)));
     }
 
     [Fact]
     public void AgentAuthorization_RejectsHeaderWithoutBearerScheme()
     {
+        var identityProvider = new OidcTestServer();
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = "Basic dXNlcjpwYXNz";
 
-        Assert.False(FunctionsAuthorization.IsAuthenticated(CreateAnonymousBearerContext(context, "dXNlcjpwYXNz")));
+        Assert.False(FunctionsAuthorization.IsAuthenticated(CreateAnonymousBearerContext(context, "dXNlcjpwYXNz", identityProvider)));
     }
 
     private static FunctionContext CreateAnonymousBearerContext(
         DefaultHttpContext httpContext,
         string token,
-        string signingKey = "test-signing-key-that-is-long-enough-1234567890")
+        OidcTestServer identityProvider)
     {
         var stub = (FunctionContextStub)CreateContext(httpContext);
-        stub.InstanceServices = ConfigureAuthServices(signingKey);
+        stub.InstanceServices = ConfigureAuthServices(identityProvider);
         return stub;
     }
 
-    private static IServiceProvider ConfigureAuthServices(string signingKey) =>
+    private static IServiceProvider ConfigureAuthServices(OidcTestServer identityProvider) =>
         new ServiceCollection()
             .Configure<HockeySeason.Auth.AuthOptions>(options =>
             {
-                options.Issuer = "https://tests.hockey-season-data";
-                options.Audience = "hockey-season-api-tests";
-                options.SigningKey = signingKey;
-                options.PinCode = "654321";
+                options.Authority = identityProvider.Authority;
+                options.Issuer = identityProvider.Issuer;
+                options.Audience = identityProvider.Audience;
+                options.AllowHttpAuthority = true;
             })
             .AddSingleton<HockeySeason.Auth.IJwtValidator, HockeySeason.Auth.JwtValidator>()
             .BuildServiceProvider();
-
-    private static string CreateToken(
-        string signingKey,
-        DateTimeOffset? expires = null,
-        string issuer = "https://tests.hockey-season-data",
-        string audience = "hockey-season-api-tests")
-    {
-        var handler = new JwtSecurityTokenHandler();
-        var credentials = new SigningCredentials(
-            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
-            SecurityAlgorithms.HmacSha256);
-        var now = DateTimeOffset.UtcNow;
-        var notBefore = expires is null ? now : expires.Value.AddHours(-5);
-        var jwt = new JwtSecurityToken(
-            issuer: issuer,
-            audience: audience,
-            claims: [new(JwtRegisteredClaimNames.Sub, "pin-user")],
-            notBefore: notBefore.UtcDateTime,
-            expires: (expires ?? now.AddMinutes(60)).UtcDateTime,
-            signingCredentials: credentials);
-        return handler.WriteToken(jwt);
-    }
 
     private static FunctionContext CreateAuthenticatedContext()
     {
         var httpContext = new DefaultHttpContext();
         var identity = new System.Security.Claims.ClaimsIdentity(
-            [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "pin-user")],
+            [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "auth0|test-user")],
             authenticationType: "Bearer");
         httpContext.User = new System.Security.Claims.ClaimsPrincipal(identity);
         return CreateContext(httpContext);

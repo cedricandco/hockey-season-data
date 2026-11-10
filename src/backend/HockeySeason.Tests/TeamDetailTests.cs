@@ -60,8 +60,10 @@ public sealed class TeamDetailTests
         await using var app = new WebApplicationFactory<HockeySeason.Api.Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
-            builder.UseSetting("Auth:PinCode", "654321");
-            builder.UseSetting("Auth:SigningKey", "test-signing-key-that-is-long-enough-1234567890");
+            builder.UseSetting("Auth:Authority", "https://tests.hockey-season-data");
+            builder.UseSetting("Auth:Issuer", "https://tests.hockey-season-data");
+            builder.UseSetting("Auth:Audience", "hockey-season-api-tests");
+            builder.UseSetting("Auth:AllowHttpAuthority", "true");
             builder.UseSetting("LeagueApi:ApiKey", "test");
             builder.ConfigureServices(services =>
             {

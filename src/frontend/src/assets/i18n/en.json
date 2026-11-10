@@ -97,13 +97,12 @@
   "LOGOUT": { "BUTTON": "Log out" },
   "LOGIN": {
     "TITLE": "Restricted access",
-    "SUBTITLE": "Enter your 6-digit access code to continue.",
-    "CODE_LABEL": "Access code",
-    "PLACEHOLDER": "••••••",
-    "INVALID": "Incorrect code. Please try again.",
+    "SUBTITLE": "Sign in with your email and password to continue.",
+    "PLACEHOLDER": "",
+    "INVALID": "Sign-in was refused. Please try again.",
     "THROTTLED": "Too many attempts. Please wait a minute before retrying.",
-    "NETWORK": "Unable to reach the server. Check your connection.",
-    "BUSY": "Checking…",
+    "NETWORK": "Unable to reach the sign-in service. Check your connection.",
+    "BUSY": "Redirecting to the sign-in page…",
     "ACTION": "Sign in"
   },
   "GAMECARD": {

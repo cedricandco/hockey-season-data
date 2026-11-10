@@ -31,8 +31,8 @@ builder.Services.AddSingleton<ITimeProvider, UtcTimeProvider>();
 builder.Services.AddSingleton<IHealthService, HealthService>();
 builder.Services.AddLeagueApi();
 
-// OIDC-style JWT security: login with the shared 6-digit access code from
-// configuration, HS256 tokens, JwtBearer validation and rate limiting.
+// JWT security backed by Auth0 (OIDC): RS256 access tokens validated
+// against the authority metadata (issuer/audience/JWKS discovery).
 builder.Services.AddHockeySeasonAuth(builder.Configuration);
 
 // LeagueTools must be registered explicitly: WithTools<LeagueTools>() exposes
@@ -73,9 +73,6 @@ app.UseAuthorization();
 // Liveness and readiness probes (anonymous, no redirects).
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/readyz", () => Results.Ok(new { status = "ready" }));
-
-// Login endpoint: exchanges the 6-digit access code for a signed JWT.
-app.MapHockeySeasonLogin(app.Services.GetRequiredService<LoginRateGuard>());
 
 // Health report consumed by the frontend "Ping API" button.
 app.MapGet("/api/health", (IHealthService healthService) =>
