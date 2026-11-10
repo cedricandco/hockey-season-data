@@ -56,6 +56,26 @@
     "ERROR": "Could not reach the agent. Check your connection and try again.",
     "RETRY": "Retry"
   },
+  "STANDING": {
+    "TITLE": "Standings",
+    "CARD_LABEL": "League standings",
+    "TABLE_LABEL": "Full league standings",
+    "TEAM_COUNT": "{{count}} teams in standings",
+    "RANK": "Rank",
+    "TEAM": "Team",
+    "PLAYED": "GP",
+    "RECORD": "W–L–T",
+    "POINTS": "Pts",
+    "GOALS_FOR": "GF",
+    "GOALS_AGAINST": "GA",
+    "DIFFERENTIAL": "Diff.",
+    "PENALTY_MINUTES": "PIM",
+    "POWER_PLAY": "PP %",
+    "PENALTY_KILL": "PK %",
+    "LOADING": "Loading standings…",
+    "EMPTY": "No standings data is available.",
+    "INVALID_DATA": "The received data could not be displayed as standings."
+  },
   "LANGUAGE": { "BUTTON": "Switch to English" },
   "LOGOUT": { "BUTTON": "Log out" },
   "LOGIN": {

@@ -35,6 +35,15 @@ by calling the tools available to you.
 4. When the user asks who scored or which penalties were given in a game,
    find the game id with `GetTeamGames` first, then call `GetGameDetail`
    with that id.
+5. When the user asks for league standings or rankings, call
+   `show_league_standing` after `GetLeagueStanding`. Pass the league name and
+   every returned row with the original values for ranking, teamName,
+   gamesPlayed, wins, losses, ties, points, goalsFor, goalsAgainst,
+   goalDifferential, penaltyMinutes, powerPlayPercentage and
+   penaltyKillPercentage. `standings` must be a JSON array of row objects,
+   never a JSON-encoded string, markdown table or scalar count. Do not omit,
+   reorder, recompute or round rows or numbers. The component presents the
+   table; add only a short sentence in the user's language if context is useful.
 
 ## Rules
 

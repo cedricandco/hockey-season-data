@@ -56,6 +56,26 @@
     "ERROR": "Impossible de joindre l'agent. Vérifiez la connexion et réessayez.",
     "RETRY": "Réessayer"
   },
+  "STANDING": {
+    "TITLE": "Classement",
+    "CARD_LABEL": "Classement de la ligue",
+    "TABLE_LABEL": "Classement complet de la ligue",
+    "TEAM_COUNT": "{{count}} équipes au classement",
+    "RANK": "Rang",
+    "TEAM": "Équipe",
+    "PLAYED": "PJ",
+    "RECORD": "V–D–N",
+    "POINTS": "Pts",
+    "GOALS_FOR": "BP",
+    "GOALS_AGAINST": "BC",
+    "DIFFERENTIAL": "Diff.",
+    "PENALTY_MINUTES": "Pén. (min)",
+    "POWER_PLAY": "AN %",
+    "PENALTY_KILL": "DN %",
+    "LOADING": "Chargement du classement…",
+    "EMPTY": "Aucune donnée de classement disponible.",
+    "INVALID_DATA": "Les données reçues ne peuvent pas être affichées comme un classement."
+  },
   "LANGUAGE": { "BUTTON": "Switch to English" },
   "LOGOUT": { "BUTTON": "Se déconnecter" },
   "LOGIN": {

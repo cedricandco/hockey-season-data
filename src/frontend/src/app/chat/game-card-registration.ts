@@ -1,6 +1,8 @@
 import { registerComponent } from '@copilotkit/angular';
 import { z } from 'zod';
 import { GameCardComponent } from './game-card.component';
+import { StandingTableComponent } from './standing-table.component';
+import type { LeagueStandingArgs } from './standing-table.component';
 import { HOCKEY_SEASON_DATA_AGENT_ID } from '../app.config';
 
 const participant = z.object({
@@ -60,6 +62,22 @@ const gameDetailSchema = z.object({
   })).optional(),
 });
 
+const leagueStandingRowSchema = z.object({
+  ranking: z.number(),
+  teamName: z.string(),
+  gamesPlayed: z.number(),
+  wins: z.number(),
+  losses: z.number(),
+  ties: z.number(),
+  points: z.number(),
+  goalsFor: z.number(),
+  goalsAgainst: z.number(),
+  goalDifferential: z.number(),
+  penaltyMinutes: z.number(),
+  powerPlayPercentage: z.number(),
+  penaltyKillPercentage: z.number(),
+});
+
 /** Call from an injection context when a chat surface supports tool rendering. */
 export function registerHockeySeasonComponents(): void {
   registerComponent({
@@ -71,6 +89,19 @@ export function registerHockeySeasonComponents(): void {
       ' Always answer the user in their language after calling this tool.',
     parameters: gameDetailSchema,
     component: GameCardComponent,
+    agentId: HOCKEY_SEASON_DATA_AGENT_ID,
+  });
+
+  registerComponent<LeagueStandingArgs>({
+    name: 'show_league_standing',
+    description:
+      'Displays the complete standings of a league as a formatted table. Call after retrieving ' +
+      'GetLeagueStanding, passing the returned league name and every standings row with its original values.',
+    parameters: z.object({
+      leagueName: z.string(),
+      standings: z.array(leagueStandingRowSchema),
+    }),
+    component: StandingTableComponent,
     agentId: HOCKEY_SEASON_DATA_AGENT_ID,
   });
 }

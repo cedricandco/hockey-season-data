@@ -1,6 +1,6 @@
 import { Component, ElementRef, effect, inject, signal, viewChild } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
-import { CopilotKit, injectAgentStore } from '@copilotkit/angular';
+import { CopilotKit, injectAgentStore, RenderToolCalls } from '@copilotkit/angular';
 import { HOCKEY_SEASON_DATA_AGENT_ID } from '../app.config';
 import { registerHockeySeasonComponents } from './game-card-registration';
 
@@ -12,7 +12,7 @@ import { registerHockeySeasonComponents } from './game-card-registration';
 @Component({
   selector: 'app-chat',
   standalone: true,
-  imports: [TranslatePipe],
+  imports: [TranslatePipe, RenderToolCalls],
   template: `
     <section class="chat-card" [attr.aria-label]="'CHAT.TITLE' | translate">
       <div class="chat-header">
@@ -35,15 +35,27 @@ import { registerHockeySeasonComponents } from './game-card-registration';
           </div>
         </div>
         @for (message of store().messages(); track message.id) {
-          @if (message.role !== 'reasoning' && (message.role === 'user' || message.role === 'assistant') && messageText(message.content)) {
+          @if (message.role === 'user' && messageText(message.content)) {
             <div class="message-row" [class.user-row]="message.role === 'user'">
-              @if (message.role === 'assistant') {
-                <div class="message-avatar" aria-hidden="true">✦</div>
-              }
               <div class="message-content">
-                <span class="message-author">{{ (message.role === 'user' ? 'CHAT.YOU' : 'CHAT.AGENT') | translate }}</span>
-                <div class="message-bubble" [class.user-bubble]="message.role === 'user'"
-                  [class.assistant-bubble]="message.role === 'assistant'">{{ messageText(message.content) }}</div>
+                <span class="message-author">{{ 'CHAT.YOU' | translate }}</span>
+                <div class="message-bubble user-bubble">{{ messageText(message.content) }}</div>
+              </div>
+            </div>
+          } @else if (message.role === 'assistant' && (messageText(message.content) || message.toolCalls?.length)) {
+            <div class="message-row">
+              <div class="message-avatar" aria-hidden="true">✦</div>
+              <div class="message-content">
+                <span class="message-author">{{ 'CHAT.AGENT' | translate }}</span>
+                <div class="message-bubble assistant-bubble">
+                  @if (messageText(message.content)) {
+                    <p>{{ messageText(message.content) }}</p>
+                  }
+                  @if (message.toolCalls?.length) {
+                    <copilot-render-tool-calls [message]="message" [messages]="store().messages()"
+                      [isLoading]="sending()" [agentId]="agentId" />
+                  }
+                </div>
               </div>
             </div>
           }
@@ -79,11 +91,13 @@ export class ChatComponent {
   private readonly conversation = viewChild<ElementRef<HTMLElement>>('conversation');
   private readonly composerInput = viewChild<ElementRef<HTMLTextAreaElement>>('composerInput');
   readonly store = injectAgentStore(HOCKEY_SEASON_DATA_AGENT_ID);
+  readonly agentId = HOCKEY_SEASON_DATA_AGENT_ID;
   readonly draft = signal('');
   readonly sending = signal(false);
   readonly error = signal(false);
 
   constructor() {
+    registerHockeySeasonComponents();
     effect(() => {
       this.store().messages();
       this.sending();
