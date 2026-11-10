@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.IdentityModel.Tokens.Jwt;
 using HockeySeason.Agents;
 using HockeySeason.Application;
 using HockeySeason.Functions;
@@ -12,6 +13,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.Azure.Functions.Worker;
 using Xunit;
 
@@ -92,12 +94,109 @@ public sealed class FunctionsTests
     }
 
     [Fact]
-    public async Task Agent_RejectsAnonymousCaller()
+    public async Task Agent_RejectsAnonymousCallerWithNoToken()
     {
         var context = new DefaultHttpContext();
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(
             """{"threadId":"thread","runId":"run","messages":[{"id":"message","role":"user","content":"Bonjour"}]}"""));
         Assert.IsType<UnauthorizedResult>(await CreateAgentFunction().Run(context.Request, CreateAnonymousContext(), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Agent_AcceptsValidBearerHeader_WhenMiddlewareAuthenticationIsMissing()
+    {
+        // Reproduces the Static Web Apps managed-host behavior: UseAuthentication
+        // is not applied to the trigger invocation, HttpContext.User stays
+        // anonymous, but the raw Authorization header carries a valid JWT.
+        const string signingKey = "test-signing-key-that-is-long-enough-1234567890";
+        var token = CreateToken(signingKey);
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Authorization = $"Bearer {token}";
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(
+            """{"threadId":"thread","runId":"run","messages":[{"id":"message","role":"user","content":"Bonjour"}]}"""));
+        context.Response.Body = new MemoryStream();
+
+        var result = await CreateAgentFunction(ConfigureAuthServices(signingKey)).Run(context.Request, CreateAnonymousBearerContext(context, token), CancellationToken.None);
+
+        Assert.IsType<EmptyResult>(result);
+        context.Response.Body.Position = 0;
+        var output = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        Assert.Contains("\"type\":\"RUN_STARTED\"", output);
+        Assert.Contains("\"type\":\"RUN_FINISHED\"", output);
+    }
+
+    [Fact]
+    public void AgentAuthorization_RejectsExpiredBearerHeader_WhenMiddlewareAuthenticationIsMissing()
+    {
+        const string signingKey = "test-signing-key-that-is-long-enough-1234567890";
+        var token = CreateToken(signingKey, expires: DateTimeOffset.UtcNow.AddHours(-1));
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Authorization = $"Bearer {token}";
+
+        Assert.False(FunctionsAuthorization.IsAuthenticated(CreateAnonymousBearerContext(context, token)));
+    }
+
+    [Fact]
+    public void AgentAuthorization_RejectsForgedSignatures()
+    {
+        var token = CreateToken("forged-signing-key-that-is-long-enough-9876543210");
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Authorization = $"Bearer {token}";
+
+        Assert.False(FunctionsAuthorization.IsAuthenticated(CreateAnonymousBearerContext(context, token, signingKey: "test-signing-key-that-is-long-enough-1234567890")));
+    }
+
+    [Fact]
+    public void AgentAuthorization_RejectsHeaderWithoutBearerScheme()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Authorization = "Basic dXNlcjpwYXNz";
+
+        Assert.False(FunctionsAuthorization.IsAuthenticated(CreateAnonymousBearerContext(context, "dXNlcjpwYXNz")));
+    }
+
+    private static FunctionContext CreateAnonymousBearerContext(
+        DefaultHttpContext httpContext,
+        string token,
+        string signingKey = "test-signing-key-that-is-long-enough-1234567890")
+    {
+        var stub = (FunctionContextStub)CreateContext(httpContext);
+        stub.InstanceServices = ConfigureAuthServices(signingKey);
+        return stub;
+    }
+
+    private static IServiceProvider ConfigureAuthServices(string signingKey) =>
+        new ServiceCollection()
+            .Configure<HockeySeason.Auth.AuthOptions>(options =>
+            {
+                options.Issuer = "https://tests.hockey-season-data";
+                options.Audience = "hockey-season-api-tests";
+                options.SigningKey = signingKey;
+                options.PinCode = "654321";
+            })
+            .AddSingleton<HockeySeason.Auth.IJwtValidator, HockeySeason.Auth.JwtValidator>()
+            .BuildServiceProvider();
+
+    private static string CreateToken(
+        string signingKey,
+        DateTimeOffset? expires = null,
+        string issuer = "https://tests.hockey-season-data",
+        string audience = "hockey-season-api-tests")
+    {
+        var handler = new JwtSecurityTokenHandler();
+        var credentials = new SigningCredentials(
+            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+            SecurityAlgorithms.HmacSha256);
+        var now = DateTimeOffset.UtcNow;
+        var notBefore = expires is null ? now : expires.Value.AddHours(-5);
+        var jwt = new JwtSecurityToken(
+            issuer: issuer,
+            audience: audience,
+            claims: [new(JwtRegisteredClaimNames.Sub, "pin-user")],
+            notBefore: notBefore.UtcDateTime,
+            expires: (expires ?? now.AddMinutes(60)).UtcDateTime,
+            signingCredentials: credentials);
+        return handler.WriteToken(jwt);
     }
 
     private static FunctionContext CreateAuthenticatedContext()
@@ -146,9 +245,9 @@ public sealed class FunctionsTests
         public override string TraceState => string.Empty;
     }
 
-    private static AgentFunction CreateAgentFunction()
+    private static AgentFunction CreateAgentFunction(IServiceProvider? services = null)
     {
-        var services = new ServiceCollection().AddLogging().AddAGUIServer().BuildServiceProvider();
+        services ??= new ServiceCollection().AddLogging().AddAGUIServer().BuildServiceProvider();
         var options = services.GetRequiredService<IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>>();
         var agent = HockeySeasonDataAgentFactory.Create(new TestChatClient(), "Translate.", "test");
         return new AgentFunction(agent, options, NullLogger<AgentFunction>.Instance);

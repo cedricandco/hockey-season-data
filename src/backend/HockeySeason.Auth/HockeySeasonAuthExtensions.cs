@@ -31,6 +31,7 @@ public static class HockeySeasonAuthExtensions
 
         services.AddSingleton<ITokenService, TokenService>();
         services.AddSingleton<IAuthService, AuthService>();
+        services.AddSingleton<IJwtValidator, JwtValidator>();
         services.AddSingleton<LoginRateGuard>();
 
         var authOptions = configuration
