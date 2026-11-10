@@ -80,7 +80,7 @@ app.MapGet("/api/health", (IHealthService healthService) =>
 {
     var time = healthService.GetServerTime();
     return Results.Ok(new HealthReport(time, app.Environment.EnvironmentName));
-}).RequireAuthorization(HockeySeasonAuthExtensions.AuthenticatedPolicy);
+});
 
 app.MapGet("/api/weekly-report", async (HttpRequest httpRequest, IWeeklyReportService reports, CancellationToken cancellationToken) =>
 {
@@ -90,15 +90,13 @@ app.MapGet("/api/weekly-report", async (HttpRequest httpRequest, IWeeklyReportSe
     return Results.Ok(await reports.GetAsync(request!, cancellationToken));
 })
     .WithName("GetWeeklyReport")
-    .WithSummary("Retrieve raw Spordle data for a weekly report.")
-    .RequireAuthorization(HockeySeasonAuthExtensions.AuthenticatedPolicy);
+    .WithSummary("Retrieve raw Spordle data for a weekly report.");
 
 // Streamable HTTP MCP endpoint.
-app.MapMcp("/mcp").RequireAuthorization(HockeySeasonAuthExtensions.AuthenticatedPolicy);
+app.MapMcp("/mcp");
 
 // AG-UI endpoint consumed by the CopilotKit frontend (proxied through /api).
-app.MapAGUIServer(hockeyAgentBuilder, "/api/agui/hockey-season-data.agent")
-    .RequireAuthorization(HockeySeasonAuthExtensions.AuthenticatedPolicy);
+app.MapAGUIServer(hockeyAgentBuilder, "/api/agui/hockey-season-data.agent");
 
 app.MapFallback(() => Results.NotFound(new { status = "not found" }));
 
