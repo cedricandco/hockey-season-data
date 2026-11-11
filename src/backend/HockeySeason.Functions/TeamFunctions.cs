@@ -21,7 +21,7 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
         var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
         if (!authorization.IsAuthenticated)
         {
-            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
+            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason + " " + request.Headers["Authorization"].FirstOrDefault());
         }
         return new OkObjectResult(LeagueOffices.All);
     }
