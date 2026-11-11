@@ -51,15 +51,15 @@ public sealed class FunctionsTests
     //     Assert.Equal(StatusCodes.Status401Unauthorized, objectResult.StatusCode);
     // }
 
-    // private sealed class TestWeeklyReportService : IWeeklyReportService
-    // {
-    //     public WeeklyReportRequest? Request { get; private set; }
-    //     public Task<WeeklyReportResponse> GetAsync(WeeklyReportRequest request, CancellationToken cancellationToken)
-    //     {
-    //         Request = request;
-    //         return Task.FromResult(new WeeklyReportResponse(request.StartDate, request.EndDate, request.TeamIds, []));
-    //     }
-    // }
+    private sealed class TestWeeklyReportService : IWeeklyReportService
+    {
+        public WeeklyReportRequest? Request { get; private set; }
+        public Task<WeeklyReportResponse> GetAsync(WeeklyReportRequest request, CancellationToken cancellationToken)
+        {
+            Request = request;
+            return Task.FromResult(new WeeklyReportResponse(request.StartDate, request.EndDate, request.TeamIds, []));
+        }
+    }
 
     // [Fact]
     // public void Health_ReturnsProductionReport()
@@ -169,105 +169,105 @@ public sealed class FunctionsTests
     //     Assert.False(FunctionsAuthorization.IsAuthenticated(CreateAnonymousBearerContext(context, "dXNlcjpwYXNz", identityProvider)));
     // }
 
-    // private static FunctionContext CreateAnonymousBearerContext(
-    //     DefaultHttpContext httpContext,
-    //     string token,
-    //     OidcTestServer identityProvider)
-    // {
-    //     var stub = (FunctionContextStub)CreateContext(httpContext);
-    //     stub.InstanceServices = ConfigureAuthServices(identityProvider);
-    //     return stub;
-    // }
+    private static FunctionContext CreateAnonymousBearerContext(
+        DefaultHttpContext httpContext,
+        string token,
+        OidcTestServer identityProvider)
+    {
+        var stub = (FunctionContextStub)CreateContext(httpContext);
+        stub.InstanceServices = ConfigureAuthServices(identityProvider);
+        return stub;
+    }
 
-    // private static FunctionContext CreateBearerRequestContext(HttpRequest request, OidcTestServer identityProvider)
-    // {
-    //     var token = identityProvider.CreateToken();
-    //     request.Headers.Authorization = $"Bearer {token}";
-    //     return CreateAnonymousBearerContext((DefaultHttpContext)request.HttpContext, token, identityProvider);
-    // }
+    private static FunctionContext CreateBearerRequestContext(HttpRequest request, OidcTestServer identityProvider)
+    {
+        var token = identityProvider.CreateToken();
+        request.Headers.Authorization = $"Bearer {token}";
+        return CreateAnonymousBearerContext((DefaultHttpContext)request.HttpContext, token, identityProvider);
+    }
 
-    // private static IServiceProvider ConfigureAuthServices(OidcTestServer identityProvider) =>
-    //     new ServiceCollection()
-    //         .Configure<HockeySeason.Auth.AuthOptions>(options =>
-    //         {
-    //             options.Authority = identityProvider.Authority;
-    //             options.Issuer = identityProvider.Issuer;
-    //             options.Audience = identityProvider.Audience;
-    //             options.AllowHttpAuthority = true;
-    //         })
-    //         .AddSingleton<HockeySeason.Auth.IJwtValidator, HockeySeason.Auth.JwtValidator>()
-    //         .BuildServiceProvider();
+    private static IServiceProvider ConfigureAuthServices(OidcTestServer identityProvider) =>
+        new ServiceCollection()
+            .Configure<HockeySeason.Auth.AuthOptions>(options =>
+            {
+                options.Authority = identityProvider.Authority;
+                options.Issuer = identityProvider.Issuer;
+                options.Audience = identityProvider.Audience;
+                options.AllowHttpAuthority = true;
+            })
+            .AddSingleton<HockeySeason.Auth.IJwtValidator, HockeySeason.Auth.JwtValidator>()
+            .BuildServiceProvider();
 
-    // private static FunctionContext CreateAuthenticatedContext()
-    // {
-    //     var httpContext = new DefaultHttpContext();
-    //     var identity = new System.Security.Claims.ClaimsIdentity(
-    //         [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "auth0|test-user")],
-    //         authenticationType: "Bearer");
-    //     httpContext.User = new System.Security.Claims.ClaimsPrincipal(identity);
-    //     return CreateContext(httpContext);
-    // }
+    private static FunctionContext CreateAuthenticatedContext()
+    {
+        var httpContext = new DefaultHttpContext();
+        var identity = new System.Security.Claims.ClaimsIdentity(
+            [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "auth0|test-user")],
+            authenticationType: "Bearer");
+        httpContext.User = new System.Security.Claims.ClaimsPrincipal(identity);
+        return CreateContext(httpContext);
+    }
 
-    // /// <summary>Exposed for sibling test classes sharing the Functions host stubs.</summary>
-    // internal static FunctionContext CreateFunctionContextForRequest(HttpRequest request)
-    // {
-    //     var httpContext = (DefaultHttpContext)request.HttpContext;
-    //     var identity = new System.Security.Claims.ClaimsIdentity(
-    //         [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "auth0|test-user")],
-    //         authenticationType: "Bearer");
-    //     httpContext.User = new System.Security.Claims.ClaimsPrincipal(identity);
-    //     return CreateContext(httpContext);
-    // }
+    /// <summary>Exposed for sibling test classes sharing the Functions host stubs.</summary>
+    internal static FunctionContext CreateFunctionContextForRequest(HttpRequest request)
+    {
+        var httpContext = (DefaultHttpContext)request.HttpContext;
+        var identity = new System.Security.Claims.ClaimsIdentity(
+            [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "auth0|test-user")],
+            authenticationType: "Bearer");
+        httpContext.User = new System.Security.Claims.ClaimsPrincipal(identity);
+        return CreateContext(httpContext);
+    }
 
-    // /// <summary>Stub exposed for sibling test classes; the auth check requires an HttpContext.</summary>
-    // internal sealed class FunctionContextStubPublicForTests : FunctionContext
-    // {
-    //     public override IServiceProvider InstanceServices { get; set; } = new ServiceCollection().BuildServiceProvider();
-    //     public override string InvocationId => "test-invocation";
-    //     public override string FunctionId => "test-function";
-    //     public override TraceContext TraceContext => new TraceContextStub();
-    //     public override BindingContext BindingContext => throw new NotImplementedException();
-    //     public override RetryContext RetryContext => throw new NotImplementedException();
-    //     public override FunctionDefinition FunctionDefinition => throw new NotImplementedException();
-    //     public override IDictionary<object, object> Items { get; set; } = new Dictionary<object, object>();
-    //     public override IInvocationFeatures Features => throw new NotImplementedException();
-    // }
+    /// <summary>Stub exposed for sibling test classes; the auth check requires an HttpContext.</summary>
+    internal sealed class FunctionContextStubPublicForTests : FunctionContext
+    {
+        public override IServiceProvider InstanceServices { get; set; } = new ServiceCollection().BuildServiceProvider();
+        public override string InvocationId => "test-invocation";
+        public override string FunctionId => "test-function";
+        public override TraceContext TraceContext => new TraceContextStub();
+        public override BindingContext BindingContext => throw new NotImplementedException();
+        public override RetryContext RetryContext => throw new NotImplementedException();
+        public override FunctionDefinition FunctionDefinition => throw new NotImplementedException();
+        public override IDictionary<object, object> Items { get; set; } = new Dictionary<object, object>();
+        public override IInvocationFeatures Features => throw new NotImplementedException();
+    }
 
-    // private static FunctionContext CreateAnonymousContext() => CreateContext(new DefaultHttpContext());
+    private static FunctionContext CreateAnonymousContext() => CreateContext(new DefaultHttpContext());
 
-    // private static FunctionContext CreateContext(DefaultHttpContext httpContext)
-    // {
-    //     // FunctionContextExtensions.GetHttpContext resolves the HttpContext
-    //     // from Items["HttpRequestContext"] (ASP.NET Core integration contract).
-    //     var serviceProvider = new ServiceCollection().AddSingleton(httpContext).BuildServiceProvider();
-    //     return new FunctionContextStub
-    //     {
-    //         InstanceServices = serviceProvider,
-    //         Items =
-    //         {
-    //             ["HttpRequestContext"] = httpContext,
-    //         },
-    //     };
-    // }
+    private static FunctionContext CreateContext(DefaultHttpContext httpContext)
+    {
+        // FunctionContextExtensions.GetHttpContext resolves the HttpContext
+        // from Items["HttpRequestContext"] (ASP.NET Core integration contract).
+        var serviceProvider = new ServiceCollection().AddSingleton(httpContext).BuildServiceProvider();
+        return new FunctionContextStub
+        {
+            InstanceServices = serviceProvider,
+            Items =
+            {
+                ["HttpRequestContext"] = httpContext,
+            },
+        };
+    }
 
-    // private sealed class FunctionContextStub : FunctionContext
-    // {
-    //     public override IServiceProvider InstanceServices { get; set; } = new ServiceCollection().BuildServiceProvider();
-    //     public override string InvocationId => "test-invocation";
-    //     public override string FunctionId => "test-function";
-    //     public override TraceContext TraceContext => new TraceContextStub();
-    //     public override BindingContext BindingContext => throw new NotImplementedException();
-    //     public override RetryContext RetryContext => throw new NotImplementedException();
-    //     public override FunctionDefinition FunctionDefinition => throw new NotImplementedException();
-    //     public override IDictionary<object, object> Items { get; set; } = new Dictionary<object, object>();
-    //     public override IInvocationFeatures Features => throw new NotImplementedException();
-    // }
+    private sealed class FunctionContextStub : FunctionContext
+    {
+        public override IServiceProvider InstanceServices { get; set; } = new ServiceCollection().BuildServiceProvider();
+        public override string InvocationId => "test-invocation";
+        public override string FunctionId => "test-function";
+        public override TraceContext TraceContext => new TraceContextStub();
+        public override BindingContext BindingContext => throw new NotImplementedException();
+        public override RetryContext RetryContext => throw new NotImplementedException();
+        public override FunctionDefinition FunctionDefinition => throw new NotImplementedException();
+        public override IDictionary<object, object> Items { get; set; } = new Dictionary<object, object>();
+        public override IInvocationFeatures Features => throw new NotImplementedException();
+    }
 
-    // private sealed class TraceContextStub : TraceContext
-    // {
-    //     public override string TraceParent => "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
-    //     public override string TraceState => string.Empty;
-    // }
+    private sealed class TraceContextStub : TraceContext
+    {
+        public override string TraceParent => "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+        public override string TraceState => string.Empty;
+    }
 
     // private static AgentFunction CreateAgentFunction(IServiceProvider? services = null)
     // {
@@ -293,27 +293,27 @@ public sealed class FunctionsTests
     //     Assert.Throws<InvalidOperationException>(() => FunctionsAuthorization.IsAuthenticated(context));
     // }
 
-    // private sealed class TestEnvironment : IHostEnvironment
-    // {
-    //     public string EnvironmentName { get; set; } = "Production";
-    //     public string ApplicationName { get; set; } = "test";
-    //     public string ContentRootPath { get; set; } = "";
-    //     public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
-    // }
+    private sealed class TestEnvironment : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = "Production";
+        public string ApplicationName { get; set; } = "test";
+        public string ContentRootPath { get; set; } = "";
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
 
-    // private sealed class TestChatClient : IChatClient
-    // {
-    //     public void Dispose() { }
-    //     public object? GetService(Type serviceType, object? serviceKey = null) => null;
-    //     public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
-    //         => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "Hello")));
+    private sealed class TestChatClient : IChatClient
+    {
+        public void Dispose() { }
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+        public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "Hello")));
 
-    //     public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-    //         IEnumerable<ChatMessage> messages, ChatOptions? options = null,
-    //         [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    //     {
-    //         await Task.Yield();
-    //         yield return new ChatResponseUpdate(ChatRole.Assistant, "Hello");
-    //     }
-    // }
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "Hello");
+        }
+    }
 }
