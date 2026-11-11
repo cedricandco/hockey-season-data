@@ -1,5 +1,6 @@
 using HockeySeason.Agents;
 using HockeySeason.Application;
+using HockeySeason.Auth;
 using HockeySeason.Domain;
 using HockeySeason.Functions;
 using HockeySeason.Infrastructure;
@@ -56,5 +57,8 @@ builder.Services.AddOptions<HockeySeason.Auth.AuthOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<HockeySeason.Auth.IJwtValidator, HockeySeason.Auth.JwtValidator>();
+// Caller profile resolution (IUserContext → provider /userinfo) shared with
+// the Api host; the tenant host comes from Auth:Authority (or UserInfo:BaseAddress).
+builder.Services.AddHockeySeasonUserContext();
 
 builder.Build().Run();

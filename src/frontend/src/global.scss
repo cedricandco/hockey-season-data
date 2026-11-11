@@ -46,6 +46,36 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 }
 .header-button:hover { background: #ffffff25; }
 .header-button > span:first-child { font-size: 1.15rem; }
+/* User menu: avatar trigger + dropdown panel. */
+.user-menu { position: relative; }
+.user-menu-trigger { min-width: 40px; padding: 0; justify-content: center; }
+.user-avatar {
+  width: 30px; height: 30px; border-radius: 8px; object-fit: cover; display: block;
+  border: 1px solid #ffffff30;
+}
+.user-avatar-fallback {
+  display: grid; place-items: center; background: #ffffff14;
+  color: #fff; font-size: .72rem; font-weight: 800; letter-spacing: .04em;
+}
+.user-menu-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60; min-width: 224px;
+  display: flex; flex-direction: column; padding: 6px;
+  background: #14243c; color: #fff; border: 1px solid #ffffff30; border-radius: 12px;
+  box-shadow: 0 14px 34px rgba(4, 12, 24, .45);
+}
+.user-menu-identity {
+  display: flex; flex-direction: column; gap: 2px; padding: 9px 10px 10px;
+  border-bottom: 1px solid #ffffff1e; margin-bottom: 6px;
+}
+.user-menu-name { font-size: .8rem; font-weight: 700; overflow-wrap: anywhere; }
+.user-menu-email { font-size: .72rem; color: #cfdcec; overflow-wrap: anywhere; }
+.user-menu-item {
+  display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: 0; border-radius: 8px;
+  background: transparent; color: #fff; font-size: .78rem; font-weight: 700; text-align: left; cursor: pointer;
+}
+.user-menu-item:hover { background: #ffffff1f; }
+.user-menu-item-danger:hover { background: #d84b4b2e; color: #ffc9c9; }
+.user-menu-item > span:first-child { font-size: 1.05rem; }
 /* App shell: fixed header, full-height routed pages. */
 .app-shell {
   min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; box-sizing: border-box;

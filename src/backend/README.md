@@ -59,12 +59,20 @@ API with the access token issued for the registered API audience.
 
 1. The SPA acquires a token via `@auth0/auth0-angular` (`getAccessTokenSilently`
    or the HTTP interceptor) with `audience: https://api.hockeyseason.dev`.
-2. Requests carry `Authorization: Bearer <token>` (JwtBearer middleware).
+2. Requests carry the bearer token twice: `Authorization: Bearer <token>` (JwtBearer middleware) and `X-Authorization` with the same value — mirrored by the SPA for hosts/proxies that drop the standard header. Functions triggers require the mirrored header (`FunctionsAuthorization`).
 3. The middleware validates issuer, audience, lifetime and signature; keys
    come from Auth0's JWKS discovery (RS256 only) and no signing secret is
    stored in this repository.
 4. `IJwtValidator` performs the same validation directly against the
    authorization header for the Azure Functions host (same JWKS discovery).
+
+### User context (IUserContext)
+
+`HockeySeason.Auth` also resolves the caller's identity-provider profile on demand: `IUserContext` reads the bearer token (standard header first, then `X-Authorization` via `IBearerTokenAccessor`) and calls the provider's `/userinfo` endpoint. The exposed data maps the OIDC claims — `sub` (stable user id), `nickname`, `name`, `picture`, `updated_at`, `email`, `email_verified`.
+
+- The tenant host comes from `Auth:Authority`; `UserInfo:BaseAddress` and `UserInfo:Path` override it for non-standard deployments.
+- The Api host exposes it at `GET /api/me`; the Functions host exposes the same route through `MeFunction` (trigger-validated like the other triggers).
+- Registration: `AddHockeySeasonUserContext()` in each composition root.
 
 JWTs are rejected with `401 { "error": "invalid_token", … }` when missing,
 expired, forged or issued for another audience/issuer.
@@ -77,6 +85,8 @@ expired, forged or issued for another audience/issuer.
 | `Auth:Issuer` | Expected `iss` claim (defaults to the authority) | `appsettings.json` |
 | `Auth:Audience` | Registered API identifier (`aud`) | `appsettings.json` (`https://api.hockeyseason.dev`) |
 | `Auth:AllowHttpAuthority` | Dev-only escape hatch for http:// authorities (tests) | `appsettings.json` (default `false`) |
+| `UserInfo:BaseAddress` | Overrides the /userinfo host (defaults to `Auth:Authority`) | `appsettings.json` |
+| `UserInfo:Path` | Relative userinfo path (default `userinfo`) | `appsettings.json` |
 
 No client secret is involved: the SPA is a public client and the API only
 verifies tokens. The Auth0 tenant owns user accounts (email + password),

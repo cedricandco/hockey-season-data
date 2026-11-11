@@ -1,9 +1,10 @@
 import { Component, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { AuthService as Auth0AuthService } from '@auth0/auth0-angular';
 import { LoginComponent } from './core/login.component';
+import { UserMenuComponent } from './core/user-menu.component';
 
 /**
  * Application root: shows a login gate until the visitor authenticates with
@@ -14,7 +15,7 @@ import { LoginComponent } from './core/login.component';
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, TranslatePipe, LoginComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, TranslatePipe, LoginComponent, UserMenuComponent],
   template: `
     @if (isLoading()) {
       <!-- Universal Login redirect in progress -->
@@ -50,10 +51,7 @@ import { LoginComponent } from './core/login.component';
                 [attr.aria-label]="'LANGUAGE.BUTTON' | translate">
                 <span aria-hidden="true">◎</span> {{ language() === 'fr' ? 'EN' : 'FR' }}
               </button>
-              <button class="header-button logout-button" type="button" (click)="logout()"
-                [attr.aria-label]="'LOGOUT.BUTTON' | translate">
-                <span aria-hidden="true">⎋</span><span class="settings-label">{{ 'LOGOUT.BUTTON' | translate }}</span>
-              </button>
+              <app-user-menu />
             </div>
           </div>
         </header>
@@ -68,9 +66,7 @@ import { LoginComponent } from './core/login.component';
 })
 export class AppComponent {
   private readonly translate = inject(TranslateService);
-  private readonly router = inject(Router);
-  private readonly auth0 = inject(Auth0AuthService);
-  /** Reactive login state for the zoneless template (Auth0 observables). */
+  private readonly auth0 = inject(Auth0AuthService);  /** Reactive login state for the zoneless template (Auth0 observables). */
   readonly isLoggedIn = toSignal(this.auth0.isAuthenticated$, { initialValue: false });
   readonly isLoading = toSignal(this.auth0.isLoading$, { initialValue: true });
   readonly language = signal<'fr' | 'en'>('fr');
@@ -79,11 +75,5 @@ export class AppComponent {
     this.language.set(next);
     document.documentElement.lang = next;
     this.translate.use(next);
-  }
-
-  logout(): void {
-    // Full Auth0 logout also clears the identity provider session; the
-    // router navigation is moot because the browser leaves the app.
-    void this.auth0.logout({ logoutParams: { returnTo: window.location.origin } });
   }
 }

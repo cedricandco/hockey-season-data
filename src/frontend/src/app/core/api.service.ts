@@ -6,6 +6,7 @@ import { HealthReport } from './models';
 import { WeeklyReport } from '../report/weekly-report.models';
 import { HttpParams } from '@angular/common/http';
 import { Choice, TeamDetail } from '../team/team.models';
+import { UserProfile } from './user.models';
 
 /**
  * Thin wrapper around HttpClient for the Hockey Season API.
@@ -18,6 +19,11 @@ export class ApiService {
 
   getHealth(): Observable<HealthReport> {
     return this.http.get<HealthReport>(`${this.baseUrl}/health`);
+  }
+
+  /** Identity-provider profile of the authenticated caller (avatar, name...). */
+  getMe(): Observable<UserProfile> {
+    return this.http.get<UserProfile>(`${this.baseUrl}/me`);
   }
 
   getGameDetail(gameId: number): Observable<unknown> {

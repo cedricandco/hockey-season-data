@@ -95,6 +95,12 @@
   "TABLE": { "SCROLL_HINT": "Scroll the table horizontally to see all columns." },
   "LANGUAGE": { "BUTTON": "Passer en français" },
   "LOGOUT": { "BUTTON": "Log out" },
+  "USER": {
+    "MENU": "User menu",
+    "AVATAR_ALT": "Photo of {{name}}",
+    "LOADING": "Loading profile…",
+    "SETTINGS": "Settings"
+  },
   "LOGIN": {
     "TITLE": "Restricted access",
     "SUBTITLE": "Sign in with your email and password to continue.",

@@ -96,6 +96,12 @@
   "TABLE": { "SCROLL_HINT": "Faites défiler le tableau horizontalement pour voir toutes les colonnes." },
   "LANGUAGE": { "BUTTON": "Switch to English" },
   "LOGOUT": { "BUTTON": "Se déconnecter" },
+  "USER": {
+    "MENU": "Menu utilisateur",
+    "AVATAR_ALT": "Photo de {{name}}",
+    "LOADING": "Chargement du profil…",
+    "SETTINGS": "Paramètres"
+  },
   "LOGIN": {
     "TITLE": "Accès réservé",
     "SUBTITLE": "Connectez-vous avec votre courriel et votre mot de passe pour continuer.",

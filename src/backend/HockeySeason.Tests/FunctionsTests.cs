@@ -45,6 +45,8 @@ public sealed class FunctionsTests
         var function = new WeeklyReportFunction(new TestWeeklyReportService());
         var request = new DefaultHttpContext().Request;
         var context = CreateAnonymousBearerContext((DefaultHttpContext)request.HttpContext, string.Empty, identityProvider);
+        // The mirrored header is mandatory; an empty value yields "missing_token".
+        ((DefaultHttpContext)request.HttpContext).Request.Headers["X-Authorization"] = string.Empty;
 
         var result = Assert.IsType<ObjectResult>(await function.Run(request, context, CancellationToken.None));
 
@@ -196,9 +198,10 @@ public sealed class FunctionsTests
     }
 
     private static FunctionContext CreateBearerRequestContext(HttpRequest request, OidcTestServer identityProvider)
-    {
+{
         var token = identityProvider.CreateToken();
         request.Headers.Authorization = $"Bearer {token}";
+        request.Headers["X-Authorization"] = $"Bearer {token}";
         return CreateAnonymousBearerContext((DefaultHttpContext)request.HttpContext, token, identityProvider);
     }
 
@@ -222,6 +225,9 @@ public sealed class FunctionsTests
             [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "auth0|test-user")],
             authenticationType: "Bearer");
         httpContext.User = new System.Security.Claims.ClaimsPrincipal(identity);
+        // The Functions auth contract requires the mirrored header on every
+        // trigger call, even when the middleware principal already authenticates.
+        httpContext.Request.Headers["X-Authorization"] = "Bearer mirror-token";
         return CreateContext(httpContext);
     }
 
@@ -233,6 +239,9 @@ public sealed class FunctionsTests
             [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "auth0|test-user")],
             authenticationType: "Bearer");
         httpContext.User = new System.Security.Claims.ClaimsPrincipal(identity);
+        // The Functions auth contract requires the mirrored header on every
+        // trigger call, even when the middleware principal already authenticates.
+        httpContext.Request.Headers["X-Authorization"] = "Bearer mirror-token";
         return CreateContext(httpContext);
     }
 

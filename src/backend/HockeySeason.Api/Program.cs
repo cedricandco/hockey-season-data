@@ -31,6 +31,10 @@ builder.Services.AddSingleton<ITimeProvider, UtcTimeProvider>();
 builder.Services.AddSingleton<IHealthService, HealthService>();
 builder.Services.AddLeagueApi();
 
+// Caller profile resolution (IUserContext → provider /userinfo): the tenant
+// host comes from Auth:Authority (or UserInfo:BaseAddress override).
+builder.Services.AddHockeySeasonUserContext();
+
 // JWT security backed by Auth0 (OIDC): RS256 access tokens validated
 // against the authority metadata (issuer/audience/JWKS discovery). The
 // fallback policy requires authentication on every endpoint unless it is
@@ -83,6 +87,16 @@ app.MapGet("/api/health", (IHealthService healthService) =>
     var time = healthService.GetServerTime();
     return Results.Ok(new HealthReport(time, app.Environment.EnvironmentName));
 });
+
+// Authenticated caller's identity-provider profile (sub, name, picture...).
+app.MapGet("/api/me", async (IUserContext userContext, CancellationToken cancellationToken) =>
+{
+    var user = await userContext.GetCurrentUserAsync(cancellationToken);
+    return user is null
+        ? Results.Problem(statusCode: StatusCodes.Status502BadGateway, title: "userinfo_unavailable",
+            detail: "The identity provider profile could not be resolved.")
+        : Results.Ok(user);
+}).WithName("GetCurrentUser").WithSummary("Retrieve the authenticated caller's identity-provider profile.");
 
 app.MapGet("/api/weekly-report", async (HttpRequest httpRequest, IWeeklyReportService reports, CancellationToken cancellationToken) =>
 {

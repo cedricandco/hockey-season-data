@@ -52,22 +52,11 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
     [Function("Offices")]
     public IActionResult Offices([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "offices")] HttpRequest request, FunctionContext context)
     {
-        // var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
-        // if (!authorization.IsAuthenticated)
-        // {
-        //     var principal = GetClientPrincipal(request);
-
-        //     if (principal == null)
-        //     {
-        //         return new UnauthorizedResult();
-        //     }
-
-        //     var userId = principal.UserId;
-        //     var email = principal.UserDetails;
-        //     var roles = principal.UserRoles;
-
-        //     return FunctionsAuthorization.UnauthorizedResult(authorization.Reason + " " + request.Headers["Authorization"].FirstOrDefault() + "    user id = " + userId + "; email = " + email + "; roles = " + roles);
-        // }
+        var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
+        if (!authorization.IsAuthenticated)
+        {
+            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
+        }
         return new OkObjectResult(LeagueOffices.All);
     }
 
@@ -89,11 +78,11 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
     public async Task<IActionResult> LeagueTeams([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "leagues/{leagueId:int}/teams")] HttpRequest request,
         int leagueId, FunctionContext context, CancellationToken cancellationToken)
     {
-        // var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
-        // if (!authorization.IsAuthenticated)
-        // {
-        //     return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
-        // }
+        var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
+        if (!authorization.IsAuthenticated)
+        {
+            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
+        }
         if (leagueId <= 0) return InvalidIds();
         return new OkObjectResult(await league.GetLeagueTeamsAsync(leagueId, cancellationToken));
     }
