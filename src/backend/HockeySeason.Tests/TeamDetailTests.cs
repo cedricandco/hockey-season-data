@@ -90,17 +90,11 @@ public sealed class TeamDetailTests
     }
 
     [Fact]
-    public void FunctionsAuthorization_AllowsEverythingWhileBypassed()
+    public void FunctionsAuthorization_RequiresHttpContext()
     {
-        // Tracks the temporary "allow anonymous" bypass in
-        // FunctionsAuthorization (commit 5b804d5): both checks answer true
-        // without touching the HttpContext. Flip this test back to
-        // FunctionsAuthorization_RequiresHttpContext when the bypass is
-        // removed.
         var context = new FunctionsTests.FunctionContextStubPublicForTests();
-        Assert.True(HockeySeason.Functions.FunctionsAuthorization.IsAuthenticated(context));
-        var (isAuthenticated, _) = HockeySeason.Functions.FunctionsAuthorization.IsAuthenticatedV2(context);
-        Assert.True(isAuthenticated);
+        Assert.Throws<InvalidOperationException>(() => HockeySeason.Functions.FunctionsAuthorization.IsAuthenticated(context));
+        Assert.Throws<InvalidOperationException>(() => HockeySeason.Functions.FunctionsAuthorization.IsAuthenticatedV2(context));
     }
 
     [Fact]
