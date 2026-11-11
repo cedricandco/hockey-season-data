@@ -1,5 +1,6 @@
 import { ApplicationConfig, ENVIRONMENT_INITIALIZER, inject, Injector, provideZonelessChangeDetection } from '@angular/core';
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
+import { authHeaderMirrorInterceptor } from './core/auth-header.interceptor';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideTranslateService } from '@ngx-translate/core';
 import { provideTranslateHttpLoader } from '@ngx-translate/http-loader';
@@ -57,7 +58,7 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideZonelessChangeDetection(),
     provideRouter(routes, withComponentInputBinding()),
-    provideHttpClient(withFetch(), withInterceptors([authHttpInterceptorFn])),
+    provideHttpClient(withFetch(), withInterceptors([authHttpInterceptorFn, authHeaderMirrorInterceptor])),
     // Auth0 Universal Login (Authorization Code + PKCE): the SDK owns token
     // storage and renewal; business API calls receive the bearer token via
     // authHttpInterceptorFn, agent runs via HockeyAssistantHttpAgent.

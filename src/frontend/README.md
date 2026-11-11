@@ -59,9 +59,9 @@ Universal Login (Authorization Code + PKCE through `@auth0/auth0-angular` —
 `core/login.component.ts`, `app.config.ts`) and the SPA calls the API with the
 access token issued for the `https://api.hockeyseason.dev` audience. The HTTP
 interceptor (`authHttpInterceptorFn`) adds
-`Authorization: Bearer <token>` to each `/api/` request and the AG-UI
-agent adds the same header in `agent/hockey-assistant-http-agent.ts`. The
-backend validates issuer, audience and signature against Auth0's JWKS and
+`Authorization: Bearer <token>` to each `/api/` request (mirrored on
+`X-Authorization` by `core/auth-header.interceptor.ts`) and the AG-UI
+agent adds both headers in `agent/hockey-assistant-http-agent.ts`.
 rejects invalid tokens with `401 { "error": "invalid_token", ... }`.
 
 ## Azure Static Web Apps deployment

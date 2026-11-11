@@ -3,7 +3,9 @@ import { HttpAgent } from '@ag-ui/client';
 
 /**
  * HttpAgent that keeps reasoning messages out of the outbound history and
- * attaches the OIDC-style bearer token to every agent request.
+ * attaches the OIDC-style bearer token to every agent request in both the
+ * `Authorization` and `X-Authorization` headers (same dual-header contract
+ * as the `authHeaderMirrorInterceptor` used for `/api/` calls).
  *
  * The backend AG-UI endpoint maps replayed history with a role whitelist
  * (system/user/assistant/developer/tool) and fails an extra turn with
@@ -27,6 +29,7 @@ export class HockeyAssistantHttpAgent extends HttpAgent {
     if (!token) return init;
     const headers = new Headers(init.headers ?? this.headers);
     headers.set('Authorization', `Bearer ${token}`);
+    headers.set('X-Authorization', `Bearer ${token}`);
     return { ...init, headers };
   }
 }

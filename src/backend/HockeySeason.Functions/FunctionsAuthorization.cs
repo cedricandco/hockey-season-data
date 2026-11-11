@@ -33,9 +33,13 @@ public static class FunctionsAuthorization
     public static bool IsAuthenticated(FunctionContext context) => IsAuthenticatedV2(context).IsAuthenticated;
 
     public static (bool IsAuthenticated, string? Reason) IsAuthenticatedV2(FunctionContext context)
-    {
+    {        
         var httpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("Function context has no HttpContext.");
+
+        if (!httpContext.Request.Headers.TryGetValue("X-Authorization", out var xAuthorization))
+            return (false, "No X-Authorization");
+
         var loggerFactory = context.InstanceServices?.GetService(typeof(ILoggerFactory)) as ILoggerFactory;
         var logger = loggerFactory?.CreateLogger(nameof(FunctionsAuthorization));
 
@@ -63,7 +67,7 @@ public static class FunctionsAuthorization
         }
 
         var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
-        if (!JwtBearerTokenParser.TryExtractBearerToken(authorizationHeader, out var token))
+        if (!JwtBearerTokenParser.TryExtractBearerToken(xAuthorization, out var token))
         {
             logger?.LogWarning(
                 "FunctionsAuth rejected request because no bearer token was found, invocationId={InvocationId}, functionId={FunctionId}, method={Method}, path={Path}, authHeader={Header}",
