@@ -52,22 +52,22 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
     [Function("Offices")]
     public IActionResult Offices([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "offices")] HttpRequest request, FunctionContext context)
     {
-        var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
-        if (!authorization.IsAuthenticated)
-        {
-            var principal = GetClientPrincipal(request);
+        // var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
+        // if (!authorization.IsAuthenticated)
+        // {
+        //     var principal = GetClientPrincipal(request);
 
-            if (principal == null)
-            {
-                return new UnauthorizedResult();
-            }
+        //     if (principal == null)
+        //     {
+        //         return new UnauthorizedResult();
+        //     }
 
-            var userId = principal.UserId;
-            var email = principal.UserDetails;
-            var roles = principal.UserRoles;
+        //     var userId = principal.UserId;
+        //     var email = principal.UserDetails;
+        //     var roles = principal.UserRoles;
 
-            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason + " " + request.Headers["Authorization"].FirstOrDefault() + "    user id = " + userId + "; email = " + email + "; roles = " + roles);
-        }
+        //     return FunctionsAuthorization.UnauthorizedResult(authorization.Reason + " " + request.Headers["Authorization"].FirstOrDefault() + "    user id = " + userId + "; email = " + email + "; roles = " + roles);
+        // }
         return new OkObjectResult(LeagueOffices.All);
     }
 
@@ -75,11 +75,11 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
     public async Task<IActionResult> Leagues([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "offices/{officeId:int}/leagues")] HttpRequest request,
         int officeId, FunctionContext context, CancellationToken cancellationToken)
     {
-        var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
-        if (!authorization.IsAuthenticated)
-        {
-            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
-        }
+        // var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
+        // if (!authorization.IsAuthenticated)
+        // {
+        //     return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
+        // }
         if (officeId <= 0) return InvalidIds();
         var season = request.Query["seasonId"].ToString();
         return new OkObjectResult(await league.GetLeaguesAsync(officeId, string.IsNullOrWhiteSpace(season) ? options.Value.DefaultSeasonId : season, cancellationToken));
@@ -89,11 +89,11 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
     public async Task<IActionResult> LeagueTeams([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "leagues/{leagueId:int}/teams")] HttpRequest request,
         int leagueId, FunctionContext context, CancellationToken cancellationToken)
     {
-        var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
-        if (!authorization.IsAuthenticated)
-        {
-            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
-        }
+        // var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
+        // if (!authorization.IsAuthenticated)
+        // {
+        //     return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
+        // }
         if (leagueId <= 0) return InvalidIds();
         return new OkObjectResult(await league.GetLeagueTeamsAsync(leagueId, cancellationToken));
     }
