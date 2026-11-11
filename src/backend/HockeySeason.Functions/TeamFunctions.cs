@@ -31,9 +31,10 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
     public async Task<IActionResult> Leagues([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "offices/{officeId:int}/leagues")] HttpRequest request,
         int officeId, FunctionContext context, CancellationToken cancellationToken)
     {
-        if (!FunctionsAuthorization.IsAuthenticatedV2(context).IsAuthenticated)
+        var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
+        if (!authorization.IsAuthenticated)
         {
-            return UnauthorizedResult(FunctionsAuthorization.IsAuthenticatedV2(context).Reason);
+            return UnauthorizedResult(authorization.Reason);
         }
         if (officeId <= 0) return InvalidIds();
         var season = request.Query["seasonId"].ToString();

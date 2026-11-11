@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -55,9 +56,11 @@ public sealed class JwtValidator : IJwtValidator
     private readonly IConfigurationManager<OpenIdConnectConfiguration> _configurationManager;
     private readonly JwtSecurityTokenHandler _handler = new();
     private readonly string[] _validTypes = ["JWT"];
+    private readonly ILoggerFactory? _loggerFactory;
 
-    public JwtValidator(IOptions<AuthOptions> options)
+    public JwtValidator(IOptions<AuthOptions> options, ILoggerFactory? loggerFactory = null)
     {
+        _loggerFactory = loggerFactory;
         _parameters = HockeySeasonAuthExtensions.CreateValidationParameters(options.Value);
         // Retriever mirroring the JwtBearer middleware: discovery metadata and
         // signing keys are fetched from the authority and refreshed
@@ -78,56 +81,77 @@ public sealed class JwtValidator : IJwtValidator
 
     public (bool IsValid, string? Reason) TryValidateV2(string? token, out string? subject)
     {
+        var logger = _loggerFactory?.CreateLogger<JwtValidator>();
         subject = null;
         if (string.IsNullOrWhiteSpace(token))
         {
+            logger?.LogWarning("JwtValidator rejected: empty_token");
             return (false, "empty_token");
         }
 
         try
         {
             var configuration = _configurationManager.GetConfigurationAsync(CancellationToken.None).GetAwaiter().GetResult();
+            logger?.LogDebug(
+                "JwtValidator discovery: authority jwks has {KeyCount} signing keys (kid: {KeyIds})",
+                configuration.SigningKeys.Count,
+                string.Join(", ", configuration.SigningKeys.Select(k => k.KeyId ?? "<none>")));
             var parameters = _parameters.Clone();
             parameters.IssuerSigningKeys = configuration.SigningKeys;
 
-            var principal = _handler.ValidateToken(token, parameters, out _);
+            var principal = _handler.ValidateToken(token, parameters, out SecurityToken validatedToken);
             if (principal.Identity?.IsAuthenticated != true)
             {
+                logger?.LogWarning("JwtValidator rejected: not_authenticated");
                 return (false, "not_authenticated");
             }
             var tokenType = principal.FindFirst("typ")?.Value;
             if (tokenType is not null && !_validTypes.Contains(tokenType, StringComparer.OrdinalIgnoreCase))
             {
+                logger?.LogWarning("JwtValidator rejected: invalid_token_type typ={TokenType}", tokenType);
                 return (false, "invalid_token_type");
             }
             subject = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                 ?? principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-            return subject is not null ? (true, null) : (false, "no_subject");
+            if (subject is not null)
+            {
+                logger?.LogInformation(
+                    "JwtValidator accepted: sub={Subject} iss={Issuer} kid={KeyId}",
+                    subject,
+                    validatedToken.Issuer,
+                    HockeySeasonAuthExtensions.DescribeToken(validatedToken));
+                return (true, null);
+            }
+            logger?.LogWarning("JwtValidator rejected: no_subject");
+            return (false, "no_subject");
         }
-        catch (SecurityTokenSignatureKeyNotFoundException)
+        catch (Exception ex)
         {
-            // Signing key not found in JWKS: key rotated or token from another authority.
-            return (false, "unknown_signing_key");
-        }
-        catch (SecurityTokenExpiredException)
-        {
-            return (false, "token_expired");
-        }
-        catch (SecurityTokenInvalidIssuerException)
-        {
-            return (false, "invalid_issuer");
-        }
-        catch (SecurityTokenInvalidAudienceException)
-        {
-            return (false, "invalid_audience");
-        }
-        catch (SecurityTokenNotYetValidException)
-        {
-            return (false, "token_not_yet_valid");
-        }
-        catch (SecurityTokenException)
-        {
+            // Full detail (IDX code, expected vs actual issuer/audience/signing
+            // key) goes to the log; the response body only carries the short
+            // machine-readable reason.
+            var reason = DescribeFailure(ex);
+            if (reason is not null)
+            {
+                logger?.LogWarning(ex, "JwtValidator rejected: {Reason}", reason);
+                return (false, reason);
+            }
+            logger?.LogError(ex, "JwtValidator rejected: unexpected_failure");
             return (false, "invalid_token");
         }
     }
+
+    private static string? DescribeFailure(Exception exception) => exception switch
+    {
+        SecurityTokenSignatureKeyNotFoundException => "unknown_signing_key",
+        SecurityTokenExpiredException => "token_expired",
+        SecurityTokenNotYetValidException => "token_not_yet_valid",
+        SecurityTokenInvalidIssuerException => "invalid_issuer",
+        SecurityTokenInvalidAudienceException => "invalid_audience",
+        SecurityTokenInvalidLifetimeException => "invalid_lifetime",
+        SecurityTokenInvalidSigningKeyException => "invalid_signing_key",
+        SecurityTokenInvalidAlgorithmException => "invalid_algorithm",
+        SecurityTokenException => "invalid_token",
+        _ => null,
+    };
 }

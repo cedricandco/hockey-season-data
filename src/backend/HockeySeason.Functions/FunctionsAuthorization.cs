@@ -1,5 +1,6 @@
 using HockeySeason.Auth;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
 using Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore;
 
 namespace HockeySeason.Functions;
@@ -49,23 +50,50 @@ public static class FunctionsAuthorization
     {
         var httpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("Function context has no HttpContext.");
+        var logger = context.InstanceServices?.GetService(typeof(ILogger)) as ILogger;
+
         if (httpContext.User.Identity?.IsAuthenticated == true)
         {
+            logger?.LogInformation(
+                "FunctionsAuth: principal already authenticated via middleware, name={Name}",
+                httpContext.User.Identity?.Name ?? "<unnamed>");
             return (true, null);
         }
 
         if (context.InstanceServices is not { } services || services.GetService(typeof(IJwtValidator)) is not IJwtValidator validator)
         {
+            // IJwtValidator is registered by AddHockeySeasonAuth; missing here
+            // means the Functions host composition root is misconfigured.
+            logger?.LogError("FunctionsAuth: IJwtValidator not registered in the invocation services.");
             return (false, "no_validator");
         }
 
-        if (JwtBearerTokenParser.TryExtractBearerToken(httpContext.Request.Headers.Authorization.ToString(), out var token))
+        var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
+        if (!JwtBearerTokenParser.TryExtractBearerToken(authorizationHeader, out var token))
         {
-            var (isValid, reason) = validator.TryValidateV2(token, out _);
-            return (isValid, reason);
+            logger?.LogWarning(
+                "FunctionsAuth: no bearer token found, principalAuthed=false, authHeader={Header}",
+                string.IsNullOrWhiteSpace(authorizationHeader) ? "<absent>" : DescribeHeader(authorizationHeader));
+            return (false, "missing_token");
         }
 
-        return (false, "missing_token");
+        var (isValid, reason) = validator.TryValidateV2(token, out var subject);
+        if (isValid)
+        {
+            logger?.LogInformation("FunctionsAuth: token accepted, sub={Subject}", subject);
+            return (true, null);
+        }
+        logger?.LogWarning("FunctionsAuth: token rejected, path={Path}, reason={Reason}", httpContext.Request.Path, reason);
+        return (false, reason);
+    }
+
+    /// <summary>Header description without emitting token material.</summary>
+    private static string DescribeHeader(string header)
+    {
+        var separator = header.IndexOf(' ');
+        return separator > 0
+            ? $"scheme={header[..separator]} length={header[(separator + 1)..].Trim().Length}"
+            : $"no-space (malformed, length={header.Length})";
     }
 }
 
