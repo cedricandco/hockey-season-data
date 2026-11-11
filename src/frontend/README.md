@@ -54,14 +54,15 @@ and Android devices.
 
 ## Authentication gate
 
-Every screen except the login gate requires an OIDC-style JWT: the app asks
-for the shared 6-digit access code (`LOGIN` translations), posts it to
-`POST /api/auth/login`, and stores the returned bearer token in local storage
-(`core/auth-storage.ts`). Each HTTP request adds
-`Authorization: Bearer <token>` (`core/auth.interceptor.ts`) and the AG-UI
-agent adds the same header in `agent/hockey-assistant-http-agent.ts`. A rejected
-token (401) clears the session and flips the app back to the login screen; the
-header button logs out explicitly.
+Every screen requires an Auth0 session: visitors are handed over to Auth0
+Universal Login (Authorization Code + PKCE through `@auth0/auth0-angular` —
+`core/login.component.ts`, `app.config.ts`) and the SPA calls the API with the
+access token issued for the `https://api.hockeyseason.dev` audience. The HTTP
+interceptor (`authHttpInterceptorFn`) adds
+`Authorization: Bearer <token>` to each `/api/` request and the AG-UI
+agent adds the same header in `agent/hockey-assistant-http-agent.ts`. The
+backend validates issuer, audience and signature against Auth0's JWKS and
+rejects invalid tokens with `401 { "error": "invalid_token", ... }`.
 
 ## Azure Static Web Apps deployment
 
@@ -75,10 +76,13 @@ application settings when using Ollama Cloud; do not put credentials in the
 repository or frontend. The default model and endpoint are in the backend's
 `appsettings.json` and may also be overridden through application settings.
 Azure Static Web Apps limits API requests to 45 seconds. Verify AG-UI streaming
-through the deployed Static Web App as well as locally. Configure
-`Auth__PinCode` and `Auth__SigningKey` in the Static Web App's application
-settings so the login gate protects the agent endpoint; access without a valid
-access code is rejected with 401.
+through the deployed Static Web App as well as locally. The managed Functions
+host enforces authentication per trigger (issuer/audience/JWKS validation of
+the raw Authorization header in `HockeySeason.Functions.FunctionsAuthorization`);
+it does not run the ASP.NET Core JWT bearer middleware, because on the managed
+host that middleware short-circuits failed authentication before the Functions
+coordinator handshake completes and holds requests until the 15s
+`FunctionStartTimeoutInSeconds` elapses.
 
 The explicit `@emnapi/core` and `@emnapi/runtime` development dependencies
 resolve conflicting WebAssembly build-tool peer dependencies in the lockfile.

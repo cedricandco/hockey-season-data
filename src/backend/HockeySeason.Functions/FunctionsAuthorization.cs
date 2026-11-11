@@ -51,8 +51,8 @@ public static class FunctionsAuthorization
 
         if (context.InstanceServices is not { } services || services.GetService(typeof(IJwtValidator)) is not IJwtValidator validator)
         {
-            // IJwtValidator is registered by AddHockeySeasonAuth; missing here
-            // means the Functions host composition root is misconfigured.
+            // IJwtValidator is registered by the Functions host Program.cs;
+            // missing here means the composition root is misconfigured.
             logger?.LogError(
                 "FunctionsAuth rejected request because IJwtValidator is not registered, invocationId={InvocationId}, functionId={FunctionId}, method={Method}, path={Path}",
                 context.InvocationId,

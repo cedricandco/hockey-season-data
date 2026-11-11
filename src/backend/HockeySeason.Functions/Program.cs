@@ -1,14 +1,11 @@
 using HockeySeason.Agents;
 using HockeySeason.Application;
-using HockeySeason.Auth;
 using HockeySeason.Domain;
 using HockeySeason.Functions;
 using HockeySeason.Infrastructure;
 using HockeySeason.LeagueApi.Extensions;
 using HockeySeason.Mcp;
 using Microsoft.Agents.AI;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Extensions.Configuration;
@@ -46,12 +43,18 @@ builder.Services.AddHockeySeasonDataAgent(builder.Configuration);
 builder.Services.AddSingleton<AIAgent>(services =>
     HockeySeasonAgentsServiceCollectionExtensions.CreateAgent(services, HockeySeasonDataAgentFactory.DefaultName));
 
-// JWT security backed by Auth0 (OIDC), same shared implementation as the
-// minimal API: RS256 access tokens validated against the authority metadata.
-// The startup filter inserts UseAuthentication/UseAuthorization ahead of the
-// Functions routing middleware because the integration does not add them
-// itself.
-builder.Services.AddHockeySeasonAuth(builder.Configuration);
-builder.Services.AddTransient<IStartupFilter, UseAuthenticationStartupFilter>();
+// JWT security: triggers enforce authentication through FunctionsAuthorization
+// (direct JWT validation of the Authorization header by HockeySeason.Auth).
+// The ASP.NET Core JWT bearer middleware is intentionally NOT wired here: on
+// the Static Web Apps managed host the middleware short-circuits failed
+// authentication before the Functions coordinator handshake completes, which
+// held every request for the 15s FunctionStartTimeout and forced 401s with
+// "Timed out waiting for the function start call" exceptions. The Api host
+// keeps the middleware + fallback policy; this host is trigger-validated only.
+builder.Services.AddOptions<HockeySeason.Auth.AuthOptions>()
+    .Bind(builder.Configuration.GetSection(HockeySeason.Auth.AuthOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<HockeySeason.Auth.IJwtValidator, HockeySeason.Auth.JwtValidator>();
 
 builder.Build().Run();

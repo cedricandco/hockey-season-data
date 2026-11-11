@@ -131,8 +131,12 @@ public sealed class JwtValidator : IJwtValidator
         {
             // Full detail (IDX code, expected vs actual issuer/audience/signing
             // key) goes to the log; the response body only carries the short
-            // machine-readable reason.
+            // machine-readable reason. The token header is also logged —
+            // without leaking its material — because "signature key not found"
+            // is usually caused by tokens from a different issuer/algorithm
+            // (e.g. kid-less HS256 tokens) rather than an actual JWKS outage.
             var reason = DescribeFailure(ex);
+            LogTokenHeader(token, logger);
             if (reason is not null)
             {
                 logger?.LogWarning(ex, "JwtValidator rejected: {Reason}", reason);
@@ -140,6 +144,28 @@ public sealed class JwtValidator : IJwtValidator
             }
             logger?.LogError(ex, "JwtValidator rejected: unexpected_failure");
             return (false, "invalid_token");
+        }
+    }
+
+    private void LogTokenHeader(string? token, ILogger? logger)
+    {
+        if (logger is null || string.IsNullOrWhiteSpace(token))
+        {
+            return;
+        }
+        try
+        {
+            var header = _handler.ReadJwtToken(token).Header;
+            logger?.LogWarning(
+                "JwtValidator rejected token header: alg={Alg} kidPresent={KidPresent} kid={Kid} type={Type}",
+                header.Alg,
+                header.Kid is not null,
+                header.Kid ?? "<none>",
+                header.Typ ?? "<none>");
+        }
+        catch (ArgumentException)
+        {
+            logger?.LogWarning("JwtValidator rejected token header: unparsable length={Length}", token.Length);
         }
     }
 
