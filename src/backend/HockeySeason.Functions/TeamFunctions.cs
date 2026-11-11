@@ -1,4 +1,3 @@
-using HockeySeason.Auth;
 using HockeySeason.LeagueApi;
 using HockeySeason.LeagueApi.Http;
 using Microsoft.AspNetCore.Http;
@@ -22,7 +21,7 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
         var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
         if (!authorization.IsAuthenticated)
         {
-            return UnauthorizedResult(authorization.Reason);
+            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
         }
         return new OkObjectResult(LeagueOffices.All);
     }
@@ -34,7 +33,7 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
         var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
         if (!authorization.IsAuthenticated)
         {
-            return UnauthorizedResult(authorization.Reason);
+            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
         }
         if (officeId <= 0) return InvalidIds();
         var season = request.Query["seasonId"].ToString();
@@ -48,7 +47,7 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
         var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
         if (!authorization.IsAuthenticated)
         {
-            return UnauthorizedResult(authorization.Reason);
+            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
         }
         if (leagueId <= 0) return InvalidIds();
         return new OkObjectResult(await league.GetLeagueTeamsAsync(leagueId, cancellationToken));
@@ -61,22 +60,12 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
         var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
         if (!authorization.IsAuthenticated)
         {
-            return UnauthorizedResult(authorization.Reason);
+            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
         }
         if (leagueId <= 0 || teamId <= 0) return InvalidIds();
         var result = await teams.GetAsync(leagueId, teamId, cancellationToken);
         return result is null ? new NotFoundResult() : new OkObjectResult(result);
     }
-
-    private static ObjectResult UnauthorizedResult(string? reason) => new(new
-    {
-        error = "invalid_token",
-        error_description = "Missing or invalid bearer token",
-        reason,
-    })
-    {
-        StatusCode = StatusCodes.Status401Unauthorized,
-    };
 
     private static BadRequestObjectResult InvalidIds() => new(new ValidationProblemDetails(
         new Dictionary<string, string[]> { ["ids"] = ["Identifiers must be positive."] }));

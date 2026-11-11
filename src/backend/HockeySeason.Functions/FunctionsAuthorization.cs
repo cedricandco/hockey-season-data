@@ -1,4 +1,6 @@
 using HockeySeason.Auth;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore;
@@ -28,35 +30,22 @@ public static class FunctionsAuthorization
     /// issuer/audience, either via the ASP.NET Core principal or via direct
     /// JWT validation of the Authorization header.
     /// </summary>
-    public static bool IsAuthenticated(FunctionContext context)
-    {
-        var httpContext = context.GetHttpContext()
-            ?? throw new InvalidOperationException("Function context has no HttpContext.");
-        if (httpContext.User.Identity?.IsAuthenticated == true)
-        {
-            return true;
-        }
-
-        if (context.InstanceServices is not { } services || services.GetService(typeof(IJwtValidator)) is not IJwtValidator validator)
-        {
-            return false;
-        }
-
-        return JwtBearerTokenParser.TryExtractBearerToken(httpContext.Request.Headers.Authorization.ToString(), out var token)
-            && validator.TryValidate(token, out _);
-    }
+    public static bool IsAuthenticated(FunctionContext context) => IsAuthenticatedV2(context).IsAuthenticated;
 
     public static (bool IsAuthenticated, string? Reason) IsAuthenticatedV2(FunctionContext context)
     {
         var httpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("Function context has no HttpContext.");
-        var logger = context.InstanceServices?.GetService(typeof(ILogger)) as ILogger;
+        var loggerFactory = context.InstanceServices?.GetService(typeof(ILoggerFactory)) as ILoggerFactory;
+        var logger = loggerFactory?.CreateLogger(nameof(FunctionsAuthorization));
 
         if (httpContext.User.Identity?.IsAuthenticated == true)
         {
             logger?.LogInformation(
-                "FunctionsAuth: principal already authenticated via middleware, name={Name}",
-                httpContext.User.Identity?.Name ?? "<unnamed>");
+                "FunctionsAuth accepted middleware principal, invocationId={InvocationId}, functionId={FunctionId}, path={Path}",
+                context.InvocationId,
+                context.FunctionId,
+                httpContext.Request.Path);
             return (true, null);
         }
 
@@ -64,7 +53,12 @@ public static class FunctionsAuthorization
         {
             // IJwtValidator is registered by AddHockeySeasonAuth; missing here
             // means the Functions host composition root is misconfigured.
-            logger?.LogError("FunctionsAuth: IJwtValidator not registered in the invocation services.");
+            logger?.LogError(
+                "FunctionsAuth rejected request because IJwtValidator is not registered, invocationId={InvocationId}, functionId={FunctionId}, method={Method}, path={Path}",
+                context.InvocationId,
+                context.FunctionId,
+                httpContext.Request.Method,
+                httpContext.Request.Path);
             return (false, "no_validator");
         }
 
@@ -72,20 +66,44 @@ public static class FunctionsAuthorization
         if (!JwtBearerTokenParser.TryExtractBearerToken(authorizationHeader, out var token))
         {
             logger?.LogWarning(
-                "FunctionsAuth: no bearer token found, principalAuthed=false, authHeader={Header}",
+                "FunctionsAuth rejected request because no bearer token was found, invocationId={InvocationId}, functionId={FunctionId}, method={Method}, path={Path}, authHeader={Header}",
+                context.InvocationId,
+                context.FunctionId,
+                httpContext.Request.Method,
+                httpContext.Request.Path,
                 string.IsNullOrWhiteSpace(authorizationHeader) ? "<absent>" : DescribeHeader(authorizationHeader));
             return (false, "missing_token");
         }
 
-        var (isValid, reason) = validator.TryValidateV2(token, out var subject);
+        var (isValid, reason) = validator.TryValidateV2(token, out _);
         if (isValid)
         {
-            logger?.LogInformation("FunctionsAuth: token accepted, sub={Subject}", subject);
+            logger?.LogInformation(
+                "FunctionsAuth accepted bearer token, invocationId={InvocationId}, functionId={FunctionId}, path={Path}",
+                context.InvocationId,
+                context.FunctionId,
+                httpContext.Request.Path);
             return (true, null);
         }
-        logger?.LogWarning("FunctionsAuth: token rejected, path={Path}, reason={Reason}", httpContext.Request.Path, reason);
+        logger?.LogWarning(
+            "FunctionsAuth rejected bearer token, invocationId={InvocationId}, functionId={FunctionId}, method={Method}, path={Path}, reason={Reason}",
+            context.InvocationId,
+            context.FunctionId,
+            httpContext.Request.Method,
+            httpContext.Request.Path,
+            reason);
         return (false, reason);
     }
+
+    public static ObjectResult UnauthorizedResult(string? reason) => new(new
+    {
+        error = "invalid_token",
+        error_description = "Missing or invalid bearer token",
+        reason,
+    })
+    {
+        StatusCode = StatusCodes.Status401Unauthorized,
+    };
 
     /// <summary>Header description without emitting token material.</summary>
     private static string DescribeHeader(string header)

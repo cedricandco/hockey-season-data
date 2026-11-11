@@ -1,4 +1,3 @@
-using HockeySeason.Auth;
 using HockeySeason.LeagueApi.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -15,12 +14,10 @@ public sealed class GameDetailFunction(LeagueApiService league)
         int gameId,
         CancellationToken cancellationToken)
     {
-        if (!FunctionsAuthorization.IsAuthenticated(context))
+        var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
+        if (!authorization.IsAuthenticated)
         {
-            return new ObjectResult(new { error = "invalid_token", error_description = "Missing or invalid bearer token" })
-            {
-                StatusCode = StatusCodes.Status401Unauthorized,
-            };
+            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
         }
 
         if (gameId <= 0)

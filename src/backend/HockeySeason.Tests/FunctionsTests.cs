@@ -38,6 +38,22 @@ public sealed class FunctionsTests
         Assert.IsType<BadRequestObjectResult>(await function.Run(request, CreateAuthenticatedContext(), CancellationToken.None));
     }
 
+    [Fact]
+    public async Task WeeklyReport_RejectsMissingBearerTokenWithReason()
+    {
+        await using var identityProvider = new OidcTestServer();
+        var function = new WeeklyReportFunction(new TestWeeklyReportService());
+        var request = new DefaultHttpContext().Request;
+        var context = CreateAnonymousBearerContext((DefaultHttpContext)request.HttpContext, string.Empty, identityProvider);
+
+        var result = Assert.IsType<ObjectResult>(await function.Run(request, context, CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, result.StatusCode);
+        using var body = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result.Value));
+        Assert.Equal("invalid_token", body.RootElement.GetProperty("error").GetString());
+        Assert.Equal("missing_token", body.RootElement.GetProperty("reason").GetString());
+    }
+
     // [Fact]
     // public async Task WeeklyReport_RejectsAnonymousCaller()
     // {
@@ -188,6 +204,7 @@ public sealed class FunctionsTests
 
     private static IServiceProvider ConfigureAuthServices(OidcTestServer identityProvider) =>
         new ServiceCollection()
+            .AddLogging()
             .Configure<HockeySeason.Auth.AuthOptions>(options =>
             {
                 options.Authority = identityProvider.Authority;

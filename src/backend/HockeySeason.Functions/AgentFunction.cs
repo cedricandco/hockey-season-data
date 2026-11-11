@@ -2,7 +2,6 @@ using System.Text.Json;
 using AGUI.Abstractions;
 using AGUI.Server;
 using HockeySeason.Agents;
-using HockeySeason.Auth;
 using Microsoft.Agents.AI;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -24,12 +23,10 @@ public sealed class AgentFunction(
         FunctionContext context,
         CancellationToken cancellationToken)
     {
-        if (!FunctionsAuthorization.IsAuthenticated(context))
+        var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
+        if (!authorization.IsAuthenticated)
         {
-            return new ObjectResult(new { error = "invalid_token", error_description = "Missing or invalid bearer token" })
-            {
-                StatusCode = StatusCodes.Status401Unauthorized,
-            };
+            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
         }
 
         var options = jsonOptions.Value.SerializerOptions;

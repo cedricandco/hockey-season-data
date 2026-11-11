@@ -1,4 +1,3 @@
-using HockeySeason.Auth;
 using HockeySeason.LeagueApi;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -13,12 +12,10 @@ public sealed class WeeklyReportFunction(IWeeklyReportService reports)
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "weekly-report")] HttpRequest httpRequest,
         FunctionContext context, CancellationToken cancellationToken)
     {
-        if (!FunctionsAuthorization.IsAuthenticated(context))
+        var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
+        if (!authorization.IsAuthenticated)
         {
-            return new ObjectResult(new { error = "invalid_token", error_description = "Missing or invalid bearer token" })
-            {
-                StatusCode = StatusCodes.Status401Unauthorized,
-            };
+            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
         }
 
         var query = httpRequest.Query;
