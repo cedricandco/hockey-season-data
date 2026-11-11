@@ -82,6 +82,8 @@ public sealed class JwtValidator : IJwtValidator
     public (bool IsValid, string? Reason) TryValidateV2(string? token, out string? subject)
     {
         var logger = _loggerFactory?.CreateLogger<JwtValidator>();
+        logger?.LogWarning("Starting ValidateV2");
+
         subject = null;
         if (string.IsNullOrWhiteSpace(token))
         {
