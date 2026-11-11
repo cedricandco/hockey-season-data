@@ -9,6 +9,7 @@ using HockeySeason.Mcp;
 using Microsoft.Agents.AI;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.UserSecrets;
@@ -17,6 +18,15 @@ using Microsoft.Extensions.Hosting;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 builder.ConfigureFunctionsWebApplication();
+
+// Application Insights: when APPLICATIONINSIGHTS_CONNECTION_STRING is set
+// (Static Web Apps managed functions / Azure Function App), ILogger output —
+// including the JwtValidator and JwtBearer diagnostics — is exported to the
+// "hockey-season-data" component. Without the variable it is a no-op, so
+// local development keeps console-only logging.
+builder.Services
+    .AddApplicationInsightsTelemetryWorkerService()
+    .ConfigureFunctionsApplicationInsights();
 
 if (builder.Environment.IsDevelopment())
 {

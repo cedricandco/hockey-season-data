@@ -142,8 +142,9 @@ public static class HockeySeasonAuthExtensions
         context.RequestServices.GetService(typeof(ILogger<JwtBearerHandler>)) as ILogger;
 
     /// <summary>
-    /// Describes the Authorization header without ever logging the raw token:
-    /// scheme shape only (the token body holds no value for debugging here).
+    /// Describes the Authorization header shape without ever logging the raw
+    /// token: scheme word, value length, dot count and per-segment lengths —
+    /// numeric facts that survive log masking and pinpoint malformation.
     /// </summary>
     internal static string DescribeAuthorizationHeader(HttpRequest request)
     {
@@ -152,10 +153,25 @@ public static class HockeySeasonAuthExtensions
         {
             return "<absent>";
         }
-        var separator = value.IndexOf(' ');
-        return separator > 0
-            ? $"scheme={value[..separator]} length={value[(separator + 1)..].Trim().Length}"
-            : $"no-space (malformed, length={value.Length})";
+        var dots = 0;
+        var lastDot = -1;
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (value[i] == '.')
+            {
+                dots++;
+                lastDot = i;
+            }
+        }
+        var spaces = 0;
+        foreach (var ch in value)
+        {
+            if (ch == ' ')
+            {
+                spaces++;
+            }
+        }
+        return $"valueLength={value.Length} spaces={spaces} dots={dots} lastDotIndex={(dots > 0 ? lastDot : -1)}";
     }
 
     /// <summary>
