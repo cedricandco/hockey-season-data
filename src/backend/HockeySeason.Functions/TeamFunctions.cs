@@ -66,7 +66,7 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
             var email = principal.UserDetails;
             var roles = principal.UserRoles;
 
-            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason + " " + request.Headers["Authorization"].FirstOrDefault() + "    user id = " + userId + "; email = " + email + "; roles = " + roles);
+            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason + "  " + request.Headers["Authorization"].FirstOrDefault() + "    user id = " + userId + "; email = " + email + "; roles = " + roles);
         }
         return new OkObjectResult(LeagueOffices.All);
     }
