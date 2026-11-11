@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using HockeySeason.LeagueApi;
 using HockeySeason.LeagueApi.Http;
 using Microsoft.AspNetCore.Http;
@@ -15,13 +17,56 @@ namespace HockeySeason.Functions;
 /// </summary>
 public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService teams, IOptions<LeagueApiOptions> options)
 {
+
+    public class ClientPrincipal
+    {
+        public string IdentityProvider { get; set; } = "";
+        public string UserId { get; set; } = "";
+        public string UserDetails { get; set; } = "";
+        public List<string> UserRoles { get; set; } = new();
+        public List<ClientClaim> Claims { get; set; } = new();
+    }
+
+    public class ClientClaim
+    {
+        public string Typ { get; set; } = "";
+        public string Val { get; set; } = "";
+    }
+
+    public static ClientPrincipal? GetClientPrincipal(HttpRequest request)
+    {
+        if (!request.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL", out var header))
+            return null;
+
+        var decoded = Encoding.UTF8.GetString(
+            Convert.FromBase64String(header!));
+
+        return JsonSerializer.Deserialize<ClientPrincipal>(
+            decoded,
+            new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+    }
+
     [Function("Offices")]
     public IActionResult Offices([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "offices")] HttpRequest request, FunctionContext context)
     {
         var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
         if (!authorization.IsAuthenticated)
         {
-            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason + " " + request.Headers["Authorization"].FirstOrDefault());
+            var principal = GetClientPrincipal(request);
+
+            if (principal == null)
+            {
+                return new UnauthorizedResult();
+            }
+
+            var userId = principal.UserId;
+            var email = principal.UserDetails;
+            var roles = principal.UserRoles;
+
+            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason + " " + request.Headers["Authorization"].FirstOrDefault() + "    user id = " + userId + "; email = " + email + "; roles = " + roles);
         }
         return new OkObjectResult(LeagueOffices.All);
     }
