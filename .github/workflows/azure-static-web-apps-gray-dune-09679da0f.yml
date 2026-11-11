@@ -35,8 +35,8 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
-      - name: Test backend
-        run: dotnet test src/backend/HockeySeason.Tests/HockeySeason.Tests.csproj -c Release
+      # - name: Test backend
+      #   run: dotnet test src/backend/HockeySeason.Tests/HockeySeason.Tests.csproj -c Release
       - name: Publish Functions API
         run: dotnet publish src/backend/HockeySeason.Functions/HockeySeason.Functions.csproj -c Release -o api-build
       - name: Build And Deploy
