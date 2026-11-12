@@ -3,8 +3,6 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HockeySeason.Api", "HockeySeason.Api\HockeySeason.Api.csproj", "{049918F2-DA39-4D50-905A-372563592667}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HockeySeason.Application", "HockeySeason.Application\HockeySeason.Application.csproj", "{0D57BBDD-FD5E-4902-8A1F-CFB26CA311C4}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HockeySeason.Domain", "HockeySeason.Domain\HockeySeason.Domain.csproj", "{4937FAD3-8461-4106-9B24-EF78005E43FF}"
@@ -33,18 +31,6 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{049918F2-DA39-4D50-905A-372563592667}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{049918F2-DA39-4D50-905A-372563592667}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{049918F2-DA39-4D50-905A-372563592667}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{049918F2-DA39-4D50-905A-372563592667}.Debug|x64.Build.0 = Debug|Any CPU
-		{049918F2-DA39-4D50-905A-372563592667}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{049918F2-DA39-4D50-905A-372563592667}.Debug|x86.Build.0 = Debug|Any CPU
-		{049918F2-DA39-4D50-905A-372563592667}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{049918F2-DA39-4D50-905A-372563592667}.Release|Any CPU.Build.0 = Release|Any CPU
-		{049918F2-DA39-4D50-905A-372563592667}.Release|x64.ActiveCfg = Release|Any CPU
-		{049918F2-DA39-4D50-905A-372563592667}.Release|x64.Build.0 = Release|Any CPU
-		{049918F2-DA39-4D50-905A-372563592667}.Release|x86.ActiveCfg = Release|Any CPU
-		{049918F2-DA39-4D50-905A-372563592667}.Release|x86.Build.0 = Release|Any CPU
 		{0D57BBDD-FD5E-4902-8A1F-CFB26CA311C4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{0D57BBDD-FD5E-4902-8A1F-CFB26CA311C4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0D57BBDD-FD5E-4902-8A1F-CFB26CA311C4}.Debug|x64.ActiveCfg = Debug|Any CPU

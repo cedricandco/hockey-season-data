@@ -7,17 +7,12 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace HockeySeason.Tests;
 
 public sealed class TeamDetailTests
 {
-    private readonly OidcTestServer _identityServerForTests = new();
-
     [Fact]
     public async Task TeamDetail_AggregatesOnlyTeamEventsAndKeepsFullGames()
     {
@@ -46,6 +41,26 @@ public sealed class TeamDetailTests
     }
 
     [Fact]
+    public async Task TeamDetail_KeepsANullPlayerNumberFromAPenalizedCoach()
+    {
+        var handler = new TeamHandler { BoxScoreExtraPenalty = """
+            {"gameTime":{"period":"3","elapsedMinutes":0,"elapsedSeconds":30},"teamId":1,"infraction":"Bench minor","duration":{"name":"Minor"},
+             "participant":{"fullName":"Head Coach","number":null,"participantId":105,"isAffiliate":false},"isBenchPenalty":false}
+            """ };
+        var result = await CreateService(handler).GetAsync(100, 1, CancellationToken.None);
+
+        Assert.NotNull(result);
+        // The bench penalty counts as one team penalty; a coach row has no jersey number.
+        Assert.Equal(2, result.Penalties);
+        var coach = Assert.Single(result.Players, player => player.ParticipantId == 105);
+        Assert.Equal("Head Coach", coach.Name);
+        Assert.Null(coach.Number);
+        Assert.Equal(0, coach.Goals);
+        Assert.Equal(0, coach.Assists);
+        Assert.Equal(0, coach.Points);
+    }
+
+    [Fact]
     public async Task TeamDetail_UnknownTeamReturnsNullWithoutFetchingGames()
     {
         var handler = new TeamHandler();
@@ -59,32 +74,17 @@ public sealed class TeamDetailTests
     {
         var handler = new TeamHandler();
         var league = CreateLeague(handler);
-        await using var app = new WebApplicationFactory<HockeySeason.Api.Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Development");
-            builder.UseSetting("Auth:Authority", _identityServerForTests.Authority);
-            builder.UseSetting("Auth:Issuer", _identityServerForTests.Issuer);
-            builder.UseSetting("Auth:Audience", _identityServerForTests.Audience);
-            builder.UseSetting("Auth:AllowHttpAuthority", "true");
-            builder.UseSetting("LeagueApi:ApiKey", "test");
-            builder.ConfigureServices(services =>
-            {
-                services.AddSingleton(league);
-                services.AddSingleton<ITeamDetailService>(new TeamDetailService(league));
-            });
-        });
-        var client = app.CreateClient();
-        var token = _identityServerForTests.CreateToken();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/offices")).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/offices/6193/leagues")).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/leagues/100/teams")).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/leagues/0/teams")).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/leagues/100/teams/0")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/leagues/100/teams/999")).StatusCode);
-        var response = await client.GetAsync("/api/leagues/100/teams/1");
-        response.EnsureSuccessStatusCode();
-        using var json = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var function = new TeamFunctions(league, new TeamDetailService(league), Options.Create(new LeagueApiOptions()), FunctionsTests.UnfilteredScope());
+        var request = new DefaultHttpContext().Request;
+        var context = FunctionsTests.CreateFunctionContextForRequest(request);
+
+        Assert.IsType<BadRequestObjectResult>(await function.LeagueTeams(request, 0, context, CancellationToken.None));
+        Assert.IsType<BadRequestObjectResult>(await function.TeamDetail(request, 100, 0, context, CancellationToken.None));
+        Assert.IsType<NotFoundResult>(await function.TeamDetail(request, 100, 999, context, CancellationToken.None));
+        var response = Assert.IsType<OkObjectResult>(await function.TeamDetail(request, 100, 1, context, CancellationToken.None));
+        // The wire format is camelCase JSON, as consumed by the frontend.
+        using var json = System.Text.Json.JsonDocument.Parse(
+            System.Text.Json.JsonSerializer.Serialize(response.Value, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
         Assert.Equal(3, json.RootElement.GetProperty("totalPoints").GetInt32());
         Assert.Equal(2, json.RootElement.GetProperty("topAssistProviders").GetArrayLength());
     }
@@ -101,7 +101,7 @@ public sealed class TeamDetailTests
     public async Task Functions_ExposeSameDiscoveryAndTeamDetail()
     {
         var league = CreateLeague(new TeamHandler());
-        var function = new TeamFunctions(league, new TeamDetailService(league), Options.Create(new LeagueApiOptions()));
+        var function = new TeamFunctions(league, new TeamDetailService(league), Options.Create(new LeagueApiOptions()), FunctionsTests.UnfilteredScope());
         var request = new DefaultHttpContext().Request;
         var authContext = FunctionsTests.CreateFunctionContextForRequest(request);
         Assert.IsType<OkObjectResult>(function.Offices(request, authContext));
@@ -126,6 +126,10 @@ public sealed class TeamDetailTests
     private sealed class TeamHandler : HttpMessageHandler
     {
         public string? GamesQuery { get; private set; }
+
+        /// <summary>Extra penalty row appended to every box score, for edge-case payloads.</summary>
+        public string? BoxScoreExtraPenalty { get; init; }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath;
@@ -151,7 +155,7 @@ public sealed class TeamDetailTests
                     """;
             }
             else if (path.EndsWith("/boxScore", StringComparison.Ordinal))
-                payload = """
+                payload = $$"""
                     {"gameNumber":"1","goals":[
                       {"gameTime":{"period":"1","elapsedMinutes":1,"elapsedSeconds":0},"teamId":1,
                        "participant":{"fullName":"A","number":1,"participantId":101,"isAffiliate":false},
@@ -163,7 +167,7 @@ public sealed class TeamDetailTests
                      ],"penalties":[
                       {"gameTime":{"period":"2","elapsedMinutes":2,"elapsedSeconds":0},"teamId":1,"infraction":"Tripping","duration":{"name":"Minor"},
                        "participant":{"fullName":"D","number":4,"participantId":104,"isAffiliate":false},"isBenchPenalty":false}
-                     ]}
+                      {{(BoxScoreExtraPenalty is null ? string.Empty : $",{BoxScoreExtraPenalty}")}}]}
                     """;
             else if (path.EndsWith("/games/10", StringComparison.Ordinal))
                 payload = """

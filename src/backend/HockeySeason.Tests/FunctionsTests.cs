@@ -21,11 +21,38 @@ namespace HockeySeason.Tests;
 public sealed class FunctionsTests
 {
     [Fact]
+    public async Task Agent_AcceptsMirroredTokenAndExposesItDuringStreaming()
+    {
+        await using var identityProvider = new OidcTestServer();
+        var token = identityProvider.CreateToken();
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Authorization"] = $"Bearer {token}";
+        httpContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(
+            """{"threadId":"thread","runId":"run","state":{},"tools":[],"context":[],"forwardedProps":{},"messages":[{"id":"message","role":"user","content":"Bonjour"}]}"""));
+        httpContext.Response.Body = new MemoryStream();
+        var accessor = new HttpContextAccessor { HttpContext = httpContext };
+        var caller = new AgentCallerContext(accessor);
+        string? observedToken = null;
+        var agent = HockeySeasonDataAgentFactory.Create(new TestChatClient(() => observedToken = caller.GetAccessToken()), "Translate.", "test");
+        using var services = new ServiceCollection().AddLogging().AddAGUIServer().BuildServiceProvider();
+        var function = new AgentFunction(agent, services.GetRequiredService<IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>>(), NullLogger<AgentFunction>.Instance);
+
+        var result = await function.Run(httpContext.Request, CreateAnonymousBearerContext(httpContext, token, identityProvider), CancellationToken.None);
+
+        Assert.IsType<EmptyResult>(result);
+        Assert.Equal(token, observedToken);
+        httpContext.Response.Body.Position = 0;
+        var output = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
+        Assert.Contains("\"type\":\"RUN_FINISHED\"", output);
+        Assert.DoesNotContain(token, output);
+    }
+
+    [Fact]
     public async Task WeeklyReport_ValidatesAndAllowsAuthenticatedCallers()
     {
         await using var identityProvider = new OidcTestServer();
         var service = new TestWeeklyReportService();
-        var function = new WeeklyReportFunction(service);
+        var function = new WeeklyReportFunction(service, UnfilteredScope());
         var request = new DefaultHttpContext().Request;
         request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&divisionId=194901&teamId=182497");
 
@@ -42,7 +69,7 @@ public sealed class FunctionsTests
     public async Task WeeklyReport_RejectsMissingBearerTokenWithReason()
     {
         await using var identityProvider = new OidcTestServer();
-        var function = new WeeklyReportFunction(new TestWeeklyReportService());
+        var function = new WeeklyReportFunction(new TestWeeklyReportService(), UnfilteredScope());
         var request = new DefaultHttpContext().Request;
         var context = CreateAnonymousBearerContext((DefaultHttpContext)request.HttpContext, string.Empty, identityProvider);
         // The mirrored header is mandatory; an empty value yields "missing_token".
@@ -187,7 +214,7 @@ public sealed class FunctionsTests
     //     Assert.False(FunctionsAuthorization.IsAuthenticated(CreateAnonymousBearerContext(context, "dXNlcjpwYXNz", identityProvider)));
     // }
 
-    private static FunctionContext CreateAnonymousBearerContext(
+    internal static FunctionContext CreateAnonymousBearerContext(
         DefaultHttpContext httpContext,
         string token,
         OidcTestServer identityProvider)
@@ -197,7 +224,26 @@ public sealed class FunctionsTests
         return stub;
     }
 
-    private static FunctionContext CreateBearerRequestContext(HttpRequest request, OidcTestServer identityProvider)
+    /// <summary>Scope that never filters: persistence is not configured, as in a database-less host.</summary>
+    internal static CallerScope UnfilteredScope() =>
+        new(new RequestUserResolver(null!), null!, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
+
+    /// <summary>Function context with the given invocation services and the request's HttpContext.</summary>
+    internal static FunctionContext CreateContextWith(DefaultHttpContext httpContext, IServiceProvider services)
+    {
+        var stub = (FunctionContextStub)CreateContext(httpContext);
+        stub.InstanceServices = services;
+        return stub;
+    }
+
+    internal static FunctionContext CreateBearerRequestContext(HttpRequest request, OidcTestServer identityProvider, string token)
+    {
+        request.Headers.Authorization = $"Bearer {token}";
+        request.Headers["X-Authorization"] = $"Bearer {token}";
+        return CreateAnonymousBearerContext((DefaultHttpContext)request.HttpContext, token, identityProvider);
+    }
+
+    internal static FunctionContext CreateBearerRequestContext(HttpRequest request, OidcTestServer identityProvider)
 {
         var token = identityProvider.CreateToken();
         request.Headers.Authorization = $"Bearer {token}";
@@ -205,7 +251,7 @@ public sealed class FunctionsTests
         return CreateAnonymousBearerContext((DefaultHttpContext)request.HttpContext, token, identityProvider);
     }
 
-    private static IServiceProvider ConfigureAuthServices(OidcTestServer identityProvider) =>
+    internal static IServiceProvider ConfigureAuthServices(OidcTestServer identityProvider) =>
         new ServiceCollection()
             .AddLogging()
             .Configure<HockeySeason.Auth.AuthOptions>(options =>
@@ -230,6 +276,9 @@ public sealed class FunctionsTests
         httpContext.Request.Headers["X-Authorization"] = "Bearer mirror-token";
         return CreateContext(httpContext);
     }
+
+    /// <summary>A request on a fresh HttpContext (the response body is replaced by callers).</summary>
+    internal static HttpRequest CreateAuthenticatedRequest() => new DefaultHttpContext().Request;
 
     /// <summary>Exposed for sibling test classes sharing the Functions host stubs.</summary>
     internal static FunctionContext CreateFunctionContextForRequest(HttpRequest request)
@@ -327,7 +376,7 @@ public sealed class FunctionsTests
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
-    private sealed class TestChatClient : IChatClient
+    private sealed class TestChatClient(Action? onRun = null) : IChatClient
     {
         public void Dispose() { }
         public object? GetService(Type serviceType, object? serviceKey = null) => null;
@@ -339,6 +388,7 @@ public sealed class FunctionsTests
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             await Task.Yield();
+            onRun?.Invoke();
             yield return new ChatResponseUpdate(ChatRole.Assistant, "Hello");
         }
     }

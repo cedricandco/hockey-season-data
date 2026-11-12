@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -29,7 +30,16 @@ public interface IJwtValidator
     /// machine-readable failure reason (null when the token is valid).
     /// </summary>
     (bool IsValid, string? Reason) TryValidateV2(string? token, out string? subject);
+
+    /// <summary>
+    /// Same validation, returning the validated <see cref="ClaimsPrincipal"/>
+    /// (sub, email, names, roles) so callers can provision the local account.
+    /// </summary>
+    JwtValidationResult Validate(string? token);
 }
+
+/// <summary>Outcome of <see cref="IJwtValidator.Validate"/>.</summary>
+public sealed record JwtValidationResult(bool IsValid, string? Reason, string? Subject, ClaimsPrincipal? Principal);
 
 /// <summary>
 /// Document retriever allowing http:// authorities. Production authorities
@@ -81,14 +91,21 @@ public sealed class JwtValidator : IJwtValidator
 
     public (bool IsValid, string? Reason) TryValidateV2(string? token, out string? subject)
     {
-        var logger = _loggerFactory?.CreateLogger<JwtValidator>();
-        logger?.LogWarning("Starting ValidateV2 ");
+        var result = Validate(token);
+        subject = result.Subject;
+        return (result.IsValid, result.Reason);
+    }
 
-        subject = null;
+    public JwtValidationResult Validate(string? token)
+    {
+        var logger = _loggerFactory?.CreateLogger<JwtValidator>();
+        logger?.LogDebug("Starting JWT validation");
+
+        string? subject;
         if (string.IsNullOrWhiteSpace(token))
         {
             logger?.LogWarning("JwtValidator rejected: empty_token");
-            return (false, "empty_token");
+            return new(false, "empty_token", null, null);
         }
 
         try
@@ -105,13 +122,13 @@ public sealed class JwtValidator : IJwtValidator
             if (principal.Identity?.IsAuthenticated != true)
             {
                 logger?.LogWarning("JwtValidator rejected: not_authenticated");
-                return (false, "not_authenticated");
+                return new(false, "not_authenticated", null, null);
             }
             var tokenType = principal.FindFirst("typ")?.Value;
             if (tokenType is not null && !_validTypes.Contains(tokenType, StringComparer.OrdinalIgnoreCase))
             {
                 logger?.LogWarning("JwtValidator rejected: invalid_token_type typ={TokenType}", tokenType);
-                return (false, "invalid_token_type");
+                return new(false, "invalid_token_type", null, null);
             }
             subject = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                 ?? principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
@@ -122,10 +139,10 @@ public sealed class JwtValidator : IJwtValidator
                     subject,
                     validatedToken.Issuer,
                     HockeySeasonAuthExtensions.DescribeToken(validatedToken));
-                return (true, null);
+                return new(true, null, subject, principal);
             }
             logger?.LogWarning("JwtValidator rejected: no_subject");
-            return (false, "no_subject");
+            return new(false, "no_subject", null, null);
         }
         catch (Exception ex)
         {
@@ -140,10 +157,10 @@ public sealed class JwtValidator : IJwtValidator
             if (reason is not null)
             {
                 logger?.LogWarning(ex, "JwtValidator rejected: {Reason}", reason);
-                return (false, reason);
+                return new(false, reason, null, null);
             }
             logger?.LogError(ex, "JwtValidator rejected: unexpected_failure");
-            return (false, "invalid_token");
+            return new(false, "invalid_token", null, null);
         }
     }
 

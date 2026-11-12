@@ -106,7 +106,7 @@ public static class HockeySeasonUserContextExtensions
     /// Adds the auth-project user context: options bound to the
     /// <c>UserInfo</c> section, a typed userinfo client and DI plumbing for
     /// <see cref="IUserContext"/>/<see cref="IBearerTokenAccessor"/>. Call from
-    /// any composition root (Api and Functions hosts).
+    /// any composition root (the Functions host).
     /// </summary>
     public static IServiceCollection AddHockeySeasonUserContext(this IServiceCollection services)
     {

@@ -9,6 +9,7 @@ import { provideAuth0, authHttpInterceptorFn } from '@auth0/auth0-angular';
 import { environment } from '../environments/environment';
 import { HockeyAssistantHttpAgent } from './agent/hockey-assistant-http-agent';
 import { AuthService } from '@auth0/auth0-angular';
+import { firstValueFrom } from 'rxjs';
 import { routes } from './app.routes';
 
 /** Logical id of the Hockey Assistant agent exposed by the backend over AG-UI. */
@@ -16,8 +17,8 @@ export const HOCKEY_SEASON_DATA_AGENT_ID = 'hockey-season-data.agent';
 
 /**
  * Self-managed AG-UI agent talking straight to the .NET backend's
- * `MapAGUIServer` endpoint. The relative URL keeps same-origin calls working
- * in dev (proxy.conf.cjs → http://localhost:5000) and with the Azure Static
+ * AG-UI Function endpoint. The relative URL keeps same-origin calls working
+ * in dev (proxy.conf.cjs → http://localhost:7071) and with the Azure Static
  * Web Apps managed Functions API.
  */
 export const hockeySeasonDataAgent = new HockeyAssistantHttpAgent({
@@ -26,25 +27,10 @@ export const hockeySeasonDataAgent = new HockeyAssistantHttpAgent({
   url: `${environment.apiUrl}/agui/hockey-season-data.agent`,
 });
 
-// The AG-UI agent resolves the bearer token lazily at request time: Auth0's
-// `getAccessTokenSilently` is a cold observable that completes after emitting
-// one value, so a plain subscribe read is enough for synchronous callers.
+// Auth0 token acquisition and renewal are asynchronous, including cache hits.
 HockeyAssistantHttpAgent.accessTokenProvider = () => {
-  const injector = globalInjector;
-  if (!injector) return null;
-  const auth = injector.get(AuthService);
-  let token: string | null = null;
-  // Agent requests happen outside the component tree, so a synchronous
-  // first-value read keeps the request pipeline simple.
-  auth.getAccessTokenSilently().subscribe({
-    next: (value) => {
-      token = value ?? null;
-    },
-    error: () => {
-      token = null;
-    },
-  });
-  return token;
+  if (!globalInjector) throw new Error('The application injector is not initialized.');
+  return firstValueFrom(globalInjector.get(AuthService).getAccessTokenSilently());
 };
 
 /** Root injector captured at boot so lazy providers resolve AuthService. */

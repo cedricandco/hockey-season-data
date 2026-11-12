@@ -1,5 +1,4 @@
-import { RunAgentInput } from '@ag-ui/client';
-import { HttpAgent } from '@ag-ui/client';
+import { HttpAgent, type HttpAgentConfig, type RunAgentInput } from '@ag-ui/client';
 
 /**
  * HttpAgent that keeps reasoning messages out of the outbound history and
@@ -17,20 +16,30 @@ import { HttpAgent } from '@ag-ui/client';
  */
 export class HockeyAssistantHttpAgent extends HttpAgent {
   /** Source of the current access token; set once at app startup. */
-  static accessTokenProvider: () => string | null = () => null;
+  static accessTokenProvider: () => Promise<string | undefined> = async () => {
+    throw new Error('The hockey assistant access token provider is not configured.');
+  };
+
+  constructor(config: HttpAgentConfig) {
+    const fetchRequest = config.fetch ?? ((url, init) => fetch(url, init));
+    super({
+      ...config,
+      fetch: async (url, init) => {
+        const token = await HockeyAssistantHttpAgent.accessTokenProvider();
+        if (!token) throw new Error('No access token is available for the hockey assistant.');
+        const headers = new Headers(init.headers);
+        headers.set('Authorization', `Bearer ${token}`);
+        headers.set('X-Authorization', `Bearer ${token}`);
+        return fetchRequest(url, { ...init, headers });
+      },
+    });
+  }
 
   protected override requestInit(input: RunAgentInput): RequestInit {
     const outbound: RunAgentInput = {
       ...input,
       messages: input.messages.filter((message) => message.role !== 'reasoning'),
     };
-    const init = super.requestInit(outbound);
-    const token = HockeyAssistantHttpAgent.accessTokenProvider();
-    if (!token) return init;
-    const headers = new Headers(init.headers ?? this.headers);
-    headers.set('Authorization', `Bearer ${token}`);
-    headers.set('X-Authorization', `Bearer ${token}`);
-    return { ...init, headers };
+    return super.requestInit(outbound);
   }
 }
-

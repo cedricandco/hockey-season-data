@@ -5,7 +5,7 @@
   "scripts": {
     "start": "ng serve",
     "build": "ng build",
-    "test": "node --experimental-strip-types --test src/app/chat/game-detail-data.test.mjs src/app/chat/assistant-markdown.test.mjs src/app/team/team-results.test.mjs",
+    "test": "node --experimental-strip-types --test src/app/agent/hockey-assistant-http-agent.test.mjs src/app/chat/game-detail-data.test.mjs src/app/chat/assistant-markdown.test.mjs src/app/team/team-results.test.mjs",
     "test:responsive": "node tests/responsive.mjs"
   },
   "engines": {

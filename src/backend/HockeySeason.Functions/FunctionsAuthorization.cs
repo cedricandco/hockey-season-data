@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using HockeySeason.Auth;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -30,7 +31,28 @@ public static class FunctionsAuthorization
     /// issuer/audience, either via the ASP.NET Core principal or via direct
     /// JWT validation of the Authorization header.
     /// </summary>
+    private const string PrincipalItemKey = "HockeySeason.Principal";
+
     public static bool IsAuthenticated(FunctionContext context) => IsAuthenticatedV2(context).IsAuthenticated;
+
+    /// <summary>
+    /// The validated caller of the current invocation: the principal stored by
+    /// <see cref="IsAuthenticatedV2"/> or the middleware-authenticated user.
+    /// Null before authentication or when the token was rejected.
+    /// </summary>
+    public static ClaimsPrincipal? GetPrincipal(FunctionContext context)
+    {
+        var httpContext = context.GetHttpContext();
+        if (httpContext is null)
+        {
+            return null;
+        }
+        if (httpContext.Items.TryGetValue(PrincipalItemKey, out var stored) && stored is ClaimsPrincipal principal)
+        {
+            return principal;
+        }
+        return httpContext.User.Identity?.IsAuthenticated == true ? httpContext.User : null;
+    }
 
     public static (bool IsAuthenticated, string? Reason) IsAuthenticatedV2(FunctionContext context)
     {        
@@ -39,6 +61,9 @@ public static class FunctionsAuthorization
 
         if (!httpContext.Request.Headers.TryGetValue("X-Authorization", out var xAuthorization))
             return (false, "No X-Authorization");
+
+        if (httpContext.Items.TryGetValue(PrincipalItemKey, out var validated) && validated is ClaimsPrincipal)
+            return (true, null);
 
         var loggerFactory = context.InstanceServices?.GetService(typeof(ILoggerFactory)) as ILoggerFactory;
         var logger = loggerFactory?.CreateLogger(nameof(FunctionsAuthorization));
@@ -79,9 +104,11 @@ public static class FunctionsAuthorization
             return (false, "missing_token");
         }
 
-        var (isValid, reason) = validator.TryValidateV2(token, out _);
+        var validation = validator.Validate(token);
+        var (isValid, reason) = (validation.IsValid, validation.Reason);
         if (isValid)
         {
+            httpContext.Items[PrincipalItemKey] = validation.Principal;
             logger?.LogInformation(
                 "FunctionsAuth accepted bearer token, invocationId={InvocationId}, functionId={FunctionId}, path={Path}",
                 context.InvocationId,

@@ -13,6 +13,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.UserSecrets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using ModelContextProtocol.Protocol;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 builder.ConfigureFunctionsWebApplication();
@@ -28,17 +29,39 @@ builder.Services
 
 if (builder.Environment.IsDevelopment())
 {
-    // Local development only: reuse the Api project's user secrets (OIDC
-    // authority overrides, Ollama key) so both hosts share configuration.
+    // Local development only: user secrets (OIDC authority overrides, Ollama
+    // key, PostgreSQL connection string) are read from the Functions project.
     builder.Configuration.AddUserSecrets<HealthFunction>(optional: true);
 }
 
 builder.Services.AddSingleton<ITimeProvider, UtcTimeProvider>();
 builder.Services.AddSingleton<IHealthService, HealthService>();
 builder.Services.AddLeagueApi();
+
+// PostgreSQL persistence (EF Core + Npgsql, snake_case naming): connection
+// string from ConnectionStrings:Postgres (user-secrets in dev,
+// ConnectionStrings__Postgres hosted). Migrations apply at startup only when
+// Database:MigrateOnStartup is true (hosted deployments).
+builder.Services.AddHockeySeasonData(builder.Configuration);
+
+// Authenticated-caller local account: provisioned on the first authenticated
+// invocation (idempotent) by UserProvisioningMiddleware, and resolved per
+// invocation by RequestUserResolver. CallerScope applies the subscription scope.
+builder.Services.AddScoped<RequestUserResolver>();
+builder.Services.AddScoped<CallerScope>();
+builder.UseMiddleware<UserProvisioningMiddleware>();
 // LeagueTools must be registered explicitly: the MCP endpoint instantiates it
 // on demand, but the agent resolves its AIFunctions from this registration.
 builder.Services.AddSingleton<LeagueTools>();
+// MCP server (Streamable HTTP, served statelessly by McpFunction) with tools
+// from the HockeySeason.Mcp project.
+builder.Services
+    .AddMcpServer(options =>
+    {
+        options.ServerInfo = new Implementation { Name = "HockeySeasonMcp", Version = "1.0.0" };
+    })
+    .WithTools<TimeTool>()
+    .WithTools<LeagueTools>();
 builder.Services.AddAGUIServer();
 builder.Services.AddHockeySeasonDataAgent(builder.Configuration);
 builder.Services.AddSingleton<AIAgent>(services =>
@@ -50,15 +73,22 @@ builder.Services.AddSingleton<AIAgent>(services =>
 // the Static Web Apps managed host the middleware short-circuits failed
 // authentication before the Functions coordinator handshake completes, which
 // held every request for the 15s FunctionStartTimeout and forced 401s with
-// "Timed out waiting for the function start call" exceptions. The Api host
-// keeps the middleware + fallback policy; this host is trigger-validated only.
+// "Timed out waiting for the function start call" exceptions. Every trigger is
+// validated through FunctionsAuthorization instead.
 builder.Services.AddOptions<HockeySeason.Auth.AuthOptions>()
     .Bind(builder.Configuration.GetSection(HockeySeason.Auth.AuthOptions.SectionName))
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<HockeySeason.Auth.IJwtValidator, HockeySeason.Auth.JwtValidator>();
-// Caller profile resolution (IUserContext → provider /userinfo) shared with
-// the Api host; the tenant host comes from Auth:Authority (or UserInfo:BaseAddress).
+// Caller profile resolution (IUserContext → provider /userinfo); the tenant
+// host comes from Auth:Authority (or UserInfo:BaseAddress).
 builder.Services.AddHockeySeasonUserContext();
 
-builder.Build().Run();
+var app = builder.Build();
+
+// Apply pending EF Core migrations before serving traffic when the hosted
+// deployment opts in (Database:MigrateOnStartup=true). In development the
+// default is false — apply manually with `dotnet ef database update`.
+await app.Services.MigrateDatabaseIfConfiguredAsync();
+
+app.Run();

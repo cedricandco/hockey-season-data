@@ -18,6 +18,8 @@ public static class HockeySeasonAgentsServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddHttpContextAccessor();
+        services.AddSingleton<AgentCallerContext>();
         services
             .AddOptions<HockeySeasonDataAgentOptions>()
             .Bind(configuration.GetSection(HockeySeasonDataAgentOptions.SectionName))

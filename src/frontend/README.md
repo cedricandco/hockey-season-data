@@ -7,7 +7,7 @@ chat, team details, weekly report, and color configuration.
 ## Prerequisites
 
 - Node.js >= 22
-- Backend API running (see `src/backend/README.md`) on `http://localhost:5000`
+- Backend API running (see `src/backend/README.md`) on `http://localhost:7071`
 
 ## Run locally
 
@@ -16,7 +16,7 @@ npm install
 npm start
 ```
 
-The dev server proxies `/api/*` to `http://localhost:5000` by default (see
+The dev server proxies `/api/*` to `http://localhost:7071` by default (see
 `proxy.conf.cjs`), so relative `apiUrl: '/api'` works out of the box. Set
 `API_BACKEND_URL` to use another backend address. The Aspire AppHost sets this
 automatically; see the root README for running both applications together.
@@ -62,7 +62,9 @@ interceptor (`authHttpInterceptorFn`) adds
 `Authorization: Bearer <token>` to each `/api/` request (mirrored on
 `X-Authorization` by `core/auth-header.interceptor.ts`) and the AG-UI
 agent adds both headers in `agent/hockey-assistant-http-agent.ts`.
-rejects invalid tokens with `401 { "error": "invalid_token", ... }`.
+The agent waits for Auth0 to supply or renew the token on each request; a token
+acquisition failure stops the request instead of sending it anonymously. The
+backend rejects invalid tokens with `401 { "error": "invalid_token", ... }`.
 
 ## Azure Static Web Apps deployment
 

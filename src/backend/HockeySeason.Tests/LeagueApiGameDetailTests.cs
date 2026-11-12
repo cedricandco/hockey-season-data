@@ -6,11 +6,8 @@ using HockeySeason.Functions;
 using HockeySeason.LeagueApi;
 using HockeySeason.LeagueApi.Http;
 using HockeySeason.LeagueApi.Models;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -24,8 +21,6 @@ namespace HockeySeason.Tests;
 /// </summary>
 public sealed class LeagueApiGameDetailTests
 {
-    private readonly OidcTestServer _identityServerForTests = new();
-
     private const string ApiKey = "test-api-key";
 
     private const string GamePayload =
@@ -236,7 +231,7 @@ public sealed class LeagueApiGameDetailTests
     public async Task GameDetailFunction_ReturnsCompleteGoalsAndPeriodCounts()
     {
         var handler = new RoutingHandler();
-        var function = new GameDetailFunction(CreateService(handler));
+        var function = new GameDetailFunction(CreateService(handler), FunctionsTests.UnfilteredScope());
         var request = new DefaultHttpContext().Request;
         var authContext = FunctionsTests.CreateFunctionContextForRequest(request);
 
@@ -251,30 +246,19 @@ public sealed class LeagueApiGameDetailTests
     }
 
     [Fact]
-    public async Task GameDetailEndpoint_ReturnsAllEventsAndCalculatedPeriodsAsJson()
+    public async Task GameDetailFunction_ReturnsAllEventsAndCalculatedPeriodsAsJson()
     {
         var handler = new RoutingHandler();
-        await using var app = new WebApplicationFactory<HockeySeason.Api.Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Development");
-            builder.UseSetting("Auth:Authority", _identityServerForTests.Authority);
-            builder.UseSetting("Auth:Issuer", _identityServerForTests.Issuer);
-            builder.UseSetting("Auth:Audience", _identityServerForTests.Audience);
-            builder.UseSetting("Auth:AllowHttpAuthority", "true");
-            builder.UseSetting("LeagueApi:ApiKey", "test-league-key");
-            builder.ConfigureServices(services => services.AddSingleton(CreateService(handler)));
-        });
-        var client = app.CreateClient();
-        var token = _identityServerForTests.CreateToken();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
+        var function = new GameDetailFunction(CreateService(handler), FunctionsTests.UnfilteredScope());
+        var request = new DefaultHttpContext().Request;
+        var authContext = FunctionsTests.CreateFunctionContextForRequest(request);
 
-        var invalid = await client.GetAsync("/api/games/0");
-        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.IsType<BadRequestObjectResult>(await function.Run(request, authContext, 0, CancellationToken.None));
         Assert.Empty(handler.Requests);
 
-        var response = await client.GetAsync("/api/games/942131");
-        response.EnsureSuccessStatusCode();
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var response = Assert.IsType<OkObjectResult>(await function.Run(request, authContext, 942131, CancellationToken.None));
+        // The wire format is camelCase JSON, as consumed by the frontend.
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(response.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
         var root = json.RootElement;
         Assert.Equal(942131, root.GetProperty("id").GetInt32());
         Assert.Equal(2, root.GetProperty("goals").GetArrayLength());
@@ -283,6 +267,27 @@ public sealed class LeagueApiGameDetailTests
         Assert.Equal(1, root.GetProperty("penalties").GetArrayLength());
         Assert.Equal(2, root.GetProperty("periodGoals").GetArrayLength());
         Assert.Equal(1, root.GetProperty("periodGoals")[0].GetProperty("goals").GetInt32());
+    }
+
+    [Fact]
+    public async Task GetLeagueGameDetail_AcceptsANullJerseyNumberForAPenalizedCoach()
+    {
+        var boxScore = JsonNode.Parse(BoxScorePayload)!.AsObject();
+        var penalties = boxScore["penalties"]!.AsArray();
+        penalties.Add(JsonNode.Parse(
+            """
+            {"gameTime":{"period":"3","minutes":12,"seconds":0,"elapsedMinutes":0,"elapsedSeconds":30},
+             "teamId":181303,"infraction":"Bench minor","duration":{"name":"Minor"},
+             "participant":{"fullName":"HEAD COACH","number":null,"participantId":901,"isAffiliate":false},
+             "isBenchPenalty":false}
+            """));
+        var handler = new RoutingHandler { BoxScorePayload = boxScore.ToJsonString() };
+
+        var detail = await CreateService(handler).GetLeagueGameDetailAsync(942131);
+
+        var coachPenalty = detail.Penalties.Single(penalty => penalty.Player.Name == "HEAD COACH");
+        Assert.Null(coachPenalty.Player.Number);
+        Assert.Equal("Bench minor", coachPenalty.Infraction);
     }
 
     [Fact]

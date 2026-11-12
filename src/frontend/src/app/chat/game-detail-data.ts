@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 const participantSchema = z.object({
   name: z.string(),
-  number: z.number(),
+  // Absent (null) for non-player participants, e.g. a coach serving a penalty.
+  number: z.number().nullable(),
 });
 
 export const gameDetailResponseSchema = z.object({

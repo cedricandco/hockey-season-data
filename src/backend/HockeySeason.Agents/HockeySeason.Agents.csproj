@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\HockeySeason.Application\HockeySeason.Application.csproj" />
+    <ProjectReference Include="..\HockeySeason.Auth\HockeySeason.Auth.csproj" />
     <ProjectReference Include="..\HockeySeason.Domain\HockeySeason.Domain.csproj" />
     <ProjectReference Include="..\HockeySeason.Mcp\HockeySeason.Mcp.csproj" />
   </ItemGroup>

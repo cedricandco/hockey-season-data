@@ -89,11 +89,13 @@ public sealed record LeagueGameTeamStats(
     string PenaltyKill);
 
 /// <summary>
-/// A player involved in a game event, such as the scorer or a penalized player.
+/// A person involved in a game event, such as the scorer or a penalized player.
+/// <see cref="Number"/> is null when the league publishes no jersey number,
+/// for example when a coach is penalized.
 /// </summary>
 public sealed record LeagueGameParticipant(
     string Name,
-    int Number,
+    int? Number,
     bool IsAffiliate,
     int ParticipantId = 0);
 

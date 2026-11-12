@@ -54,6 +54,16 @@ test('missing or inconsistent goal data is not displayed as a fabricated period 
   assert.deepEqual(periodGoalsForTeam({ ...detail, teamStats: [] }, 1, 3), ['—', '—', '—']);
 });
 
+test('a penalized coach without a jersey number passes validation and renders without a number label', () => {
+  const withCoach = {
+    ...detail,
+    penalties: [penalty(2, 1, '5:18'), { ...penalty(1, 3, '0:36'), player: player('Coach Martin', null) }],
+  };
+  const parsed = gameDetailResponseSchema.parse(withCoach);
+  assert.equal(parsed.penalties[1].player.number, null);
+  assert.equal(gameDetailResponseSchema.safeParse({ ...withCoach, penalties: [{ ...penalty(1, 1, '1:00'), player: player('Ghost', '12x') }] }).success, false);
+});
+
 test('overtime goals are counted separately and timestamps sort numerically', () => {
   const overtime = {
     ...detail,

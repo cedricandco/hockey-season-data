@@ -19,10 +19,10 @@ interface PeriodSection {
   moments: GameMoment[];
 }
 
-/** A player mentioned by a game event (scorer, assist or penalized player). */
+/** A person mentioned by a game event (scorer, assist or penalized player); no number when it is not a player. */
 export interface GameParticipant {
   name: string;
-  number?: number;
+  number?: number | null;
 }
 
 /** One goal, as returned by GetGameDetail. */

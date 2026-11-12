@@ -2,20 +2,20 @@
 A web app that allows us to query data about your preferred hockey team (Quebec).
 
 > **Status:** application shell. The project currently contains a mobile-friendly
-> frontend (Ionic + Angular), a .NET 8 Minimal API with health endpoints, and an
-> MCP server exposing a `get-server-time` tool. No database yet.
+> frontend (Ionic + Angular), a .NET 8 Azure Functions API with health endpoints, and an
+> MCP server exposing a `get-server-time` tool.
 
 ## Monorepo structure
 
 ```
 hockey-season-data/
-├── .env.sample               # PORT=5000 (API listen port)
+├── .env.sample               # PORT=5000 (legacy API listen port)
 ├── README.md
 └── src/
     ├── frontend/             # Angular 22 (zoneless) + Ionic 9 + ngx-translate 18
     │   ├── angular.json
     │   ├── package.json
-    │   ├── proxy.conf.cjs    # /api → API_BACKEND_URL or localhost:5000
+    │   ├── proxy.conf.cjs    # /api → API_BACKEND_URL or localhost:7071
     │   └── src/
     │       ├── app/
     │       │   ├── app.config.ts      # providers (Ionic, HttpClient, ngx-translate)
@@ -31,8 +31,7 @@ hockey-season-data/
         ├── HockeySeason.Application/      # IHealthService, HealthService, HealthReport
         ├── HockeySeason.Infrastructure/   # UtcTimeProvider
         ├── HockeySeason.Mcp/              # TimeTool → get-server-time
-        ├── HockeySeason.Api/              # Minimal API host + /mcp endpoint
-        ├── HockeySeason.Functions/        # Azure Functions health + AG-UI host
+        ├── HockeySeason.Functions/        # Azure Functions API: HTTP triggers, /api/mcp, AG-UI
         ├── HockeySeason.AppHost/          # Aspire orchestration
         └── HockeySeason.Tests/            # xUnit tests
 ```
@@ -41,7 +40,9 @@ hockey-season-data/
 
 ### Aspire
 
-Install the .NET 8 SDK and Node.js 22 or later, then install the frontend
+Install the .NET 8 SDK, Node.js 22 or later and
+[Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
+(`func`; no Docker needed), then install the frontend
 dependencies once:
 
 ```bash
@@ -55,25 +56,26 @@ From `src/backend`, start both applications and the Aspire dashboard:
 dotnet run --project HockeySeason.AppHost
 ```
 
-The AppHost builds the backend and starts Angular's development server, which
-builds the frontend. Angular starts only after the API's `/readyz` endpoint
-responds successfully. Open the dashboard URL shown in the console, or visit
+The AppHost runs the Functions host with `func start` (port 7071) and starts
+Angular's development server, which builds the frontend. Angular starts only
+after the Functions host's `/api/healthz` endpoint responds successfully. Open the
+dashboard URL shown in the console, or visit
 `http://localhost:4200`. The Angular proxy receives the API address from Aspire.
-Port 4200 must be available.
+Ports 4200 and 7071 must be available.
 
 ### Separate terminals
 
-1. Start the API (from `src/backend`):
+1. Start the Functions API (from `src/backend/HockeySeason.Functions`):
 
    ```bash
-   dotnet run --project HockeySeason.Api
+   func start
    ```
 
-   Listens on `http://localhost:5000` (or `$PORT`). Exposes:
-   - `GET /healthz` → `{ "status": "ok" }`
-   - `GET /readyz` → `{ "status": "ready" }`
+   Listens on `http://localhost:7071`. Exposes:
+   - `GET /api/healthz` → `{ "status": "ok" }`
+   - `GET /api/readyz` → `{ "status": "ready" }`
    - `GET /api/health` → `{ "environment": "...", "time": { "utcNow": "...", "timeZoneId": "UTC" } }`
-   - `/mcp` — MCP Streamable HTTP endpoint (tool: `get-server-time`)
+   - `POST /api/mcp` — MCP Streamable HTTP endpoint (tool: `get-server-time`)
    - `POST /api/agui/hockey-season-data.agent` — AG-UI translation agent
 
 2. Start the frontend (from `src/frontend`):
@@ -120,7 +122,7 @@ excluded from the completed-game totals.
   `Agents__HockeySeasonData__OllamaApiKey` as an application setting for Ollama
   Cloud. See the frontend README for deployment details and limitations.
 - Default UI language is French with English fallback.
-- The API binds all interfaces (`http://*:$PORT`) so it works in containers
-  and behind managed API integrations.
+- The Functions host listens on `http://localhost:7071` locally and sits behind
+  the managed API integration of Azure Static Web Apps once deployed.
 - MCP tools live in `HockeySeason.Mcp` and are plain calls into application
   use cases (Clean Architecture, SOLID).

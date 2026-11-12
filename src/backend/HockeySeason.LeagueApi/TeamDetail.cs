@@ -16,7 +16,7 @@ public static class LeagueOffices
 }
 
 /// <summary>Points accumulated from published game events.</summary>
-public sealed record TeamPlayerStatistics(int ParticipantId, string Name, int Number, int Goals, int Assists, int Points);
+public sealed record TeamPlayerStatistics(int ParticipantId, string Name, int? Number, int Goals, int Assists, int Points);
 
 /// <summary>A completed game and its full box score.</summary>
 public sealed record TeamPlayedGame(LeagueGame Game, LeagueGameDetail Detail);

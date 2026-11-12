@@ -15,7 +15,7 @@ namespace HockeySeason.Functions;
 /// delegates access control to the application (the ASP.NET Core middleware
 /// pipeline does not provide endpoint metadata for Functions triggers).
 /// </summary>
-public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService teams, IOptions<LeagueApiOptions> options)
+public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService teams, IOptions<LeagueApiOptions> options, CallerScope callerScope)
 {
 
     public class ClientPrincipal
@@ -84,6 +84,9 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
             return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
         }
         if (leagueId <= 0) return InvalidIds();
+        var scope = await callerScope.GetAsync(context, cancellationToken);
+        // if (scope is not null && !scope.SpordleLeagueIds.Contains(leagueId))
+        //     return new StatusCodeResult(StatusCodes.Status403Forbidden);
         return new OkObjectResult(await league.GetLeagueTeamsAsync(leagueId, cancellationToken));
     }
 
@@ -97,6 +100,9 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
             return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
         }
         if (leagueId <= 0 || teamId <= 0) return InvalidIds();
+        var scope = await callerScope.GetAsync(context, cancellationToken);
+        // if (scope is not null && !scope.SpordleTeamIds.Contains(teamId))
+        //     return new StatusCodeResult(StatusCodes.Status403Forbidden);
         var result = await teams.GetAsync(leagueId, teamId, cancellationToken);
         return result is null ? new NotFoundResult() : new OkObjectResult(result);
     }

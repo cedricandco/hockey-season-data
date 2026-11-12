@@ -1,6 +1,6 @@
 module.exports = {
   '/api': {
-    target: process.env.API_BACKEND_URL || 'http://localhost:5000',
+    target: process.env.API_BACKEND_URL || 'http://localhost:7071',
     secure: false,
     changeOrigin: true,
   },

@@ -279,7 +279,8 @@ internal sealed record ParticipantRowDto
 {
     public required string FullName { get; init; }
 
-    public required int Number { get; init; }
+    /// <summary>Null for non-player participants, such as a coach serving a penalty.</summary>
+    public int? Number { get; init; }
 
     public required int ParticipantId { get; init; }
 
