@@ -11,7 +11,7 @@ export interface TeamGame {
 }
 
 export interface TeamPlayer {
-  participantId: number; name: string; number: number; goals: number; assists: number; points: number;
+  participantId: number; name: string; number: number | null; goals: number; assists: number; points: number;
 }
 
 export interface TeamDetail {
