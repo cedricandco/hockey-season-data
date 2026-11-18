@@ -4,19 +4,20 @@ namespace HockeySeason.Application;
 /// Visible data scope of a user: the union of followed teams, the leagues
 /// that own them, leagues followed directly, and the leagues of followed
 /// organizations (PRESIDENT). Ids are Spordle (external) ids, the vocabulary
-/// the public API and the frontend use.
+/// the public API and the frontend use: teams and offices are Spordle
+/// integers, leagues are the Spordle category guids.
 /// </summary>
 /// <param name="SpordleTeamIds">Followed teams, directly or via leagues/organizations.</param>
 /// <param name="SpordleLeagueIds">Leagues followed directly, owning followed teams, or inside followed organizations.</param>
 /// <param name="SpordleOfficeIds">Offices (divisions) that own the visible leagues — read-only parents.</param>
 public sealed record UserScope(
     IReadOnlySet<int> SpordleTeamIds,
-    IReadOnlySet<int> SpordleLeagueIds,
+    IReadOnlySet<string> SpordleLeagueIds,
     IReadOnlySet<int> SpordleOfficeIds)
 {
     /// <summary>Empty scope: a user without any subscription.</summary>
     public static readonly UserScope Empty = new(
-        new HashSet<int>(), new HashSet<int>(), new HashSet<int>());
+        new HashSet<int>(), new HashSet<string>(StringComparer.Ordinal), new HashSet<int>());
 }
 
 /// <summary>

@@ -43,6 +43,8 @@ public static class HockeySeasonDataExtensions
         services.AddScoped<IUserProvisioningService, UserProvisioningService>();
         services.AddScoped<IScopeService, ScopeService>();
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<IAdminUserService, AdminUserService>();
+        services.AddScoped<IReferenceDataService, ReferenceDataService>();
         services.AddMemoryCache();
 
         // Authorization switches: AddOptions so hosts can override, e.g. the

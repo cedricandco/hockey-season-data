@@ -72,6 +72,90 @@ public sealed partial class LeagueApiService
     }
 
     /// <summary>
+    /// Lists the schedules of one category, for example every "M13 B" schedule
+    /// ("Rives", "Vallée"). A category is the season-independent level that
+    /// groups them.
+    /// </summary>
+    public async Task<IReadOnlyList<League>> GetCategorySchedulesAsync(
+        int officeId,
+        string seasonId,
+        string categoryId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(officeId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(seasonId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(categoryId);
+
+        var rows = await GetJsonAsync<ScheduleRowDto[]>(
+            $"sp/schedules?officeId={officeId}&seasonId={Uri.EscapeDataString(seasonId)}&categoryId={Uri.EscapeDataString(categoryId)}",
+            cancellationToken).ConfigureAwait(false);
+
+        return [.. rows.Select(row => new League(row.Id, row.Name)).OrderBy(league => league.Name, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>
+    /// Lists the seasons published by an office, most recent first. The
+    /// <c>SeasonId</c> of a row is the value expected by the season-aware
+    /// endpoints.
+    /// </summary>
+    public async Task<IReadOnlyList<LeagueSeason>> GetSeasonsAsync(
+        int officeId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(officeId);
+
+        var rows = await GetJsonAsync<SeasonRowDto[]>(
+            $"sp/seasons?officeId={officeId}",
+            cancellationToken).ConfigureAwait(false);
+
+        return [.. rows
+            .Select(row => new LeagueSeason(row.SeasonId, row.Name, row.IsCurrent))
+            .OrderByDescending(season => season.SeasonId, StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// Reads one office of the Spordle organization tree, or null when the
+    /// office does not exist.
+    /// </summary>
+    public async Task<LeagueOfficeDetail?> GetOfficeAsync(
+        int officeId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(officeId);
+
+        var filter = new JsonObject { ["where"] = new JsonObject { ["id"] = officeId } };
+        var rows = await GetJsonAsync<OfficeRowDto[]>(
+            $"sp/offices?filter={Uri.EscapeDataString(filter.ToJsonString())}",
+            cancellationToken).ConfigureAwait(false);
+
+        return rows.Select(row => new LeagueOfficeDetail(row.Id, row.Name, row.Type, row.ParentId))
+            .FirstOrDefault(office => office.Id == officeId);
+    }
+
+    /// <summary>
+    /// Lists the categories (for example "M13 B") published by an office for a
+    /// season, ordered by their French display name.
+    /// </summary>
+    public async Task<IReadOnlyList<LeagueCategory>> GetCategoriesAsync(
+        int officeId,
+        string seasonId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(officeId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(seasonId);
+
+        var rows = await GetJsonAsync<CategoryRowDto[]>(
+            $"sp/categories?officeId={officeId}&seasonId={Uri.EscapeDataString(seasonId)}",
+            cancellationToken).ConfigureAwait(false);
+
+        return [.. rows
+            .Select(row => new LeagueCategory(row.Id, row.Name, row.NameFr))
+            .GroupBy(category => category.Id, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .OrderBy(category => category.FrenchName, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>
     /// Reads the standings table of one league, ordered by ranking.
     /// Results are cached briefly because standings only change between games.
     /// </summary>

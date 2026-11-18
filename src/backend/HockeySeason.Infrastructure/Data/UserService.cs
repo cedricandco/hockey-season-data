@@ -71,7 +71,7 @@ public sealed class UserService(
             .AsNoTracking()
             .Where(subscription => subscription.UserId == userId)
             .OrderBy(subscription => subscription.CreatedAt)
-            .Select(subscription => new UserSubscriptionEntry(
+            .Select(subscription => new UserTeamSubscription(
                 int.Parse(subscription.Team.ExternalId),
                 subscription.Team.Name,
                 subscription.CreatedAt,
@@ -83,11 +83,10 @@ public sealed class UserService(
             .AsNoTracking()
             .Where(subscription => subscription.UserId == userId)
             .OrderBy(subscription => subscription.CreatedAt)
-            .Select(subscription => new UserSubscriptionEntry(
-                int.Parse(subscription.League.ExternalId),
+            .Select(subscription => new UserLeagueSubscription(
+                subscription.League.ExternalId,
                 subscription.League.Name,
-                subscription.CreatedAt,
-                default(DateTimeOffset?)))
+                subscription.CreatedAt))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -220,15 +219,16 @@ public sealed class UserService(
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<SubscriptionResult> AddLeagueSubscriptionAsync(int userId, int leagueId, CancellationToken cancellationToken = default)
+    public async Task<SubscriptionResult> AddLeagueSubscriptionAsync(int userId, string leagueId, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(leagueId);
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var league = await db.Leagues
             .AsNoTracking()
-            .Where(l => l.ExternalId == leagueId.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            .Where(l => l.ExternalId == leagueId)
             .Select(l => new { l.Id })
-            .SingleOrDefaultAsync(cancellationToken)
+            .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
         if (league is null)
         {
@@ -268,12 +268,13 @@ public sealed class UserService(
         }
     }
 
-    public async Task<SubscriptionError> RemoveLeagueSubscriptionAsync(int userId, int leagueId, CancellationToken cancellationToken = default)
+    public async Task<SubscriptionError> RemoveLeagueSubscriptionAsync(int userId, string leagueId, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(leagueId);
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var subscription = await db.LeagueSubscriptions
-            .SingleOrDefaultAsync(s => s.UserId == userId && s.League.ExternalId == leagueId.ToString(System.Globalization.CultureInfo.InvariantCulture), cancellationToken)
+            .SingleOrDefaultAsync(s => s.UserId == userId && s.League.ExternalId == leagueId, cancellationToken)
             .ConfigureAwait(false);
         if (subscription is null)
         {

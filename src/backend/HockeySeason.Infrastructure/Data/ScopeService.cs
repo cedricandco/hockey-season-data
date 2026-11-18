@@ -10,7 +10,8 @@ namespace HockeySeason.Infrastructure.Data;
 /// (direct), the leagues owning those teams, league subscriptions, and every
 /// league of the organizations the user follows (PRESIDENT scope, decision
 /// A2). Spordle (external) ids are returned — the vocabulary the frontend and
-/// the public league API use. Results are cached 60 seconds per user.
+/// the public league API use. Team and office ids are Spordle integers, league
+/// ids are the Spordle category guids. Results are cached 60 seconds per user.
 /// </summary>
 public sealed class ScopeService(
     IDbContextFactory<HockeySeasonDbContext> dbContextFactory,
@@ -28,7 +29,7 @@ public sealed class ScopeService(
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var teamIds = new HashSet<int>();
-        var leagueIds = new HashSet<int>();
+        var leagueIds = new HashSet<string>(StringComparer.Ordinal);
         var officeIds = new HashSet<int>();
 
         // Direct team subscriptions → their owning leagues.
@@ -46,7 +47,7 @@ public sealed class ScopeService(
         foreach (var team in followedTeams)
         {
             teamIds.Add(int.Parse(team.TeamExternalId));
-            leagueIds.Add(int.Parse(team.LeagueExternalId));
+            leagueIds.Add(team.LeagueExternalId);
             officeIds.Add(int.Parse(team.DivisionExternalId));
         }
 
@@ -64,7 +65,7 @@ public sealed class ScopeService(
             .ConfigureAwait(false);
         foreach (var league in followedLeagues)
         {
-            leagueIds.Add(int.Parse(league.LeagueExternalId));
+            leagueIds.Add(league.LeagueExternalId);
             officeIds.Add(int.Parse(league.DivisionExternalId));
             foreach (var teamExternalId in league.TeamExternalIds)
             {
@@ -92,7 +93,7 @@ public sealed class ScopeService(
         {
             foreach (var leagueExternalId in organization.LeagueExternalIds)
             {
-                leagueIds.Add(int.Parse(leagueExternalId));
+                leagueIds.Add(leagueExternalId);
             }
             foreach (var divisionExternalId in organization.DivisionExternalIds)
             {

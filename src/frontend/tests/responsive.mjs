@@ -29,6 +29,11 @@ const chatQuestion = 'Montre le classement';
 const gameQuestion = 'Montre le match 123';
 const fixtures = {
   '/api/auth/login': { success: true, accessToken: 'local-test-token', expiresInSeconds: 3600, tokenType: 'Bearer' },
+  // Local account of the caller: drives the admin navigation entry (non-admin here).
+  '/api/users/me': {
+    id: 1, auth0UserId: 'auth0|test', email: 'test@example.com', firstName: 'Test', lastName: 'Hockey',
+    isAdmin: false, roles: [], settings: { primaryColor: null, secondaryColor: null, extra: {} },
+  },
   '/api/offices': [{ id: 1, name: 'Association Exemple' }],
   '/api/offices/1/leagues': [{ id: 1, name: 'Ligue Exemple' }],
   '/api/leagues/1/teams': [{ id: 1, name: teamName }],

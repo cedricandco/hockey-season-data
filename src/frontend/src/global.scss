@@ -398,7 +398,7 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
   .settings-label { display: none; }
   .main-nav {
     position: fixed; z-index: 10; bottom: 0; left: 0; right: 0;
-    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
     height: var(--mobile-nav-height); margin: 0;
     padding: 3px max(4px, env(safe-area-inset-right, 0px)) calc(3px + env(safe-area-inset-bottom, 0px)) max(4px, env(safe-area-inset-left, 0px));
     border-top: 1px solid #ffffff38; background: var(--color-primary); box-shadow: 0 -3px 14px #102f4c20;

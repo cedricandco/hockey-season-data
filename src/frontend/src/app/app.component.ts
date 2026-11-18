@@ -1,10 +1,11 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { AuthService as Auth0AuthService } from '@auth0/auth0-angular';
 import { LoginComponent } from './core/login.component';
 import { UserMenuComponent } from './core/user-menu.component';
+import { AccountService } from './core/account.service';
 
 /**
  * Application root: shows a login gate until the visitor authenticates with
@@ -46,6 +47,11 @@ import { UserMenuComponent } from './core/user-menu.component';
                 <a routerLink="/configuration" routerLinkActive="nav-active" ariaCurrentWhenActive="page">
                   <svg class="nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 17h16M7 4v6M17 14v6"/></svg><span class="nav-desktop-label">{{ 'NAV.CONFIG' | translate }}</span><span class="nav-mobile-label">{{ 'NAV.CONFIG_SHORT' | translate }}</span>
                 </a>
+                @if (account.isAdmin()) {
+                  <a routerLink="/admin" routerLinkActive="nav-active" ariaCurrentWhenActive="page">
+                    <svg class="nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.2-2.9 7.9-7 9-4.1-1.1-7-4.8-7-9V6l7-3Z"/><path d="M9 12l2 2 4-4"/></svg><span class="nav-desktop-label">{{ 'NAV.ADMIN' | translate }}</span><span class="nav-mobile-label">{{ 'NAV.ADMIN_SHORT' | translate }}</span>
+                  </a>
+                }
               </nav>
               <button class="header-button language-button" type="button" (click)="toggleLanguage()"
                 [attr.aria-label]="'LANGUAGE.BUTTON' | translate">
@@ -70,6 +76,18 @@ export class AppComponent {
   readonly isLoggedIn = toSignal(this.auth0.isAuthenticated$, { initialValue: false });
   readonly isLoading = toSignal(this.auth0.isLoading$, { initialValue: true });
   readonly language = signal<'fr' | 'en'>('fr');
+  /** Local account (roles + admin flag) drives the administrator nav entry. */
+  readonly account = inject(AccountService);
+
+  constructor() {
+    // Loads the local account once authenticated: the admin tab and the admin
+    // route guard both rely on the `isAdmin` flag it carries.
+    effect(() => {
+      if (this.isLoggedIn()) void this.account.load();
+      else this.account.clear();
+    });
+  }
+
   toggleLanguage(): void {
     const next: 'fr' | 'en' = this.language() === 'fr' ? 'en' : 'fr';
     this.language.set(next);

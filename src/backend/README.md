@@ -100,18 +100,57 @@ the middleware is a no-op. A provisioning failure never blocks the invocation.
 | `POST /api/users/me/team-subscriptions` | Follow a team — COACH licence, 5 max, locked 15 days against removal |
 | `DELETE /api/users/me/team-subscriptions/{teamId}` | Unfollow — refused while locked unless admin (409/403) |
 | `POST /api/users/me/team-subscriptions/{teamId}/unlock-request` | Trace an unlock request for the admin interface |
-| `POST /api/users/me/league-subscriptions` | Follow a league — DIRECTOR licence, 5 max |
-| `DELETE /api/users/me/league-subscriptions/{leagueId}` | Unfollow a league |
+| `POST /api/users/me/league-subscriptions` | Follow a league (Spordle category id, a guid) — DIRECTOR licence, 5 max |
+| `DELETE /api/users/me/league-subscriptions/{leagueId}` | Unfollow a league (guid route value) |
 | `POST /api/users/me/organization-subscriptions` | Follow a whole association — PRESIDENT scope (all leagues of the org) |
 | `DELETE /api/users/me/organization-subscriptions/{organizationId}` | Unfollow an association |
 
-Admin-only reference-data import (Spordle → PostgreSQL, upsert by external id):
+Admin-only user directory and licence assignment (`is_admin` column **or**
+`roles=admin` claim; the frontend admin page is hidden and guarded for the rest):
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/import/offices` | Import supported offices as organizations + divisions |
-| `POST /api/import/leagues?seasonId=2026-27` | Import leagues of every supported office for a season |
-| `POST /api/import/teams` | Import teams of every known league (partial on Spordle errors) |
+| `GET /api/users` | List local accounts with their granted roles |
+| `GET /api/roles` | List the assignable roles (`roles` reference table) |
+| `PUT /api/users/{userId}/roles` | Replace the whole role set of a user (`user_roles`); body `{ "roleIds": [1, 3] }` |
+
+(`admin/*` is reserved by the Functions host, hence the plain `users` /
+`roles` routes.) See `HockeySeason.Functions/admin-users.http` for sample
+requests. These endpoints stay closed to non-administrators even while
+`Authorization:OpenAccess` is on: granting licences is a privilege operation.
+
+Admin-only reference-data import (Spordle → PostgreSQL, upsert by external id).
+`POST /api/reference/import` is the supported entry point: one call imports a
+whole office/season — the division (office), the season, every league (Spordle
+category, stored under its **French** name, e.g. "M13 B") and every team — with
+an idempotent upsert that also deletes what disappeared from Spordle:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/reference/organizations` | The `organizations` table (association drop-down) |
+| `GET /api/reference/divisions/{divisionId}/seasons` | Seasons Spordle publishes for a division (`divisions.external_id`), plus the imported ones |
+| `POST /api/reference/import` | Body `{ "organizationId": 1, "divisionId": "6193", "seasonId": "2026-27" }` |
+
+`organizationId` is a row of `organizations` (the association picked in the
+page) and `divisionId` is the division number typed by the administrator, i.e.
+`divisions.external_id`.
+
+Reconciliation rules: a league is the `(season, Spordle category id)` pair and
+a team is its Spordle team id, so a league is never duplicated across divisions
+or seasons and a team moved between categories is re-parented. Deletions are
+strictly scoped: only leagues and teams of **the division being updated** (and
+of the imported season) are pruned when Spordle no longer publishes them — a
+sibling division, another association or a past season is never touched. Their
+`team_subscriptions` / `league_subscriptions` go with them (ON DELETE CASCADE).
+Categories without a published team are skipped. The import is administrator
+only and stays closed even while `Authorization:OpenAccess` is on.
+
+Legacy aliases kept for existing scripts, both delegating to the same use case:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/import/offices?seasonId=2026-27` | Import every configured office for a season (alias of the import above) |
+| `POST /api/import/leagues`, `POST /api/import/teams` | Superseded: leagues and teams are imported together, these return 400 `use_reference_import` |
 
 (`admin/*` is reserved by the Functions host, hence the `import/` prefix.)
 
@@ -222,6 +261,12 @@ into application use cases:
 | `GetLeagueTeams` | `leagueId` | derived from the standings endpoint |
 | `GetTeamGames` | `leagueId`, `startDate`, `endDate`, `teamId?` | `GET sp/games?filter=<json>` |
 | `GetLeagueSuspension` | `leagueId` | `GET sp/schedules/{leagueId}/suspensions` |
+
+Reference-data import also uses `GET sp/seasons?officeId=`,
+`GET sp/offices?filter=`, `GET sp/categories?officeId=&seasonId=` and
+`GET sp/schedules?officeId=&seasonId=&categoryId=` (see
+`LeagueApiService.GetSeasonsAsync`, `GetOfficeAsync`, `GetCategoriesAsync` and
+`GetCategorySchedulesAsync`).
 
 The same tools are given to the `hockey-season-data.agent` AI agent through
 `LeagueAgentToolFactory`, which turns the methods carrying

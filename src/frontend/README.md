@@ -1,8 +1,9 @@
 # Hockey Season Frontend
 
 Angular 22 (standalone, zoneless) responsive frontend with French/English
-translation via `@ngx-translate/core` 18. The app has four routed pages:
-chat, team details, weekly report, and color configuration.
+translation via `@ngx-translate/core` 18. The app has five routed pages:
+chat, team details, weekly report, color configuration, and administration
+(administrators only).
 
 ## Prerequisites
 
@@ -137,17 +138,21 @@ src/
   app/
     app.config.ts        # zoneless, routed, HttpClient(fetch)+interceptors, translation and agent providers
     app.component.ts     # login gate ↔ header + router outlet based on auth state
-    app.routes.ts        # /chat, /team, /teams-weekly-report, /configuration
+    app.routes.ts        # /chat, /team, /teams-weekly-report, /configuration, /admin, /admin/reference
     chat/chat.component.ts     # agent chat page, composer pinned at the bottom
     team/team.component.ts     # association, league and team selection
     report/report.component.ts # weekly report page and current ID selection
     config/config.component.ts # configuration page (colors)
+    admin/admin.component.ts   # admin page: user list + role (licence) assignment
+    admin/admin-reference.component.ts # admin page: divisions/leagues/teams import
+    admin/reference-helpers.ts # pure helpers of the reference page (unit tested)
+    core/account.service.ts    # local account (roles + admin flag), cached for the session
+    core/admin.guard.ts        # route guard: administrators only
     core/theme.service.ts   # primary/secondary colors, localStorage persistence
-    core/login.component.ts # 6-digit access code screen
-    core/auth.service.ts    # login/logout against POST /api/auth/login
-    core/auth-storage.ts    # bearer token persistence (localStorage)
-    core/auth.interceptor.ts # Authorization header attach + 401 → logout
-    core/api.service.ts     # HttpClient wrapper for GET /api/health
+    core/login.component.ts # Auth0 Universal Login gate
+    core/auth.service.ts    # logout (provider session + local fallback)
+    core/auth-logout.ts     # pure logout strategy helpers (unit tested)
+    core/api.service.ts     # HttpClient wrapper for the API endpoints
     core/models.ts          # HealthReport / ServerTime interfaces
   environments/environment.ts  # apiUrl: '/api'
   assets/i18n/en.json     # English translations
@@ -156,3 +161,39 @@ src/
 
 Default language is French (`fr`) with English fallback (`en`). The header
 button toggles between the two and updates `<html lang>`.
+
+## Admin page
+
+The administration page (`/admin`) lists the local accounts (`GET /api/users`)
+and lets an administrator tick the licence roles of each user, saved with
+`PUT /api/users/{userId}/roles` (the whole role set is replaced, stored in
+`user_roles`). The roles come from `GET /api/roles`.
+
+It is restricted to administrators: the navigation entry only renders when the
+local account returned by `GET /api/users/me` has `isAdmin`, and the
+`adminGuard` redirects everyone else to `/chat`. The backend re-checks the
+administrator flag (`users.is_admin` or the Auth0 `roles=admin` claim) on every
+admin request, so hiding the UI is never the only protection.
+
+### Divisions, leagues and teams (`/admin/reference`)
+
+The second administration tab defines the reference data of an association:
+pick the association from the `organizations` table
+(`GET /api/reference/organizations`), type the division number — the
+`divisions.external_id`, e.g. 6193 or 6194 — and pick the season
+(`GET /api/reference/divisions/{divisionId}/seasons`). One call to
+`POST /api/reference/import` then creates/updates the division, the leagues
+(Spordle categories, stored under their **French** name, e.g. "M13 B") and
+their teams, and deletes the leagues/teams that disappeared from Spordle
+together with the subscriptions pointing at them. The page shows what was
+created, updated and deleted; warnings report the schedules whose teams could
+not be read.
+
+### Logout
+
+The user menu calls `AuthService.logout()`, which clears the cached local
+account, asks Auth0 (`/v2/logout`) to end the **identity-provider** session and,
+if that redirect fails or is blocked within a few seconds, clears the SDK token
+cache and reloads into the login gate. A plain local clear would leave Auth0
+signed in, so the next login would silently reuse the same account.
+

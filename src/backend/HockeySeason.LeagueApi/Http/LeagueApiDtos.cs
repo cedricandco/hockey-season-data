@@ -12,6 +12,41 @@ internal sealed record ScheduleRowDto
     public required int Id { get; init; }
 
     public required string Name { get; init; }
+
+    /// <summary>Category identifier (guid) the schedule belongs to.</summary>
+    public string? CategoryId { get; init; }
+}
+
+internal sealed record SeasonRowDto
+{
+    /// <summary>Season identifier expected by the query parameters, for example "2026-27".</summary>
+    public required string SeasonId { get; init; }
+
+    public required string Name { get; init; }
+
+    [JsonPropertyName("isCurrent")]
+    public bool IsCurrent { get; init; }
+}
+
+internal sealed record OfficeRowDto
+{
+    public required int Id { get; init; }
+
+    public required string Name { get; init; }
+
+    public string? Type { get; init; }
+
+    public int? ParentId { get; init; }
+}
+
+internal sealed record CategoryRowDto
+{
+    public required string Id { get; init; }
+
+    public required string Name { get; init; }
+
+    [JsonPropertyName("nameFr")]
+    public string? NameFr { get; init; }
 }
 
 internal sealed record StandingsRowDto

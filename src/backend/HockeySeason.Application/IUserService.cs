@@ -27,11 +27,11 @@ public interface IUserService
     /// <summary>Marks an unlock request on a locked team subscription (audit trace for admins).</summary>
     Task RequestTeamUnlockAsync(int userId, int teamId, CancellationToken cancellationToken = default);
 
-    /// <summary>Follows a league. Enforces the DIRECTOR limit (5).</summary>
-    Task<SubscriptionResult> AddLeagueSubscriptionAsync(int userId, int leagueId, CancellationToken cancellationToken = default);
+    /// <summary>Follows a league (Spordle category id, a guid). Enforces the DIRECTOR limit (5).</summary>
+    Task<SubscriptionResult> AddLeagueSubscriptionAsync(int userId, string leagueId, CancellationToken cancellationToken = default);
 
     /// <summary>Unfollows a league.</summary>
-    Task<SubscriptionError> RemoveLeagueSubscriptionAsync(int userId, int leagueId, CancellationToken cancellationToken = default);
+    Task<SubscriptionError> RemoveLeagueSubscriptionAsync(int userId, string leagueId, CancellationToken cancellationToken = default);
 
     /// <summary>Follows a whole association (PRESIDENT scope).</summary>
     Task<SubscriptionResult> AddOrganizationSubscriptionAsync(int userId, int organizationId, CancellationToken cancellationToken = default);

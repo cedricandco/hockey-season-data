@@ -16,7 +16,16 @@ public enum UserRoleCode
 public sealed record UserRoleSummary(int RoleId, UserRoleCode Code, string DisplayName, int MaxFollowedEntities);
 
 /// <summary>Teams and leagues the user follows directly.</summary>
-public sealed record UserSubscriptions(IReadOnlyList<UserSubscriptionEntry> Teams, IReadOnlyList<UserSubscriptionEntry> Leagues);
+public sealed record UserSubscriptions(
+    IReadOnlyList<UserTeamSubscription> Teams,
+    IReadOnlyList<UserLeagueSubscription> Leagues);
 
-/// <summary>One followed entity, with its lock window (team subscriptions only).</summary>
-public sealed record UserSubscriptionEntry(int EntityId, string? Name, DateTimeOffset CreatedAt, DateTimeOffset? LockedUntil);
+/// <summary>
+/// One followed team, with its lock window: the identifier is the Spordle team
+/// id and <see cref="LockedUntil"/> the end of the 15-day removal lock.
+/// </summary>
+public sealed record UserTeamSubscription(int TeamId, string? Name, DateTimeOffset CreatedAt, DateTimeOffset? LockedUntil);
+
+/// <summary>One followed league: the identifier is the Spordle category id (guid).</summary>
+public sealed record UserLeagueSubscription(string LeagueId, string? Name, DateTimeOffset CreatedAt);
+

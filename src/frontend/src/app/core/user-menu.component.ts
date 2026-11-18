@@ -3,16 +3,19 @@ import { DOCUMENT } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslatePipe } from '@ngx-translate/core';
 import { startWith } from 'rxjs';
-import { AuthService as Auth0AuthService } from '@auth0/auth0-angular';
 import { ApiService } from './api.service';
+import { AuthService } from './auth.service';
 import { UserProfile } from './user.models';
 
 /**
  * Header user area replaces the plain logout button: the caller's identity-
  * provider avatar (from `GET /api/me`) with a dropdown menu offering the
- * profile entry point and the logout action. Closes on outside click, on
- * Escape and after an item is chosen.
+ * profile entry point and the logout action. The logout goes through
+ * `AuthService`, which clears the provider session (not only the local token
+ * cache) and falls back to a local sign-out when Auth0 cannot be reached.
+ * Closes on outside click, on Escape and after an item is chosen.
  */
+
 @Component({
   selector: 'app-user-menu',
   standalone: true,
@@ -39,8 +42,10 @@ import { UserProfile } from './user.models';
           <button class="user-menu-item" role="menuitem" type="button" (click)="close()">
             <span aria-hidden="true">⚙</span> {{ 'USER.SETTINGS' | translate }}
           </button>
-          <button class="user-menu-item user-menu-item-danger" role="menuitem" type="button" (click)="logout()">
-            <span aria-hidden="true">⎋</span> {{ 'LOGOUT.BUTTON' | translate }}
+          <button class="user-menu-item user-menu-item-danger" role="menuitem" type="button"
+            [disabled]="loggingOut()" (click)="logout()">
+            <span aria-hidden="true">⎋</span>
+            {{ (loggingOut() ? 'LOGOUT.BUSY' : 'LOGOUT.BUTTON') | translate }}
           </button>
         </div>
       }
@@ -49,13 +54,15 @@ import { UserProfile } from './user.models';
 })
 export class UserMenuComponent {
   private readonly api = inject(ApiService);
-  private readonly auth0 = inject(Auth0AuthService);
+  private readonly auth = inject(AuthService);
   private readonly root = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Profile fetched once per app session; null until the first response. */
   readonly me = toSignal(this.api.getMe().pipe(startWith(null)), { initialValue: null });
   readonly open = signal(false);
+  /** True while the provider session is being ended, to block double clicks. */
+  readonly loggingOut = signal(false);
 
   readonly displayName = computed(() => this.me()?.name ?? this.me()?.nickname ?? this.me()?.email ?? '');
   readonly initials = computed(() => {
@@ -87,8 +94,15 @@ export class UserMenuComponent {
     this.open.set(false);
   }
 
-  logout(): void {
+  async logout(): Promise<void> {
+    if (this.loggingOut()) return;
+    this.loggingOut.set(true);
     this.close();
-    void this.auth0.logout({ logoutParams: { returnTo: window.location.origin } });
+    try {
+      await this.auth.logout();
+    } finally {
+      // The page navigates on success; this only matters when it cannot.
+      this.loggingOut.set(false);
+    }
   }
 }

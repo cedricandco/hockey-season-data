@@ -6,8 +6,14 @@ using Microsoft.Azure.Functions.Worker;
 
 namespace HockeySeason.Functions;
 
-/// <summary>Request body of PUT /api/users/me/settings. Null fields are left unchanged.</summary>
+/// <summary>Request body of POST /api/users/me/settings. Null fields are left unchanged.</summary>
 public sealed record SettingsRequest(string? PrimaryColor, string? SecondaryColor, Dictionary<string, string?>? Extra);
+
+/// <summary>
+/// Request body of POST /api/users/me/league-subscriptions: the Spordle
+/// category id of the league, a guid string.
+/// </summary>
+public sealed record CreateLeagueSubscriptionRequest(string? LeagueId);
 
 /// <summary>
 /// Local account endpoints (PostgreSQL): profile, visual settings and the
@@ -33,7 +39,9 @@ public sealed class UserFunctions(RequestUserResolver resolver, IUserService use
             profile.Email,
             profile.FirstName,
             profile.LastName,
-            profile.IsAdmin,
+            // Defense in depth: the database flag or the Auth0 admin claim
+            // unlocks the admin UI, matching the guards of the admin triggers.
+            IsAdmin = profile.IsAdmin || RequestUserResolver.IsAdmin(context),
             Roles = profile.Roles.Select(role => new { role.RoleId, Code = role.Code.ToString(), role.DisplayName, role.MaxFollowedEntities }),
             Settings = new { profile.PrimaryColor, profile.SecondaryColor, profile.Extra },
         });
@@ -65,8 +73,8 @@ public sealed class UserFunctions(RequestUserResolver resolver, IUserService use
         var subscriptions = await users.GetSubscriptionsAsync(userId, cancellationToken);
         return new OkObjectResult(new
         {
-            Teams = subscriptions.Teams.Select(team => new { team.EntityId, team.Name, team.CreatedAt, team.LockedUntil }),
-            Leagues = subscriptions.Leagues.Select(league => new { league.EntityId, league.Name, league.CreatedAt }),
+            Teams = subscriptions.Teams.Select(team => new { team.TeamId, team.Name, team.CreatedAt, team.LockedUntil }),
+            Leagues = subscriptions.Leagues.Select(league => new { league.LeagueId, league.Name, league.CreatedAt }),
         });
     }
 
@@ -116,20 +124,21 @@ public sealed class UserFunctions(RequestUserResolver resolver, IUserService use
     {
         if (Unauthorized(context) is { } denied) return denied;
 
-        var body = await ReadBodyAsync<CreateSubscriptionRequest>(request, cancellationToken);
-        if (body is null) return InvalidBody();
+        var body = await ReadBodyAsync<CreateLeagueSubscriptionRequest>(request, cancellationToken);
+        if (body is null || string.IsNullOrWhiteSpace(body.LeagueId)) return InvalidBody();
 
         var userId = await resolver.GetOrCreateUserIdAsync(context, cancellationToken);
-        var result = await users.AddLeagueSubscriptionAsync(userId, body.EntityId, cancellationToken);
+        var result = await users.AddLeagueSubscriptionAsync(userId, body.LeagueId, cancellationToken);
         return Map(result.Error);
     }
 
     [Function("RemoveLeagueSubscription")]
     public async Task<IActionResult> RemoveLeague(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "users/me/league-subscriptions/{leagueId:int}")] HttpRequest request,
-        int leagueId, FunctionContext context, CancellationToken cancellationToken)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "users/me/league-subscriptions/{leagueId}")] HttpRequest request,
+        string leagueId, FunctionContext context, CancellationToken cancellationToken)
     {
         if (Unauthorized(context) is { } denied) return denied;
+        if (string.IsNullOrWhiteSpace(leagueId)) return InvalidBody();
 
         var userId = await resolver.GetOrCreateUserIdAsync(context, cancellationToken);
         return Map(await users.RemoveLeagueSubscriptionAsync(userId, leagueId, cancellationToken));

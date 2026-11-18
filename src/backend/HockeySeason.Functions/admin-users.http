@@ -1,0 +1,24 @@
+@baseUrl = http://localhost:7071
+@token = replace-with-admin-login-token
+
+### Admin: list local accounts with their roles (401 anonymous, 403 non-admin)
+GET {{baseUrl}}/api/users
+Authorization: Bearer {{token}}
+
+### Admin: roles that can be granted (coach, director, president)
+GET {{baseUrl}}/api/roles
+Authorization: Bearer {{token}}
+
+### Admin: replace the role set of a user (coach + president here)
+PUT {{baseUrl}}/api/users/1/roles
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "roleIds": [1, 3] }
+
+### Admin: revoke every role of a user
+PUT {{baseUrl}}/api/users/1/roles
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "roleIds": [] }

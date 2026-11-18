@@ -6,6 +6,33 @@ namespace HockeySeason.LeagueApi.Models;
 public sealed record League(int Id, string Name);
 
 /// <summary>
+/// A season published by a league office, for example "2026-27". The
+/// identifier is the value expected by the <c>seasonId</c> query parameter of
+/// the schedules, categories and seasons endpoints.
+/// </summary>
+public sealed record LeagueSeason(string SeasonId, string Name, bool IsCurrent);
+
+/// <summary>
+/// An office of the Spordle organization tree: the association (region), a
+/// league office ("division" in the application model) or a club. The parent
+/// identifier is what links an office to its association.
+/// </summary>
+public sealed record LeagueOfficeDetail(int Id, string Name, string? Type, int? ParentId);
+
+/// <summary>
+/// A category of an office and season, for example "M13 B". Categories are the
+/// season-independent level that groups the schedules (one category is played
+/// in several schedules, such as "Rives" and "Vallée").
+/// <see cref="Name"/> is the published name (English) and <see cref="NameFr"/>
+/// the French one, when the office publishes it.
+/// </summary>
+public sealed record LeagueCategory(string Id, string Name, string? NameFr)
+{
+    /// <summary>Display name: the French label when published, the English one otherwise.</summary>
+    public string FrenchName => string.IsNullOrWhiteSpace(NameFr) ? Name : NameFr;
+}
+
+/// <summary>
 /// One row of a league standings table.
 /// </summary>
 public sealed record LeagueStanding(

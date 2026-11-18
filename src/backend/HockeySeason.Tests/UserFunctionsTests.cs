@@ -232,16 +232,16 @@ public sealed class UserFunctionsTests
     {
         var provisioning = new FakeProvisioning();
         // Configuration without Authorization:OpenAccess — the admin guard applies.
-        var function = new AdminImportFunctions(null!, null!, Options.Create(new LeagueApiOptions()),
-            new ConfigurationBuilder().Build());
+        var function = new AdminImportFunctions(new FakeReferenceData(), Options.Create(new LeagueApiOptions()),
+            new ConfigurationBuilder().Build(), NullLogger<AdminImportFunctions>.Instance);
         var (memberContext, request) = CreateContext(provisioning);
 
         Assert.Equal(StatusCodes.Status403Forbidden,
             Assert.IsType<StatusCodeResult>(await function.ImportOffices(request, memberContext, CancellationToken.None)).StatusCode);
         Assert.Equal(StatusCodes.Status403Forbidden,
-            Assert.IsType<StatusCodeResult>(await function.ImportLeagues(request, memberContext, CancellationToken.None)).StatusCode);
+            Assert.IsType<StatusCodeResult>(function.ImportLeagues(request, memberContext)).StatusCode);
         Assert.Equal(StatusCodes.Status403Forbidden,
-            Assert.IsType<StatusCodeResult>(await function.ImportTeams(request, memberContext, CancellationToken.None)).StatusCode);
+            Assert.IsType<StatusCodeResult>(function.ImportTeams(request, memberContext)).StatusCode);
 
         var anonymousRequest = new DefaultHttpContext().Request;
         var anonymousContext = FunctionsTests.CreateContextWith((DefaultHttpContext)anonymousRequest.HttpContext, BuildServices(provisioning));
@@ -274,7 +274,8 @@ public sealed class UserFunctionsTests
         {
             await db.Database.EnsureCreatedAsync();
         }
-        var imports = new AdminImportFunctions(null!, new TestDbContextFactory(dbOptions), Options.Create(new LeagueApiOptions()), WithOpenAccess());
+        var imports = new AdminImportFunctions(new FakeReferenceData(), Options.Create(new LeagueApiOptions()),
+            WithOpenAccess(), NullLogger<AdminImportFunctions>.Instance);
         Assert.IsType<OkObjectResult>(await imports.ImportOffices(request, context, CancellationToken.None)); // not 401/403
     }
 
@@ -347,7 +348,26 @@ public sealed class UserFunctionsTests
     {
         public Task<UserScope> GetScopeAsync(int userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new UserScope(
-                (teams ?? []).ToHashSet(), (leagues ?? []).ToHashSet(), (offices ?? []).ToHashSet()));
+                (teams ?? []).ToHashSet(),
+                (leagues ?? []).Select(id => id.ToString()).ToHashSet(),
+                (offices ?? []).ToHashSet()));
+    }
+
+    private sealed class FakeReferenceData : IReferenceDataService
+    {
+        public Task<IReadOnlyList<ReferenceOrganization>> GetOrganizationsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ReferenceOrganization>>([]);
+
+        public Task<IReadOnlyList<ReferenceSeason>> GetSeasonsAsync(int officeId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ReferenceSeason>>([]);
+
+        public Task<ReferenceOrganization> EnsureOrganizationAsync(
+            string externalId, string name, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ReferenceOrganization(1, name, externalId));
+
+        public Task<ReferenceImportResult> ImportAsync(ReferenceImportRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ReferenceImportResult(
+                "Association", "Office", request.SeasonId, [], [], [], [], 0, 0, 0, []));
     }
 
     private sealed class CapturingReports : IWeeklyReportService
@@ -396,10 +416,10 @@ public sealed class UserFunctionsTests
 
         public Task RequestTeamUnlockAsync(int userId, int teamId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        public Task<SubscriptionResult> AddLeagueSubscriptionAsync(int userId, int leagueId, CancellationToken cancellationToken = default) =>
+        public Task<SubscriptionResult> AddLeagueSubscriptionAsync(int userId, string leagueId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new SubscriptionResult(AddResult, null));
 
-        public Task<SubscriptionError> RemoveLeagueSubscriptionAsync(int userId, int leagueId, CancellationToken cancellationToken = default) =>
+        public Task<SubscriptionError> RemoveLeagueSubscriptionAsync(int userId, string leagueId, CancellationToken cancellationToken = default) =>
             Task.FromResult(SubscriptionError.None);
 
         public Task<SubscriptionResult> AddOrganizationSubscriptionAsync(int userId, int organizationId, CancellationToken cancellationToken = default) =>

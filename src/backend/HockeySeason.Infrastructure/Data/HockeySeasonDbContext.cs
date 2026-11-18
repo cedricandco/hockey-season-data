@@ -90,9 +90,10 @@ public sealed class HockeySeasonDbContext(DbContextOptions<HockeySeasonDbContext
             entity.Property(x => x.Id).UseIdentityByDefaultColumn().ValueGeneratedOnAdd();
             entity.Property(x => x.Name).IsRequired();
             entity.Property(x => x.ExternalId).IsRequired();
-            entity.HasIndex(x => x.ExternalId).IsUnique();
+            // A Spordle category id is shared by every season: a league is the
+            // (season, category) pair.
+            entity.HasIndex(x => new { x.SeasonId, x.ExternalId }).IsUnique();
             entity.HasIndex(x => x.DivisionId);
-            entity.HasIndex(x => x.SeasonId);
             entity.HasMany(x => x.Teams)
                 .WithOne(x => x.League)
                 .HasForeignKey(x => x.LeagueId)

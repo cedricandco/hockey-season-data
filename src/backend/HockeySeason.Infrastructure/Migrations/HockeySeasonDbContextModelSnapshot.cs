@@ -17,7 +17,7 @@ namespace HockeySeason.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.34")
+                .HasAnnotation("ProductVersion", "9.0.0")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -107,12 +107,9 @@ namespace HockeySeason.Infrastructure.Migrations
                     b.HasIndex("DivisionId")
                         .HasDatabaseName("ix_leagues_division_id");
 
-                    b.HasIndex("ExternalId")
+                    b.HasIndex("SeasonId", "ExternalId")
                         .IsUnique()
-                        .HasDatabaseName("ix_leagues_external_id");
-
-                    b.HasIndex("SeasonId")
-                        .HasDatabaseName("ix_leagues_season_id");
+                        .HasDatabaseName("ix_leagues_season_id_external_id");
 
                     b.ToTable("leagues", (string)null);
                 });

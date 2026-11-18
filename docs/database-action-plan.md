@@ -43,10 +43,10 @@ users ─┬─< user_roles >─┬─ roles            (licence : COACH / DIREC
 
 | Table | Colonnes | Rôle |
 |---|---|---|
-| `organizations` | `id`, `name`, `external_id` (TEXT UNIQUE), `created_at`, `updated_at` | Associations (ex. Hockey Richelieu) |
+| `organizations` | `id`, `name`, `external_id` (TEXT UNIQUE), `created_at`, `updated_at` | Associations (ex. Hockey Richelieu, région Spordle 6157) |
 | `divisions` | `id`, `organization_id` FK, `name`, `external_id` UNIQUE, `created_at`, `updated_at` | Offices Spordle (6193, 6194) |
 | `seasons` | `id`, `name`, `external_id` TEXT UNIQUE, `created_at`, `updated_at` | Saisons Spordle (2026-27, …) |
-| `leagues` | `id`, `division_id` FK, `season_id` FK, `name`, `external_id` UNIQUE, `created_at`, `updated_at` | Ligues Spordle (saison-spécifiques) |
+| `leagues` | `id`, `division_id` FK, `season_id` FK, `name`, `external_id`, `created_at`, `updated_at` | Catégories Spordle (« M13 B », nom français), une par (saison, catégorie) |
 | `teams` | `id`, `league_id` FK, `name`, `external_id` UNIQUE, `created_at`, `updated_at` | Équipes Spordle |
 | `users` | `id`, `auth0_user_id` UNIQUE string, `email`, `name`, `first_name`, `last_name`, `stripe_customer_id` (nullable), `is_admin`, `created_at`, `updated_at` | Utilisateurs Auth0 + facturation future |
 | `roles` | `id`, `code` UNIQUE (coach/director/president), `name`, `max_followed_entities` | Licence : limite logicielle |
@@ -56,6 +56,7 @@ users ─┬─< user_roles >─┬─ roles            (licence : COACH / DIREC
 | `user_settings` | `id`, `user_id` UNIQUE FK, `primary_color`, `secondary_color`, `extra` (jsonb), `created_at`, `updated_at` | Préférences visuelles |
 
 Règles clés :
+- **Unique (season_id, external_id)** sur `leagues` : l'id Spordle d'une catégorie est partagé par toutes les saisons, une ligue est donc le couple (saison, catégorie).
 - **Unique (user_id, team_id)** sur `team_subscriptions` ; **unique (user_id, league_id)** sur `league_subscriptions`.
 - `locked_until` = `created_at + 15 jours` par défaut (colonne calculée par l'app, pas par la BD) ;
   `unlock_requested_at` sert de trace d'audit pour l'interface admin.
@@ -191,5 +192,8 @@ erDiagram
 | 2026-11-11 | Tests : 58 xUnit verts (incl. `PersistenceServiceTests` + `UserProvisioningMiddlewareTests`) | ✅ Vérifié |
 | À faire | Créer le serveur PostgreSQL et set le user-secret `ConnectionStrings:Postgres` puis `dotnet ef database update` | ➡️ Prochaine étape |
 | À faire | Attribuer les rôles (licences) aux utilisateurs + statut admin dans la BD / Auth0 | ➡️ Prochaine étape |
+| 2026-11-18 | Page d'admin : liste des utilisateurs + attribution des rôles (`GET /api/users`, `GET /api/roles`, `PUT /api/users/{userId}/roles`, page `/admin` réservée aux `is_admin`) | ✅ Implémenté |
 | 2026-11-11 | Accès ouvert temporaire (`Authorization:OpenAccess=true`) : périmètre, licences, verrou 15 j et garde admin désactivés pour tout utilisateur authentifié | ✅ Implémenté |
+| 2026-11-18 | Admin : import de référence par association/division/saison (`POST /api/reference/import`) — les ligues sont les **catégories Spordle** (nom français), les équipes de tous leurs horaires y sont rattachées, et ce qui disparaît de Spordle est supprimé avec ses abonnements | ✅ Implémenté |
+
 

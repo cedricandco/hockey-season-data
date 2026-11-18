@@ -11,6 +11,9 @@
   <ItemGroup>
     <ProjectReference Include="..\HockeySeason.Application\HockeySeason.Application.csproj" />
     <ProjectReference Include="..\HockeySeason.Domain\HockeySeason.Domain.csproj" />
+    <!-- The reference-data import mirrors the public Spordle API; that client
+         is a leaf project (it references nothing), so the dependency stays acyclic. -->
+    <ProjectReference Include="..\HockeySeason.LeagueApi\HockeySeason.LeagueApi.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,7 +26,9 @@
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="9.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="9.0.0" />
+    <!-- 10.x, like HockeySeason.LeagueApi: a single (higher) version flows
+         through the graph, and 10.x still targets net8.0. -->
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.14" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.0" />
   </ItemGroup>
 

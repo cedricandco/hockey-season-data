@@ -6,7 +6,7 @@ namespace HockeySeason.Infrastructure.Data;
 // maps them to the database columns documented in docs/database-schema.sql.
 // =====================================================================
 
-/// <summary>An association, e.g. Hockey Richelieu. Optionally mirrored from Spordle.</summary>
+/// <summary>An association, e.g. Hockey Richelieu (Spordle region 6157). Optionally mirrored from Spordle.</summary>
 public sealed class Organization
 {
     public int Id { get; set; }
@@ -23,7 +23,7 @@ public sealed class Organization
 public sealed class Division
 {
     public int Id { get; set; }
-    /// <summary>FK to the organization that owns this office.</summary>
+    /// <summary>FK to the organization (association) that owns this office.</summary>
     public int OrganizationId { get; set; }
     public required string Name { get; set; }
     /// <summary>Spordle office id (6193, 6194), unique.</summary>
@@ -49,14 +49,20 @@ public sealed class Season
     public List<League> Leagues { get; set; } = [];
 }
 
-/// <summary>A Spordle league (schedule); league ids are season-specific.</summary>
+/// <summary>
+/// A Spordle category of an office for one season, e.g. "M13 B" — the level
+/// grouping the schedules of the season ("Rives", "Vallée"). Its Spordle
+/// identifier is a guid shared by every season, so the league is identified by
+/// (season, external id). <see cref="Name"/> holds the French name, which is
+/// what the users read.
+/// </summary>
 public sealed class League
 {
     public int Id { get; set; }
     public int DivisionId { get; set; }
     public int SeasonId { get; set; }
     public required string Name { get; set; }
-    /// <summary>Spordle league id (e.g. 194908), unique.</summary>
+    /// <summary>Spordle category id (guid), unique per season.</summary>
     public required string ExternalId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

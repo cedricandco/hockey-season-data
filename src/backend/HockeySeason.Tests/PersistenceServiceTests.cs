@@ -165,15 +165,15 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
         }
 
         Assert.Equal(SubscriptionError.None, (await users.AddTeamSubscriptionAsync(userId, 900)).Error);
-        Assert.Equal(SubscriptionError.None, (await users.AddLeagueSubscriptionAsync(userId, 200)).Error);
+        Assert.Equal(SubscriptionError.None, (await users.AddLeagueSubscriptionAsync(userId, "200")).Error);
         Assert.Equal(SubscriptionError.None, (await users.AddOrganizationSubscriptionAsync(userId, 111)).Error);
 
         var scope = await CreateScopeService(factory).GetScopeAsync(userId);
 
         Assert.Contains(900, scope.SpordleTeamIds);
         Assert.Contains(901, scope.SpordleTeamIds); // via league 200
-        Assert.Contains(100, scope.SpordleLeagueIds); // owning league of team 900
-        Assert.Contains(200, scope.SpordleLeagueIds); // followed league
+        Assert.Contains("100", scope.SpordleLeagueIds); // owning league of team 900
+        Assert.Contains("200", scope.SpordleLeagueIds); // followed league
         Assert.Contains(10, scope.SpordleOfficeIds);  // division of league 100
         Assert.Contains(20, scope.SpordleOfficeIds);  // division of league 200 (org scope)
     }
