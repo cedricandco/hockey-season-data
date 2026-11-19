@@ -14,6 +14,8 @@ namespace HockeySeason.Auth;
 /// <param name="UpdatedAt">Last profile update timestamp (RFC 3339).</param>
 /// <param name="Email">Published email address (only with the email scope).</param>
 /// <param name="EmailVerified">Whether the provider verified the address.</param>
+/// <param name="GivenName">First name, when the provider publishes it (profile scope).</param>
+/// <param name="FamilyName">Last name, when the provider publishes it (profile scope).</param>
 public sealed record UserInfo(
     [property: JsonPropertyName("sub")] string Sub,
     [property: JsonPropertyName("nickname")] string? Nickname,
@@ -21,4 +23,6 @@ public sealed record UserInfo(
     [property: JsonPropertyName("picture")] string? Picture,
     [property: JsonPropertyName("updated_at")] string? UpdatedAt,
     [property: JsonPropertyName("email")] string? Email,
-    [property: JsonPropertyName("email_verified")] bool? EmailVerified);
+    [property: JsonPropertyName("email_verified")] bool? EmailVerified,
+    [property: JsonPropertyName("given_name")] string? GivenName = null,
+    [property: JsonPropertyName("family_name")] string? FamilyName = null);

@@ -13,6 +13,8 @@ public sealed class AdminUserService(
     IDbContextFactory<HockeySeasonDbContext> dbContextFactory,
     ITimeProvider timeProvider) : IAdminUserService
 {
+    /// <summary>COACH licence, granted to every account by the provisioning service.</summary>
+    private const short DefaultRoleId = 1;
     public async Task<IReadOnlyList<AdminUserSummary>> GetUsersAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -64,7 +66,10 @@ public sealed class AdminUserService(
     {
         ArgumentNullException.ThrowIfNull(roleIds);
 
-        var requested = roleIds.Distinct().ToHashSet();
+        // The coach licence is granted to every account at provisioning and is
+        // the default of the software: an administrator can grant more licences
+        // but can never take it away.
+        var requested = roleIds.Append(DefaultRoleId).Distinct().ToHashSet();
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var user = await db.Users

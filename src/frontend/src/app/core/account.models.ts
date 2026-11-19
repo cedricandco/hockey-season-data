@@ -28,6 +28,12 @@ export interface AccountProfile {
     secondaryColor: string | null;
     extra: Record<string, string | null>;
   };
+  /**
+   * Number of teams the account follows. A brand-new account is provisioned
+   * as a coach with zero teams, which is what sends it to the team-selection
+   * page on first visit.
+   */
+  teamCount?: number;
 }
 
 /** Account row of the admin directory (`GET /api/users`). */

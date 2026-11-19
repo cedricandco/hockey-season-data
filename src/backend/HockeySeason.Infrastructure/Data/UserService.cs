@@ -51,6 +51,7 @@ public sealed class UserService(
                 u.Setting!.PrimaryColor,
                 u.Setting.SecondaryColor,
                 u.Setting.Extra,
+                TeamCount = u.TeamSubscriptions.Count,
             })
             .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -66,7 +67,8 @@ public sealed class UserService(
                 role.RoleId, (UserRoleCode)role.RoleId, role.Name, role.MaxFollowedEntities))],
             user.PrimaryColor,
             user.SecondaryColor,
-            user.Extra);
+            user.Extra,
+            user.TeamCount);
     }
 
     public async Task<UserSubscriptions> GetSubscriptionsAsync(int userId, CancellationToken cancellationToken = default)

@@ -67,4 +67,5 @@ public sealed record CurrentUserProfile(
     IReadOnlyList<UserRoleSummary> Roles,
     string? PrimaryColor,
     string? SecondaryColor,
-    IReadOnlyDictionary<string, string?> Extra);
+    IReadOnlyDictionary<string, string?> Extra,
+    int TeamCount = 0);

@@ -64,6 +64,58 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
         Assert.Equal(first.UserId, second.UserId);
         await using var db = CreateContext();
         Assert.Equal(1, await db.Users.CountAsync());
+        var user = await db.Users.SingleAsync();
+        Assert.Equal("Alice", user.FirstName);
+        Assert.Equal("A", user.LastName);
+        Assert.Equal("a@example.com", user.Email);
+    }
+
+    [Fact]
+    public async Task Provisioning_GrantsTheCoachRoleToANewAccount()
+    {
+        var provisioning = new UserProvisioningService(CreateFactory(), NullLogger<UserProvisioningService>.Instance);
+
+        var result = await provisioning.ProvisionAsync(new("auth0|new-coach", null, null, null));
+
+        await using var db = CreateContext();
+        var role = await db.UserRoles.SingleAsync(userRole => userRole.UserId == result.UserId);
+        Assert.Equal(1, role.RoleId);
+        var users = CreateUserService(CreateFactory());
+        var limits = (await users.GetLimitsAsync(result.UserId)).ToDictionary(limit => limit.Kind);
+        Assert.Equal(5, limits["team"].Max);
+        Assert.True(limits["team"].CanAddMore);
+    }
+
+    [Fact]
+    public async Task Provisioning_FillsMissingProfileClaimsWithoutOverwriting()
+    {
+        var provisioning = new UserProvisioningService(CreateFactory(), NullLogger<UserProvisioningService>.Instance);
+
+        // First request: the token carried nothing but the subject.
+        var created = await provisioning.ProvisionAsync(new("auth0|profile", null, null, null));
+        Assert.True(created.Created);
+
+        // The userinfo profile arrives later: names and email are stored.
+        await provisioning.ProvisionAsync(new("auth0|profile", "p@example.com", "Patrick", "Roy"));
+        await using (var db = CreateContext())
+        {
+            var user = await db.Users.SingleAsync();
+            Assert.Equal("p@example.com", user.Email);
+            Assert.Equal("Patrick", user.FirstName);
+            Assert.Equal("Roy", user.LastName);
+        }
+
+        // A later profile never overwrites what is stored.
+        await provisioning.ProvisionAsync(new("auth0|profile", "other@example.com", "Autre", "Nom"));
+        await using (var db = CreateContext())
+        {
+            var user = await db.Users.SingleAsync();
+            Assert.Equal("p@example.com", user.Email);
+            Assert.Equal("Patrick", user.FirstName);
+            Assert.Equal("Roy", user.LastName);
+            // The COACH role is granted once only.
+            Assert.Equal(1, await db.UserRoles.CountAsync(userRole => userRole.UserId == created.UserId));
+        }
     }
 
     [Fact]
@@ -72,6 +124,12 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
         var factory = CreateFactory();
         var provisioning = new UserProvisioningService(factory, NullLogger<UserProvisioningService>.Instance);
         var userId = (await provisioning.ProvisionAsync(new("auth0|no-role", null, null, null))).UserId;
+        // The default COACH licence is removed: the caller holds no team role.
+        await using (var db = CreateContext())
+        {
+            db.UserRoles.RemoveRange(db.UserRoles.Where(userRole => userRole.UserId == userId));
+            await db.SaveChangesAsync();
+        }
         await SeedTeamAsync(factory, "200", leagueExternalId: "100", divisionExternalId: "10");
         var users = CreateUserService(factory);
 
@@ -379,11 +437,8 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
     private async Task<int> SeedCoachAsync(IDbContextFactory<HockeySeasonDbContext> factory)
     {
         var provisioning = new UserProvisioningService(factory, NullLogger<UserProvisioningService>.Instance);
-        var userId = (await provisioning.ProvisionAsync(new("auth0|coach", null, null, null))).UserId;
-        await using var db = await factory.CreateDbContextAsync();
-        db.UserRoles.Add(new() { UserId = userId, RoleId = 1 });
-        await db.SaveChangesAsync();
-        return userId;
+        // Provisioning already grants the default COACH licence.
+        return (await provisioning.ProvisionAsync(new("auth0|coach", null, null, null))).UserId;
     }
 
     private static async Task SeedTeamAsync(IDbContextFactory<HockeySeasonDbContext> factory, string teamExternalId, string leagueExternalId, string divisionExternalId)

@@ -93,17 +93,30 @@ only at query time with PostgreSQL `42P01`).
 
 Every authenticated invocation passes through `UserProvisioningMiddleware` (a
 Functions worker middleware): the first request of a newly
-connected caller — whatever the endpoint — upserts their `users` row from the
-JWT claims (`sub`, `email`, `given_name`, `family_name`). Idempotent by design
-(SELECT before INSERT, existing rows never mutated, emails never overwritten),
-so subsequent requests are pure lookups. When persistence is not configured
-the middleware is a no-op. A provisioning failure never blocks the invocation.
+connected caller — whatever the endpoint — upserts their `users` row and
+grants the default **COACH** licence (`user_roles` → `roles.id = 1`, 5 teams).
+Idempotent by design (SELECT before INSERT, existing rows never mutated, emails
+never overwritten), so subsequent requests are pure lookups. When persistence is
+not configured the middleware is a no-op. A provisioning failure never blocks
+the invocation.
+
+The profile — email, **first name and last name** — comes from the JWT claims
+when the access token carries them. Auth0 access tokens only publish `email`,
+`given_name` and `family_name` when those claims were added to the API, so the
+resolver completes them from the provider's `/userinfo` profile: this happens
+only while the stored row still misses one of the three fields (never on every
+request), and the display name of a database (email/password) signup is split
+into first/last name. A value already stored is never overwritten.
+
+`GET /api/users/me` also returns `teamCount`: a freshly provisioned account
+follows no team, which is what sends the SPA to the team-selection page on
+first visit.
 
 ### User account endpoints (all require a valid bearer token)
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/users/me` | Local profile + licence roles + limits + visual settings (provisions the row on first call) |
+| `GET /api/users/me` | Local profile + licence roles + limits + visual settings + `teamCount` (provisions the row on first call, granting the default COACH licence) |
 | `PUT /api/users/me/settings` | Update primary/secondary colors and generic extras |
 | `GET /api/users/me/subscriptions` | Followed teams (with their 15-day lock), leagues and associations, plus the licence headroom of each kind (`{ kind, max, used, canAddMore }`; `max: null` = unlimited) |
 | `POST /api/users/me/team-subscriptions` | Follow a team — bounded by the COACH role's `roles.max_followed_entities` (5 by default), locked 15 days against removal |

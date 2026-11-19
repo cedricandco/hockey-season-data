@@ -50,20 +50,24 @@ public sealed class AdminUserTests : IAsyncLifetime
         Assert.Equal(AdminRoleUpdateError.None, granted.Error);
         Assert.Equal([1, 3], granted.User!.Roles.Select(role => role.RoleId));
 
-        // Second call revokes coach and keeps president only.
+        // Second call revokes president and keeps coach: the COACH licence is
+        // the default of the software and cannot be taken away.
         var narrowed = await users.SetRolesAsync(userId, [3]);
         Assert.Equal(AdminRoleUpdateError.None, narrowed.Error);
-        Assert.Equal([3], narrowed.User!.Roles.Select(role => role.RoleId));
-        Assert.Equal("president", Assert.Single(narrowed.User.Roles).Code);
+        Assert.Equal([1, 3], narrowed.User!.Roles.Select(role => role.RoleId));
+
+        // Even an empty request leaves the default COACH licence in place.
+        var cleared = await users.SetRolesAsync(userId, []);
+        Assert.Equal([1], cleared.User!.Roles.Select(role => role.RoleId));
 
         // Idempotent: no duplicate rows are appended.
-        await users.SetRolesAsync(userId, [3, 3]);
+        await users.SetRolesAsync(userId, [1, 3, 3]);
         await using var db = new HockeySeasonDbContext(_options);
-        Assert.Equal(1, await db.UserRoles.CountAsync(userRole => userRole.UserId == userId));
+        Assert.Equal(2, await db.UserRoles.CountAsync(userRole => userRole.UserId == userId));
 
         var listed = Assert.Single(await users.GetUsersAsync());
         Assert.Equal(userId, listed.Id);
-        Assert.Equal([3], listed.Roles.Select(role => role.RoleId));
+        Assert.Equal([1, 3], listed.Roles.Select(role => role.RoleId));
     }
 
     [Fact]
@@ -78,7 +82,6 @@ public sealed class AdminUserTests : IAsyncLifetime
         await using var db = new HockeySeasonDbContext(_options);
         Assert.Equal(0, await db.UserRoles.CountAsync());
     }
-
     [Fact]
     public async Task GetUsers_ExposesTheAdminFlagAndGetRolesListsTheSeededRoles()
     {

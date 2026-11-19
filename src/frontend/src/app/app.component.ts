@@ -6,6 +6,7 @@ import { AuthService as Auth0AuthService } from '@auth0/auth0-angular';
 import { LoginComponent } from './core/login.component';
 import { UserMenuComponent } from './core/user-menu.component';
 import { AccountService } from './core/account.service';
+import { clearOnboardingSkip } from './core/team-onboarding';
 
 /**
  * Application root: shows a login gate until the visitor authenticates with
@@ -82,9 +83,19 @@ export class AppComponent {
   constructor() {
     // Loads the local account once authenticated: the admin tab and the admin
     // route guard both rely on the `isAdmin` flag it carries.
+    let wasLoggedIn = this.isLoggedIn();
     effect(() => {
-      if (this.isLoggedIn()) void this.account.load();
-      else this.account.clear();
+      const loggedIn = this.isLoggedIn();
+      if (loggedIn) {
+        void this.account.load();
+      } else if (wasLoggedIn) {
+        // Only a real sign-out clears the session state: the SDK also reports
+        // `false` while it initializes, which must not drop the "later" choice
+        // the first-run guard relies on.
+        this.account.clear();
+        clearOnboardingSkip(typeof sessionStorage === 'undefined' ? null : sessionStorage);
+      }
+      wasLoggedIn = loggedIn;
     });
   }
 

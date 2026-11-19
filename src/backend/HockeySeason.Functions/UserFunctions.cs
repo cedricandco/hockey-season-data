@@ -47,6 +47,9 @@ public sealed class UserFunctions(
             IsAdmin = profile.IsAdmin || RequestUserResolver.IsAdmin(context),
             Roles = profile.Roles.Select(role => new { role.RoleId, Code = role.Code.ToString(), role.DisplayName, role.MaxFollowedEntities }),
             Settings = new { profile.PrimaryColor, profile.SecondaryColor, profile.Extra },
+            // Drives the first-run team-selection page: a brand-new account
+            // follows nothing yet.
+            TeamCount = profile.TeamCount,
         });
     }
 

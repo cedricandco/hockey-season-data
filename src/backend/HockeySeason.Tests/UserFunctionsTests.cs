@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using HockeySeason.Application;
+using HockeySeason.Auth;
 using HockeySeason.Functions;
 using HockeySeason.LeagueApi;
 using Microsoft.AspNetCore.Http;
@@ -124,7 +125,71 @@ public sealed class UserFunctionsTests
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
         Assert.Equal(7, json.RootElement.GetProperty("id").GetInt32());
         Assert.Equal("COACH", json.RootElement.GetProperty("roles")[0].GetProperty("code").GetString()!.ToUpperInvariant());
+        // The team count tells the SPA whether the account still has to pick a
+        // team on first run (0 here).
+        Assert.Equal(0, json.RootElement.GetProperty("teamCount").GetInt32());
         Assert.Single(provisioning.Provisioned);
+    }
+
+    [Fact]
+    public async Task Resolver_CompletesTheProfileFromUserinfo_WhenTheStoredProfileIsIncomplete()
+    {
+        var provisioning = new FakeProvisioning { ProfileIncomplete = true };
+        var userContext = new FakeUserContext(new UserInfo(
+            "auth0|middleware-user", "jdoe", "Jean Tremblay", null, null, "jean@example.com", true));
+        var resolver = new RequestUserResolver(provisioning, userContext);
+        var (context, _) = CreateContext(provisioning);
+
+        await resolver.GetOrCreateUserIdAsync(context, CancellationToken.None);
+
+        Assert.Equal(2, provisioning.Provisioned.Count);
+        var claims = provisioning.Provisioned[^1];
+        Assert.Equal("jean@example.com", claims.Email);
+        // Auth0 fills "name" with "Prénom Nom" for database signups.
+        Assert.Equal("Jean", claims.FirstName);
+        Assert.Equal("Tremblay", claims.LastName);
+        Assert.Equal(1, userContext.Calls);
+    }
+
+    [Fact]
+    public async Task Resolver_SkipsUserinfo_WhenTheStoredProfileIsComplete()
+    {
+        var provisioning = new FakeProvisioning { ProfileIncomplete = false };
+        var userContext = new FakeUserContext(new UserInfo(
+            "auth0|middleware-user", null, "Autre Nom", null, null, "other@example.com", true));
+        var resolver = new RequestUserResolver(provisioning, userContext);
+        var (context, _) = CreateContext(provisioning, claims:
+        [
+            new(JwtRegisteredClaimNames.Email, "m@example.com"),
+            new(JwtRegisteredClaimNames.GivenName, "Marc"),
+            new(JwtRegisteredClaimNames.FamilyName, "Gagnon"),
+        ]);
+
+        await resolver.GetOrCreateUserIdAsync(context, CancellationToken.None);
+
+        var claims = Assert.Single(provisioning.Provisioned);
+        Assert.Equal("m@example.com", claims.Email);
+        Assert.Equal("Marc", claims.FirstName);
+        Assert.Equal("Gagnon", claims.LastName);
+        Assert.Equal(0, userContext.Calls);
+    }
+
+    [Fact]
+    public async Task Resolver_DoesNotSplitADisplayNameThatIsAnEmail()
+    {
+        var provisioning = new FakeProvisioning { ProfileIncomplete = true };
+        var userContext = new FakeUserContext(new UserInfo(
+            "auth0|middleware-user", "jdoe", "jdoe@example.com", null, null, null, null));
+        var resolver = new RequestUserResolver(provisioning, userContext);
+        var (context, _) = CreateContext(provisioning);
+
+        await resolver.GetOrCreateUserIdAsync(context, CancellationToken.None);
+
+        // The profile brought nothing usable: the row is not re-provisioned.
+        var claims = Assert.Single(provisioning.Provisioned);
+        Assert.Null(claims.FirstName);
+        Assert.Null(claims.LastName);
+        Assert.Equal(1, userContext.Calls);
     }
 
     [Fact]
@@ -396,7 +461,6 @@ public sealed class UserFunctionsTests
         httpContext.Request.Headers["X-Authorization"] = "Bearer test";
         return (FunctionsTests.CreateContextWith(httpContext, BuildServices(provisioning)), httpContext.Request);
     }
-
     private static (UserFunctions Function, RequestUserResolver Resolver) CreateUserFunctions(
         FakeUsers users, IUserProvisioningService? provisioning = null, ISubscriptionCatalogService? catalog = null)
     {
@@ -423,10 +487,13 @@ public sealed class UserFunctionsTests
     {
         public List<ApplicationUserClaims> Provisioned { get; } = [];
 
+        /// <summary>Whether the stored profile is reported incomplete (drives the userinfo call).</summary>
+        public bool ProfileIncomplete { get; init; }
+
         public Task<UserProvisioningResult> ProvisionAsync(ApplicationUserClaims claims, CancellationToken cancellationToken = default)
         {
             Provisioned.Add(claims);
-            return Task.FromResult(new UserProvisioningResult(UserId: 7, Created: true));
+            return Task.FromResult(new UserProvisioningResult(UserId: 7, Created: true, ProfileIncomplete));
         }
     }
 
@@ -440,6 +507,19 @@ public sealed class UserFunctionsTests
             throw new HttpRequestException("db unreachable");
         }
     }
+
+    /// <summary>Identity-provider profile stub: the token carried no names.</summary>
+    private sealed class FakeUserContext(UserInfo profile) : IUserContext
+    {
+        public int Calls { get; private set; }
+
+        public Task<UserInfo?> GetCurrentUserAsync(CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult<UserInfo?>(profile);
+        }
+    }
+
 
     private sealed class FakeScopes(int[]? leagues = null, int[]? teams = null, int[]? offices = null) : IScopeService
     {

@@ -33,6 +33,8 @@ const fixtures = {
   '/api/users/me': {
     id: 1, auth0UserId: 'auth0|test', email: 'test@example.com', firstName: 'Test', lastName: 'Hockey',
     isAdmin: false, roles: [], settings: { primaryColor: null, secondaryColor: null, extra: {} },
+    // The account already follows a team: the first-run selection page is not shown.
+    teamCount: 1,
   },
   '/api/offices': [{ id: 1, name: 'Association Exemple' }],
   '/api/offices/1/leagues': [{ id: 1, name: 'Ligue Exemple' }],

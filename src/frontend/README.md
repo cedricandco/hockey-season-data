@@ -3,7 +3,8 @@
 Angular 22 (standalone, zoneless) responsive frontend with French/English
 translation via `@ngx-translate/core` 18. The app has five routed pages:
 chat, team details, weekly report, configuration (colors + followed teams), and
-administration (administrators only).
+administration (administrators only), plus the first-run team selection shown
+to a brand-new coach account.
 
 ## Prerequisites
 
@@ -97,11 +98,24 @@ The explicit `@emnapi/core` and `@emnapi/runtime` development dependencies
 resolve conflicting WebAssembly build-tool peer dependencies in the lockfile.
 Keep them aligned when updating the frontend build dependencies.
 
+## First run: team selection
+
+A newly connected caller is provisioned by the backend as a **coach** (see the
+backend README) and follows no team yet. `GET /api/users/me` reports
+`teamCount`, so the landing route (`/chat`) is guarded by
+`core/team-onboarding.guard.ts`: an account with `teamCount === 0` and a licence
+that allows following teams is sent to `/team-selection`
+(`team-selection/team-selection.component.ts`), which walks the same
+association → division → league → team path as the configuration page and
+follows the picked team. "Continue" enters the app; "Later" is remembered for
+the browser session (`sessionStorage`, cleared on logout) so the guard does not
+loop. Administrators and accounts that cannot follow teams are never
+redirected.
+
 ## Configuration page
 
 The configuration page (`/configuration`) is open to every signed-in user and
 has two sections.
-
 ### Appearance and colors
 
 Each user chooses primary and secondary colors. The choices are saved in the
@@ -186,7 +200,8 @@ src/
   app/
     app.config.ts        # zoneless, routed, HttpClient(fetch)+interceptors, translation and agent providers
     app.component.ts     # login gate ↔ header + router outlet based on auth state
-    app.routes.ts        # /chat, /team, /teams-weekly-report, /configuration, /admin, /admin/reference
+    app.routes.ts        # /chat, /team-selection, /team, /teams-weekly-report, /configuration, /admin, /admin/reference
+    team-selection/team-selection.component.ts # first-run team picker (new coach accounts)
     chat/chat.component.ts     # agent chat page, composer pinned at the bottom
     team/team.component.ts     # association, division, league and team selection (followed only)
     report/report.component.ts # weekly report page (followed leagues, no hardcoded ids)
@@ -198,6 +213,8 @@ src/
     admin/reference-helpers.ts # pure helpers of the reference page (unit tested)
     core/account.service.ts    # local account (roles + admin flag), cached for the session
     core/admin.guard.ts        # route guard: administrators only
+    core/team-onboarding.ts    # first-run helpers (unit tested): needsTeamSelection, "later" choice
+    core/team-onboarding.guard.ts # route guard: sends a new coach account to /team-selection
     core/theme.service.ts   # primary/secondary colors, localStorage persistence
     core/login.component.ts # Auth0 Universal Login gate
     core/auth.service.ts    # logout (provider session + local fallback)
