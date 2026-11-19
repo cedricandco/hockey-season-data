@@ -337,26 +337,41 @@ public sealed partial class LeagueApiService
 
     private static IReadOnlyList<Models.LeagueStanding> MapStandings(IEnumerable<StandingsRowDto> rows) =>
         [.. rows
-            .Select(row => new Models.LeagueStanding(
-                row.TeamId,
-                row.Team.Name,
-                row.Team.ShortName,
-                row.Team.Division,
-                row.Team.Gender,
-                row.Ranking,
-                row.GamesPlayed,
-                row.Wins,
-                row.Losses,
-                row.Ties,
-                row.Points,
-                row.GoalsFor,
-                row.GoalsAgainst,
-                row.GoalDifferential,
-                row.PenaltyMinutes,
-                row.PowerPlayPercentage,
-                row.PenaltyKillPercentage,
-                row.GroupId))
+            .Select(MapStanding)
+            .OfType<Models.LeagueStanding>()
             .OrderBy(row => row.Ranking)];
+
+    /// <summary>
+    /// One standings row, or null for a row without a team: placeholders and
+    /// bracket slots cannot be displayed nor followed.
+    /// </summary>
+    private static Models.LeagueStanding? MapStanding(StandingsRowDto row)
+    {
+        if (row.Team is not { } team)
+        {
+            return null;
+        }
+
+        return new Models.LeagueStanding(
+            row.TeamId,
+            team.Name,
+            team.ShortName,
+            team.Division ?? string.Empty,
+            team.Gender ?? string.Empty,
+            row.Ranking,
+            row.GamesPlayed,
+            row.Wins,
+            row.Losses,
+            row.Ties,
+            row.Points,
+            row.GoalsFor,
+            row.GoalsAgainst,
+            row.GoalDifferential,
+            row.PenaltyMinutes,
+            row.PowerPlayPercentage,
+            row.PenaltyKillPercentage,
+            row.GroupId);
+    }
 
     private static LeagueGame MapGame(GameRowDto row)
     {

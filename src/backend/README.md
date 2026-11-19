@@ -9,7 +9,7 @@ protected by an OIDC-style JWT security layer (`HockeySeason.Auth`).
 | Project | Responsibility |
 |---|---|
 | `HockeySeason.Domain` | Entities (`ServerTime`), `ITimeProvider` abstraction, `TimeService` |
-| `HockeySeason.Application` | Use cases: `IHealthService`/`HealthService`, `IUserProvisioningService`, `IScopeService`, `IUserService`, `HealthReport` |
+| `HockeySeason.Application` | Use cases: `IHealthService`/`HealthService`, `IUserProvisioningService`, `ICallerDataScopeService`, `IScopeService`, `IUserService`, `HealthReport` |
 | `HockeySeason.Infrastructure` | `UtcTimeProvider` + PostgreSQL persistence: `HockeySeasonDbContext` (EF Core + Npgsql, snake_case), migrations, use-case implementations |
 | `HockeySeason.Auth` | OIDC-style JWT security backed by Auth0 (see below) |
 | `HockeySeason.LeagueApi` | HTTP client for the public Spordle league API (`pub-api.play.spordle.com`) |
@@ -43,12 +43,17 @@ then from the application output directory containing the bundled instructions.
 ## Endpoints
 
 `GET /api/weekly-report` requires authentication.
-It accepts `startDate` and `endDate` in `yyyy-MM-dd` format, plus repeated
-`divisionId` and `teamId` parameters (1–20 positive IDs each). The response
-contains raw Spordle arrays and an availability flag per source. Transient
-failures are retried up to three times without blocking other sources. Each
-division also includes its official league name from `GetLeagues` when available.
-See `HockeySeason.Functions/weekly-report.http` for example requests.
+It accepts `startDate` and `endDate` in `yyyy-MM-dd` format only: the leagues
+and teams of the report are the **teams the caller follows**
+(`team_subscriptions`), resolved from the database — nothing is passed by the
+client and nothing is hardcoded. Every followed team contributes its league,
+and each schedule of that league is fetched, so a category played in several
+schedules ("Saison Rives", "Phase 2"…) reports all of its figures. The
+response contains raw Spordle arrays and an availability flag per source.
+Transient failures are retried up to three times without blocking other
+sources. Each card also carries the league, division and schedule names read
+from the database. See `HockeySeason.Functions/weekly-report.http` for an
+example request.
 
 - `GET /api/healthz` — liveness: `{ "status": "ok" }`
 - `GET /api/readyz` — readiness: includes the PostgreSQL state (`database=ok|not_configured`, 503 when configured but unreachable)
@@ -78,7 +83,11 @@ dotnet ef database update --startup-project ../HockeySeason.Functions
 ```
 
 The startup migration runs only when `Database:MigrateOnStartup=true` (hosted
-deployments). `GET /api/readyz` reports `database=ok` once the schema is reachable.
+deployments). `GET /api/readyz` reports `database=ok` once the schema is
+reachable **and up to date**: it returns `503` with the pending migration names
+when the server is behind the bundled EF Core migrations, so a deployment whose
+schema was never updated does not look ready (a missing table otherwise fails
+only at query time with PostgreSQL `42P01`).
 
 ### User registration on connect
 
@@ -96,14 +105,26 @@ the middleware is a no-op. A provisioning failure never blocks the invocation.
 |---|---|
 | `GET /api/users/me` | Local profile + licence roles + limits + visual settings (provisions the row on first call) |
 | `PUT /api/users/me/settings` | Update primary/secondary colors and generic extras |
-| `GET /api/users/me/subscriptions` | Followed teams (with their 15-day lock) and leagues |
-| `POST /api/users/me/team-subscriptions` | Follow a team — COACH licence, 5 max, locked 15 days against removal |
-| `DELETE /api/users/me/team-subscriptions/{teamId}` | Unfollow — refused while locked unless admin (409/403) |
+| `GET /api/users/me/subscriptions` | Followed teams (with their 15-day lock), leagues and associations, plus the licence headroom of each kind (`{ kind, max, used, canAddMore }`; `max: null` = unlimited) |
+| `POST /api/users/me/team-subscriptions` | Follow a team — bounded by the COACH role's `roles.max_followed_entities` (5 by default), locked 15 days against removal |
+| `DELETE /api/users/me/team-subscriptions/{teamId}` | Unfollow — `423 Locked` while the 15-day window is active (admins bypass) |
 | `POST /api/users/me/team-subscriptions/{teamId}/unlock-request` | Trace an unlock request for the admin interface |
 | `POST /api/users/me/league-subscriptions` | Follow a league (Spordle category id, a guid) — DIRECTOR licence, 5 max |
 | `DELETE /api/users/me/league-subscriptions/{leagueId}` | Unfollow a league (guid route value) |
 | `POST /api/users/me/organization-subscriptions` | Follow a whole association — PRESIDENT scope (all leagues of the org) |
 | `DELETE /api/users/me/organization-subscriptions/{organizationId}` | Unfollow an association |
+
+Read-only navigation for the "follow a team" selector of the configuration
+page (association → division → league → team). Any authenticated caller may
+read it — it is only the reference data mirrored from Spordle, which every
+user already sees — and each level returns the identifier the next one expects:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/subscriptions/associations` | Associations that own at least one division (`organizations.id` + name) |
+| `GET /api/subscriptions/associations/{associationId}/divisions` | Divisions of an association; `id` is the Spordle office number (`divisions.external_id`, e.g. 6193) |
+| `GET /api/subscriptions/divisions/{divisionId}/leagues[?seasonId=2026-27]` | Leagues of a division for a season (latest imported when omitted); `id` is the Spordle category guid |
+| `GET /api/subscriptions/leagues/{leagueId}/teams` | Teams of a league, by Spordle team id (the value `POST /api/users/me/team-subscriptions` expects) |
 
 Admin-only user directory and licence assignment (`is_admin` column **or**
 `roles=admin` claim; the frontend admin page is hidden and guarded for the rest):
@@ -122,8 +143,10 @@ requests. These endpoints stay closed to non-administrators even while
 Admin-only reference-data import (Spordle → PostgreSQL, upsert by external id).
 `POST /api/reference/import` is the supported entry point: one call imports a
 whole office/season — the division (office), the season, every league (Spordle
-category, stored under its **French** name, e.g. "M13 B") and every team — with
-an idempotent upsert that also deletes what disappeared from Spordle:
+category, stored under its **French** name, e.g. "M13 B"), the **schedules** of
+each league (the Spordle ids the standings/games/suspensions calls are keyed on,
+`league_schedules`) and every team — with an idempotent upsert that also deletes
+what disappeared from Spordle:
 
 | Endpoint | Purpose |
 |---|---|
@@ -135,15 +158,31 @@ an idempotent upsert that also deletes what disappeared from Spordle:
 page) and `divisionId` is the division number typed by the administrator, i.e.
 `divisions.external_id`.
 
-Reconciliation rules: a league is the `(season, Spordle category id)` pair and
-a team is its Spordle team id, so a league is never duplicated across divisions
-or seasons and a team moved between categories is re-parented. Deletions are
-strictly scoped: only leagues and teams of **the division being updated** (and
-of the imported season) are pruned when Spordle no longer publishes them — a
-sibling division, another association or a past season is never touched. Their
-`team_subscriptions` / `league_subscriptions` go with them (ON DELETE CASCADE).
-Categories without a published team are skipped. The import is administrator
-only and stays closed even while `Authorization:OpenAccess` is on.
+Reconciliation rules: a league is the `(season, Spordle category id)` pair, a
+team is its Spordle team id and a schedule is its Spordle schedule id, so none
+of them is duplicated across divisions or seasons and a team or schedule moved
+between categories is re-parented. Deletions are
+strictly scoped: only leagues, schedules and teams of **the division being
+updated** (and of the imported season) are pruned when Spordle no longer
+publishes them — a sibling division, another association or a past season is
+never touched. Their `team_subscriptions` / `league_subscriptions` go with them
+(ON DELETE CASCADE). Categories without a published team are skipped. The
+import is administrator only and stays closed even while
+`Authorization:OpenAccess` is on.
+
+Schedules differ in what they publish, so the standings reader tolerates the
+variations instead of failing the whole import: a team may have
+`"shortName": null`, a schedule may omit `division`/`gender`, and a tournament
+schedule publishes neither `powerplayPct`/`penaltyKillPct` nor the game
+counters (those default to zero, the percentages stay `null`). A schedule whose
+payload still cannot be read (unexpected JSON shape, HTTP error, timeout) is
+skipped with a warning in `warnings` naming that schedule; the rest of the
+import completes.
+
+Because the import is idempotent, re-running it **backfills** what an older
+import did not store — this is how `league_schedules` was filled for reference
+data imported before the table existed. After applying a migration that adds
+reference data, re-run the import once per division/season.
 
 Legacy aliases kept for existing scripts, both delegating to the same use case:
 
@@ -154,23 +193,46 @@ Legacy aliases kept for existing scripts, both delegating to the same use case:
 
 (`admin/*` is reserved by the Functions host, hence the `import/` prefix.)
 
-Business endpoints scope-filter by subscriptions: `/api/weekly-report` drops
-division/team ids outside the caller's scope (403 when nothing is authorized)
-and `/api/games/{id}`, `/api/leagues/{id}/teams`, `/api/leagues/{id}/teams/{teamId}`
-return 403 outside scope. When no database is configured
-these endpoints run unfiltered rather than failing.
+Business endpoints are limited to the caller's follows, resolved from the
+database (`ICallerDataScopeService`): a followed team exposes its league and
+division, a followed league exposes all its teams, a followed association
+exposes all its divisions and leagues. Nothing else is listed or readable.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/weekly-report?startDate=…&endDate=…` | Standings, games and suspensions of the **teams followed** (Spordle figures, schedule ids from `league_schedules`); empty when nothing is followed |
+| `GET /api/nav/teams` | Every team the caller follows, with the database ids and names of its league, division and association (team page follow list) |
+| `GET /api/nav/associations` | Associations that own at least one followed team (`organizations.id`) |
+| `GET /api/nav/associations/{associationId}/divisions` | Divisions of that association that own a followed team (`divisions.id`) |
+| `GET /api/nav/divisions/{divisionId}/leagues` | Leagues of that division that own a followed team (`leagues.id`) |
+| `GET /api/nav/leagues/{leagueId}/teams` | Followed teams of that league (`teams.id`) |
+| `GET /api/teams/{teamId}` | Detail of a followed team, keyed on `teams.id`; the schedule is resolved from the database — 403 outside the follows |
+| `GET /api/leagues/{scheduleId}/teams` | Teams of a schedule, read from Spordle — 403 outside the follows |
+| `GET /api/leagues/{scheduleId}/teams/{teamId}` | Team detail keyed on Spordle ids (chat card / agent output) — 403 when the team is not followed |
+| `GET /api/games/{gameId}` | Box score — 403 when neither team is followed |
+
+The team-page navigation returns **database ids** and lists only the values
+that own at least one followed team: an association, division or league with no
+followed team is never offered, so a team outside the follows can neither be
+reached nor guessed. The Spordle ids stay behind the API.
+
+When no database is configured these endpoints run unfiltered rather than
+failing (database-less host, tests) — except the team page and the weekly
+report, which are about the caller's own teams and stay empty when the follows
+cannot be resolved.
 
 ### Temporary open access (Authorization:OpenAccess)
 
 While the roles (licences) and admin flags are still being provisioned, the
 `Authorization:OpenAccess` switch (currently `true` in `appsettings.json`) gives
 every **authenticated** caller full access, whatever the database or their role
-contains: no subscription-scope filtering, no COACH/DIRECTOR licence limit, no
-15-day team lock, and the admin import endpoints accept any caller.
-Authentication itself (a valid bearer token) stays required. Close the phase
-with `Authorization:OpenAccess=false` (env var `Authorization__OpenAccess`) —
-the scope, licence and admin guards then apply again (`CallerScope`,
-`UserService`, `AdminImportFunctions`).
+contains: no follow filtering (the data scope returns the whole reference
+data), no COACH/DIRECTOR licence limit, no 15-day team lock, and the admin
+import endpoints accept any caller. Authentication itself (a valid bearer token)
+stays required. Close the phase with `Authorization:OpenAccess=false` (env var
+`Authorization__OpenAccess`) — the follow scope, licence and admin guards then
+apply again (`ICallerDataScopeService`, `UserService`,
+`AdminImportFunctions`).
 
 ## Authentication (HockeySeason.Auth)
 
@@ -241,32 +303,37 @@ into application use cases:
 
 ### League tools
 
-`LeagueTools` reads the public Spordle league API through
-`HockeySeason.LeagueApi.Http.LeagueApiService`. Configuration lives in the
-`LeagueApi` section (`appsettings.json`):
+The reference data — associations, divisions, leagues, teams and their
+schedules — comes from the **database** and is limited to what the caller
+follows (`ICallerDataScopeService`, resolved from the request's bearer token).
+Only the live figures still come from the public Spordle API, always with the
+`league_schedules.external_id` ids read from the database. A tool call for a
+league, schedule, team or game outside the caller's follows is refused with an
+MCP error, so the assistant cannot answer about entities the user does not
+follow.
+
+Configuration lives in the `LeagueApi` section (`appsettings.json`):
 
 | Key | Meaning | Default |
 |---|---|---|
 | `BaseAddress` | Public API root | `https://pub-api.play.spordle.com/api/` |
 | `ApiKey` | API key sent as `API-Key` authorization | — |
-| `DefaultLeagueId` | League used when none is supplied | `194908` |
-| `DefaultOfficeId` | Office used when none is supplied | `6193` |
-| `DefaultSeasonId` | Season used when none is supplied | `2026-27` |
+| `DefaultLeagueId` | League used by legacy import aliases | `194908` |
+| `DefaultOfficeId` | Office used by the legacy import | `6193` |
+| `DefaultSeasonId` | Season used by the legacy import | `2026-27` |
 | `HonourManualRanking` | Use league-published manual ranking | `false` |
 
 | Tool | Params | Source |
 |---|---|---|
-| `GetLeagues` | `officeId?`, `seasonId?` | `GET sp/schedules?officeId=&seasonId=` |
-| `GetLeagueStanding` | `leagueId` | `GET sp/schedules/{leagueId}/teamStats` (60 s cache) |
-| `GetLeagueTeams` | `leagueId` | derived from the standings endpoint |
-| `GetTeamGames` | `leagueId`, `startDate`, `endDate`, `teamId?` | `GET sp/games?filter=<json>` |
-| `GetLeagueSuspension` | `leagueId` | `GET sp/schedules/{leagueId}/suspensions` |
-
-Reference-data import also uses `GET sp/seasons?officeId=`,
-`GET sp/offices?filter=`, `GET sp/categories?officeId=&seasonId=` and
-`GET sp/schedules?officeId=&seasonId=&categoryId=` (see
-`LeagueApiService.GetSeasonsAsync`, `GetOfficeAsync`, `GetCategoriesAsync` and
-`GetCategorySchedulesAsync`).
+| `GetAssociations` | — | database: followed associations |
+| `GetDivisions` | `associationId?` | database: followed divisions |
+| `GetLeagues` | `divisionId?` | database: followed leagues + `scheduleIds` |
+| `GetLeagueTeams` | `leagueId` (category guid) | database: followed league (all teams) or followed team |
+| `GetTeamDetail` | `teamId` | Spordle, keyed on the stored schedule id |
+| `GetLeagueStanding` | `scheduleId` | `GET sp/schedules/{scheduleId}/teamStats` (60 s cache) |
+| `GetTeamGames` | `scheduleId`, `startDate`, `endDate`, `teamId?` | `GET sp/games?filter=<json>` |
+| `GetLeagueSuspension` | `scheduleId` | `GET sp/schedules/{scheduleId}/suspensions` |
+| `GetGameDetail` | `gameId` | `GET sp/games/{id}` + `boxScore` (both teams must be visible) |
 
 The same tools are given to the `hockey-season-data.agent` AI agent through
 `LeagueAgentToolFactory`, which turns the methods carrying

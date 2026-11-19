@@ -4,9 +4,11 @@ using HockeySeason.Agents;
 using HockeySeason.Application;
 using HockeySeason.Functions;
 using HockeySeason.LeagueApi;
+using HockeySeason.LeagueApi.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -48,20 +50,25 @@ public sealed class FunctionsTests
     }
 
     [Fact]
-    public async Task WeeklyReport_ValidatesAndAllowsAuthenticatedCallers()
+    public async Task WeeklyReport_CoversOnlyTheFollowedLeagues()
     {
         await using var identityProvider = new OidcTestServer();
         var service = new TestWeeklyReportService();
-        var function = new WeeklyReportFunction(service, UnfilteredScope());
+        var function = CreateReportFunction(service, identityProvider);
         var request = new DefaultHttpContext().Request;
-        request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&divisionId=194901&teamId=182497");
+        request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09");
 
         var bearerContext = CreateBearerRequestContext(request, identityProvider);
         var result = Assert.IsType<OkObjectResult>(await function.Run(request, bearerContext, CancellationToken.None));
         Assert.IsType<WeeklyReportResponse>(result.Value);
-        Assert.Equal(new[] { 194899, 194901 }, service.Request!.DivisionIds);
+        // The caller's follows define the report: the request no longer carries
+        // division or team ids.
+        Assert.Equal(new DateOnly(2026, 11, 2), service.Request!.Value.Start);
+        Assert.Equal(new DateOnly(2026, 11, 9), service.Request.Value.End);
+        Assert.Equal([182497], service.Request.Value.Leagues.SelectMany(league => league.TeamIds));
+        Assert.Equal([194899], service.Request.Value.Leagues.Select(league => league.ScheduleId));
 
-        request.QueryString = new QueryString("?startDate=2026-11-09&endDate=2026-11-02&divisionId=194899&teamId=182497");
+        request.QueryString = new QueryString("?startDate=2026-11-09&endDate=2026-11-02");
         Assert.IsType<BadRequestObjectResult>(await function.Run(request, CreateAuthenticatedContext(), CancellationToken.None));
     }
 
@@ -69,7 +76,7 @@ public sealed class FunctionsTests
     public async Task WeeklyReport_RejectsMissingBearerTokenWithReason()
     {
         await using var identityProvider = new OidcTestServer();
-        var function = new WeeklyReportFunction(new TestWeeklyReportService(), UnfilteredScope());
+        var function = CreateReportFunction(new TestWeeklyReportService(), identityProvider);
         var request = new DefaultHttpContext().Request;
         var context = CreateAnonymousBearerContext((DefaultHttpContext)request.HttpContext, string.Empty, identityProvider);
         // The mirrored header is mandatory; an empty value yields "missing_token".
@@ -98,11 +105,15 @@ public sealed class FunctionsTests
 
     private sealed class TestWeeklyReportService : IWeeklyReportService
     {
-        public WeeklyReportRequest? Request { get; private set; }
-        public Task<WeeklyReportResponse> GetAsync(WeeklyReportRequest request, CancellationToken cancellationToken)
+        public (DateOnly Start, DateOnly End, IReadOnlyList<WeeklyReportLeague> Leagues)? Request { get; private set; }
+
+        public Task<WeeklyReportResponse> GetAsync(
+            DateOnly startDate, DateOnly endDate, IReadOnlyList<WeeklyReportLeague> leagues,
+            CancellationToken cancellationToken)
         {
-            Request = request;
-            return Task.FromResult(new WeeklyReportResponse(request.StartDate, request.EndDate, request.TeamIds, []));
+            Request = (startDate, endDate, leagues);
+            return Task.FromResult(new WeeklyReportResponse(
+                startDate, endDate, [.. leagues.SelectMany(league => league.TeamIds).Distinct()], []));
         }
     }
 
@@ -226,7 +237,101 @@ public sealed class FunctionsTests
 
     /// <summary>Scope that never filters: persistence is not configured, as in a database-less host.</summary>
     internal static CallerScope UnfilteredScope() =>
-        new(new RequestUserResolver(null!), null!, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
+            new(new RequestUserResolver(new StubProvisioning()), null!, WithoutPersistence());
+
+    /// <summary>
+    /// Report function over the given service, with a data scope returning one
+    /// followed league (schedule 194899, team 182497).
+    /// </summary>
+    internal static WeeklyReportFunction CreateReportFunction(IWeeklyReportService service, OidcTestServer identityProvider)
+    {
+        var resolver = new RequestUserResolver(new StubProvisioning());
+        var scope = new StubDataScope(new CallerDataScope(
+            true,
+            [new ScopedAssociation(1, "Hockey Richelieu")],
+            [new ScopedDivision(6193, "Simple lettre", 1)],
+            [new ScopedLeague(1, "league-guid", "M13 B", "2026-27", 6193, [194899])],
+            [new ScopedTeam(182497, "Grizzlys", "league-guid", 194899)]));
+        var configuration = WithDatabase();
+        return new WeeklyReportFunction(service, scope, resolver, configuration);
+    }
+
+    /// <summary>
+    /// Configuration without persistence: the discovery functions treat the
+    /// caller as unrestricted (the database-less host behaviour).
+    /// </summary>
+    internal static Microsoft.Extensions.Configuration.IConfiguration WithoutPersistence() =>
+        new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
+
+    /// <summary>TeamFunctions over a database-less host (whole reference data readable).</summary>
+    internal static TeamFunctions CreateTeamFunctions(LeagueApiService league, ITeamDetailService details) =>
+        new(league, details, Options.Create(new LeagueApiOptions()),
+            new StubDataScope(CallerDataScope.Unrestricted([], [], [], [])),
+            new RequestUserResolver(new StubProvisioning()),
+            WithoutPersistence());
+
+    /// <summary>GameDetailFunction over a database-less host (whole reference data readable).</summary>
+    internal static GameDetailFunction CreateGameDetailFunction(LeagueApiService league) =>
+        new(league, new StubDataScope(CallerDataScope.Unrestricted([], [], [], [])),
+            new RequestUserResolver(new StubProvisioning()), WithoutPersistence());
+
+    internal sealed class StubProvisioning : IUserProvisioningService
+    {
+        public Task<UserProvisioningResult> ProvisionAsync(ApplicationUserClaims claims, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new UserProvisioningResult(7, Created: true));
+    }
+
+    /// <summary>
+    /// Configuration with a connection string, so the report resolves the caller's follows.
+    /// </summary>
+    internal static Microsoft.Extensions.Configuration.IConfiguration WithTestDatabase() =>
+        WithDatabase();
+
+    /// <summary>Configuration with a connection string, so the report resolves the caller's follows.</summary>
+    private static Microsoft.Extensions.Configuration.IConfiguration WithDatabase() =>
+        new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Postgres"] = "Host=test",
+            })
+            .Build();
+
+    internal sealed class StubDataScope(CallerDataScope scope) : ICallerDataScopeService
+    {
+        public Task<CallerDataScope> GetAsync(int userId, bool unrestricted = false, CancellationToken cancellationToken = default) =>
+            Task.FromResult(scope);
+
+        public Task<CallerDataScope> GetForSubjectAsync(string? auth0Subject, bool unrestricted = false, CancellationToken cancellationToken = default) =>
+            Task.FromResult(scope);
+
+        public Task<IReadOnlyList<FollowedTeam>> GetFollowedTeamsAsync(
+            int userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(FollowedTeamsFrom(scope));
+    }
+
+    /// <summary>
+    /// Followed teams derived from a scope, for the tests that stub the data
+    /// scope: every scoped team is followed, with its league, division and
+    /// association.
+    /// </summary>
+    internal static IReadOnlyList<FollowedTeam> FollowedTeamsFrom(CallerDataScope scope) =>
+        [.. scope.Teams.Select(team =>
+        {
+            var league = scope.Leagues.FirstOrDefault(item => item.ExternalId == team.LeagueExternalId);
+            var division = league is null ? null : scope.Divisions.FirstOrDefault(item => item.Id == league.DivisionId);
+            var association = division is null ? null : scope.Associations.FirstOrDefault(item => item.Id == division.AssociationId);
+            return new FollowedTeam(
+                team.Id,
+                team.Id,
+                team.Name,
+                league?.Id ?? 0,
+                league?.Name ?? string.Empty,
+                [.. (league?.ScheduleIds ?? []).Select(id => new FollowedSchedule(id, $"Schedule {id}"))],
+                division?.Id ?? 0,
+                division?.Name ?? string.Empty,
+                association?.Id ?? 0,
+                association?.Name ?? string.Empty);
+        })];
 
     /// <summary>Function context with the given invocation services and the request's HttpContext.</summary>
     internal static FunctionContext CreateContextWith(DefaultHttpContext httpContext, IServiceProvider services)

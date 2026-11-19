@@ -46,13 +46,17 @@ builder.Services.AddHockeySeasonData(builder.Configuration);
 
 // Authenticated-caller local account: provisioned on the first authenticated
 // invocation (idempotent) by UserProvisioningMiddleware, and resolved per
-// invocation by RequestUserResolver. CallerScope applies the subscription scope.
+// invocation by RequestUserResolver. ICallerDataScopeService limits every read
+// (reports, team page, MCP tools) to the caller's follows.
 builder.Services.AddScoped<RequestUserResolver>();
 builder.Services.AddScoped<CallerScope>();
 builder.UseMiddleware<UserProvisioningMiddleware>();
 // LeagueTools must be registered explicitly: the MCP endpoint instantiates it
 // on demand, but the agent resolves its AIFunctions from this registration.
+// Singleton (the agent resolves it from the root provider); the caller's
+// identity and follows are read at call time from IHttpContextAccessor.
 builder.Services.AddSingleton<LeagueTools>();
+builder.Services.AddSingleton<CallerIdentity>();
 // MCP server (Streamable HTTP, served statelessly by McpFunction) with tools
 // from the HockeySeason.Mcp project.
 builder.Services

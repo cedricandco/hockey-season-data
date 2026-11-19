@@ -149,6 +149,7 @@ public sealed class UserFunctionsTests
     [InlineData(SubscriptionError.UnknownEntity, StatusCodes.Status404NotFound)]
     [InlineData(SubscriptionError.LimitReached, StatusCodes.Status409Conflict)]
     [InlineData(SubscriptionError.Duplicate, StatusCodes.Status409Conflict)]
+    [InlineData(SubscriptionError.Locked, StatusCodes.Status423Locked)]
     [InlineData(SubscriptionError.OutOfScope, StatusCodes.Status403Forbidden)]
     public async Task AddTeamSubscription_MapsServiceErrorsToHttpStatuses(SubscriptionError error, int expectedStatus)
     {
@@ -190,39 +191,96 @@ public sealed class UserFunctionsTests
         Assert.IsType<AcceptedResult>(await function.RequestTeamUnlock(request, 5, context, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Subscriptions_ExposeFollowsAndLicenceLimits()
+    {
+        var provisioning = new FakeProvisioning();
+        var (function, _) = CreateUserFunctions(new FakeUsers(), provisioning);
+        var (context, request) = CreateContext(provisioning);
+
+        var result = Assert.IsType<OkObjectResult>(await function.Subscriptions(request, context, CancellationToken.None));
+
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        var limit = json.RootElement.GetProperty("limits")[0];
+        Assert.Equal("team", limit.GetProperty("kind").GetString());
+        Assert.Equal(5, limit.GetProperty("max").GetInt32());
+        Assert.Equal(0, limit.GetProperty("used").GetInt32());
+        Assert.True(limit.GetProperty("canAddMore").GetBoolean());
+        Assert.Equal(JsonValueKind.Array, json.RootElement.GetProperty("organizations").ValueKind);
+    }
+
+    [Fact]
+    public async Task SubscriptionCatalog_IsReadableByAnyAuthenticatedCaller()
+    {
+        var provisioning = new FakeProvisioning();
+        var (function, _) = CreateUserFunctions(new FakeUsers(), provisioning);
+        var (context, request) = CreateContext(provisioning);
+
+        var associations = Assert.IsType<OkObjectResult>(await function.Associations(request, context, CancellationToken.None));
+        using var body = JsonDocument.Parse(JsonSerializer.Serialize(associations.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        Assert.Equal(1, body.RootElement.GetProperty("associations")[0].GetProperty("id").GetInt32());
+
+        Assert.IsType<OkObjectResult>(await function.Divisions(request, 1, context, CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await function.LeagueCatalog(request, 6193, context, CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await function.TeamCatalog(request, "13c38dd1-e464-4835-af5f-75be8561daf6", context, CancellationToken.None));
+
+        var anonymousRequest = new DefaultHttpContext().Request;
+        var anonymousContext = FunctionsTests.CreateContextWith((DefaultHttpContext)anonymousRequest.HttpContext, BuildServices(provisioning));
+        Assert.Equal(StatusCodes.Status401Unauthorized,
+            Assert.IsType<ObjectResult>(await function.Associations(anonymousRequest, anonymousContext, CancellationToken.None)).StatusCode);
+    }
+
     // ─── Scope enforcement ─────────────────────────────────────────────────
 
     [Fact]
     public async Task TeamFunctions_RejectOutOfScopeLeaguesAndTeams()
     {
         var provisioning = new FakeProvisioning();
-        var scope = new CallerScope(new RequestUserResolver(provisioning), new FakeScopes(leagues: [100], teams: [1]), WithDatabase());
-        var function = new TeamFunctions(null!, null!, Options.Create(new LeagueApiOptions()), scope);
+        var function = new TeamFunctions(
+            null!, null!, Options.Create(new LeagueApiOptions()),
+            new FakeDataScope(FollowedScope()), new RequestUserResolver(provisioning), WithDatabase());
         var (context, request) = CreateContext(provisioning);
 
+        // Schedule 999 is not followed, and team 2 is not one of the follows.
         Assert.Equal(StatusCodes.Status403Forbidden,
             Assert.IsType<StatusCodeResult>(await function.LeagueTeams(request, 999, context, CancellationToken.None)).StatusCode);
         Assert.Equal(StatusCodes.Status403Forbidden,
             Assert.IsType<StatusCodeResult>(await function.TeamDetail(request, 100, 2, context, CancellationToken.None)).StatusCode);
+        Assert.Equal(StatusCodes.Status403Forbidden,
+            Assert.IsType<StatusCodeResult>(await function.Leagues(request, 6194, context, CancellationToken.None)).StatusCode);
     }
 
     [Fact]
     public async Task WeeklyReport_DropsOutOfScopeIdsAndForbidsFullyOutOfScopeRequests()
     {
         var provisioning = new FakeProvisioning();
-        var scope = new CallerScope(new RequestUserResolver(provisioning), new FakeScopes(offices: [194899], teams: [182497]), WithDatabase());
         var reports = new CapturingReports();
-        var function = new WeeklyReportFunction(reports, scope);
+        var function = new WeeklyReportFunction(
+            reports, new FakeDataScope(FollowedScope()), new RequestUserResolver(provisioning), WithDatabase());
         var (context, request) = CreateContext(provisioning);
 
-        request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09&divisionId=194899&divisionId=194901&teamId=182497&teamId=999");
+        // The report is derived from the follows: no client-supplied ids.
+        request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09");
         Assert.IsType<OkObjectResult>(await function.Run(request, context, CancellationToken.None));
-        Assert.Equal([194899], reports.Request!.DivisionIds);
-        Assert.Equal([182497], reports.Request.TeamIds);
+        Assert.Equal([194899], reports.Request!.Value.Leagues.Select(league => league.ScheduleId));
+        Assert.Equal([182497], reports.Request.Value.Leagues.SelectMany(league => league.TeamIds));
 
-        request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09&divisionId=194901&teamId=999");
-        Assert.Equal(StatusCodes.Status403Forbidden,
-            Assert.IsType<StatusCodeResult>(await function.Run(request, context, CancellationToken.None)).StatusCode);
+        request.QueryString = new QueryString("?startDate=2026-11-09&endDate=2026-11-02");
+        Assert.IsType<BadRequestObjectResult>(await function.Run(request, context, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WeeklyReport_IsEmptyWhenTheCallerFollowsNothing()
+    {
+        var provisioning = new FakeProvisioning();
+        var reports = new CapturingReports();
+        var function = new WeeklyReportFunction(
+            reports, new FakeDataScope(CallerDataScope.NothingFollowed()), new RequestUserResolver(provisioning), WithDatabase());
+        var (context, request) = CreateContext(provisioning);
+        request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09");
+
+        Assert.IsType<OkObjectResult>(await function.Run(request, context, CancellationToken.None));
+        Assert.Empty(reports.Request!.Value.Leagues);
     }
 
     // ─── Admin import guard ────────────────────────────────────────────────
@@ -254,15 +312,30 @@ public sealed class UserFunctionsTests
     {
         var provisioning = new FakeProvisioning();
 
-        // Scope: division/team ids outside the fake scope are kept unfiltered.
+        // Open access: the whole reference data is readable, whoever the caller is.
         var reports = new CapturingReports();
-        var scope = new CallerScope(new RequestUserResolver(provisioning), new FakeScopes(offices: [194899], teams: [182497]), WithOpenAccess());
-        var reportFunction = new WeeklyReportFunction(reports, scope);
+        var wholeCatalogue = new CallerDataScope(
+            false,
+            [new ScopedAssociation(1, "Hockey Richelieu")],
+            [new ScopedDivision(6193, "Simple lettre", 1)],
+            [new ScopedLeague(1, "league-guid", "M13 B", "2026-27", 6193, [194899])],
+            [new ScopedTeam(182497, "Grizzlys", "league-guid", 194899)]);
+        var reportFunction = new WeeklyReportFunction(
+            reports, new FakeDataScope(wholeCatalogue), new RequestUserResolver(provisioning), WithOpenAccessAndDatabase());
         var (context, request) = CreateContext(provisioning);
-        request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09&divisionId=999&teamId=999");
+        request.QueryString = new QueryString("?startDate=2026-11-02&endDate=2026-11-09");
         Assert.IsType<OkObjectResult>(await reportFunction.Run(request, context, CancellationToken.None));
-        Assert.Equal([999], reports.Request!.DivisionIds);
-        Assert.Equal([999], reports.Request.TeamIds);
+        Assert.Equal([194899], reports.Request!.Value.Leagues.Select(league => league.ScheduleId));
+        Assert.Equal([182497], reports.Request.Value.Leagues.SelectMany(league => league.TeamIds));
+
+        // The report is driven by the followed teams, never by open access: a
+        // caller who follows nothing gets an empty report even here.
+        var emptyReports = new CapturingReports();
+        var emptyFunction = new WeeklyReportFunction(
+            emptyReports, new FakeDataScope(CallerDataScope.Unrestricted([], [], [], [])),
+            new RequestUserResolver(provisioning), WithOpenAccessAndDatabase());
+        Assert.IsType<OkObjectResult>(await emptyFunction.Run(request, context, CancellationToken.None));
+        Assert.Empty(emptyReports.Request!.Value.Leagues);
 
         // Admin import: an admin-less caller passes the guard and reaches the import.
         await using var connection = new SqliteConnection("DataSource=:memory:");
@@ -295,6 +368,15 @@ public sealed class UserFunctionsTests
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Authorization:OpenAccess"] = "true" })
             .Build();
 
+    private static IConfiguration WithOpenAccessAndDatabase() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Authorization:OpenAccess"] = "true",
+                ["ConnectionStrings:Postgres"] = "Host=test",
+            })
+            .Build();
+
     private static MemoryStream Json(string value) => new(Encoding.UTF8.GetBytes(value));
 
     private static IServiceProvider BuildServices(IUserProvisioningService provisioning) =>
@@ -316,10 +398,25 @@ public sealed class UserFunctionsTests
     }
 
     private static (UserFunctions Function, RequestUserResolver Resolver) CreateUserFunctions(
-        FakeUsers users, IUserProvisioningService? provisioning = null)
+        FakeUsers users, IUserProvisioningService? provisioning = null, ISubscriptionCatalogService? catalog = null)
     {
         var resolver = new RequestUserResolver(provisioning ?? new FakeProvisioning());
-        return (new UserFunctions(resolver, users), resolver);
+        return (new UserFunctions(resolver, users, catalog ?? new FakeCatalog()), resolver);
+    }
+
+    private sealed class FakeCatalog : ISubscriptionCatalogService
+    {
+        public Task<IReadOnlyList<SubscriptionAssociation>> GetAssociationsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SubscriptionAssociation>>([new(1, "Hockey Richelieu")]);
+
+        public Task<IReadOnlyList<SubscriptionDivision>> GetDivisionsAsync(int associationId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SubscriptionDivision>>([new(6193, "Simple lettre")]);
+
+        public Task<SubscriptionLeagueOptions> GetLeaguesAsync(int divisionId, string? seasonId = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SubscriptionLeagueOptions(seasonId ?? "2026-27", [new("13c38dd1-e464-4835-af5f-75be8561daf6", "M13 B", seasonId ?? "2026-27")]));
+
+        public Task<IReadOnlyList<SubscriptionTeam>> GetTeamsAsync(string leagueId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SubscriptionTeam>>([new(101, "Alpha")]);
     }
 
     private sealed class FakeProvisioning : IUserProvisioningService
@@ -350,7 +447,29 @@ public sealed class UserFunctionsTests
             Task.FromResult(new UserScope(
                 (teams ?? []).ToHashSet(),
                 (leagues ?? []).Select(id => id.ToString()).ToHashSet(),
-                (offices ?? []).ToHashSet()));
+                (offices ?? []).ToHashSet(),
+                (leagues ?? []).Select(id => id.ToString()).ToHashSet()));
+    }
+
+    /// <summary>The caller's followed catalogue, as the report function consumes it.</summary>
+    private static CallerDataScope FollowedScope() => new(
+        true,
+        [new ScopedAssociation(1, "Hockey Richelieu")],
+        [new ScopedDivision(6193, "Simple lettre", 1)],
+        [new ScopedLeague(1, "league-guid", "M13 B", "2026-27", 6193, [194899])],
+        [new ScopedTeam(182497, "Grizzlys", "league-guid", 194899)]);
+
+    private sealed class FakeDataScope(CallerDataScope scope) : ICallerDataScopeService
+    {
+        public Task<CallerDataScope> GetAsync(int userId, bool unrestricted = false, CancellationToken cancellationToken = default) =>
+            Task.FromResult(scope);
+
+        public Task<CallerDataScope> GetForSubjectAsync(string? auth0Subject, bool unrestricted = false, CancellationToken cancellationToken = default) =>
+            Task.FromResult(scope);
+
+        public Task<IReadOnlyList<FollowedTeam>> GetFollowedTeamsAsync(
+            int userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(FunctionsTests.FollowedTeamsFrom(scope));
     }
 
     private sealed class FakeReferenceData : IReferenceDataService
@@ -372,12 +491,15 @@ public sealed class UserFunctionsTests
 
     private sealed class CapturingReports : IWeeklyReportService
     {
-        public WeeklyReportRequest? Request { get; private set; }
+        public (DateOnly Start, DateOnly End, IReadOnlyList<WeeklyReportLeague> Leagues)? Request { get; private set; }
 
-        public Task<WeeklyReportResponse> GetAsync(WeeklyReportRequest request, CancellationToken cancellationToken)
+        public Task<WeeklyReportResponse> GetAsync(
+            DateOnly startDate, DateOnly endDate, IReadOnlyList<WeeklyReportLeague> leagues,
+            CancellationToken cancellationToken)
         {
-            Request = request;
-            return Task.FromResult(new WeeklyReportResponse(request.StartDate, request.EndDate, request.TeamIds, []));
+            Request = (startDate, endDate, leagues);
+            return Task.FromResult(new WeeklyReportResponse(
+                startDate, endDate, [.. leagues.SelectMany(league => league.TeamIds).Distinct()], []));
         }
     }
 
@@ -389,7 +511,10 @@ public sealed class UserFunctionsTests
         public UserSettingsUpdate? LastSettings { get; private set; }
 
         public Task<UserSubscriptions> GetSubscriptionsAsync(int userId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new UserSubscriptions([], []));
+            Task.FromResult(new UserSubscriptions([], [], []));
+
+        public Task<IReadOnlyList<SubscriptionLimit>> GetLimitsAsync(int userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SubscriptionLimit>>([new("team", 5, 0)]);
 
         public Task<CurrentUserProfile?> GetProfileAsync(int userId, CancellationToken cancellationToken = default) =>
             Task.FromResult<CurrentUserProfile?>(new(

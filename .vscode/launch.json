@@ -1,0 +1,15 @@
+{
+  // Aspire orchestration: the AppHost starts the Azure Functions host
+  // (`func start`, port 7071) and the Angular dev server (port 6767), and
+  // waits for /api/healthz before starting the frontend.
+  // `dotnet run --project HockeySeason.AppHost` from src/backend does the same.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C#: HockeySeason.AppHost",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/backend/HockeySeason.AppHost/HockeySeason.AppHost.csproj"
+    }
+  ]
+}

@@ -32,8 +32,12 @@ public static class LeagueApiServiceCollectionExtensions
             client.BaseAddress = options.BaseAddress;
             client.Timeout = TimeSpan.FromSeconds(30);
         });
+        // Singleton: the MCP tools are singleton (the agent resolves its tool
+        // list from the root provider), so every transitive dependency of
+        // LeagueTools must be a singleton too. LeagueApiService is stateless
+        // apart from a short-lived standings cache.
+        services.AddSingleton<ITeamDetailService, TeamDetailService>();
         services.AddTransient<IWeeklyReportService, WeeklyReportService>();
-        services.AddTransient<ITeamDetailService, TeamDetailService>();
 
         return services;
     }

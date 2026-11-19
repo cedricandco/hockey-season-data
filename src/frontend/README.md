@@ -2,8 +2,8 @@
 
 Angular 22 (standalone, zoneless) responsive frontend with French/English
 translation via `@ngx-translate/core` 18. The app has five routed pages:
-chat, team details, weekly report, color configuration, and administration
-(administrators only).
+chat, team details, weekly report, configuration (colors + followed teams), and
+administration (administrators only).
 
 ## Prerequisites
 
@@ -39,19 +39,25 @@ safe areas. The chat standings show a compact table on narrow screens, with
 the remaining statistics under a details control. Other wide tables remain
 scrollable horizontally.
 
-Run the existing unit tests and the browser layout checks with:
+`npm run test:responsive` drives the whole app in Chrome/Edge, but its login
+step still targets the old six-digit access-code form: it currently stops
+waiting for `#access-code`, which the Auth0 redirect gate no longer renders.
+The check is therefore expected to fail end-to-end until that harness is
+updated; the configuration page assertions were extended with the follow-team
+selector (`inspectSubscriptionSelector`).
+
+Run the unit tests with:
 
 ```bash
 npm test
-npm run test:responsive
 ```
 
-The responsive checks start their own frontend server, use simulated API
-responses, and run in a locally installed Chrome or Edge; they do not require
-the backend. If the browser is not found automatically, set
-`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its executable. Browser emulation
-does not replace checking the virtual keyboard and safe areas on real iOS
-and Android devices.
+The browser layout checks (`npm run test:responsive`) start their own frontend
+server, use simulated API responses, and run in a locally installed Chrome or
+Edge; they do not require the backend. If the browser is not found
+automatically, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its executable.
+Browser emulation does not replace checking the virtual keyboard and safe areas
+on real iOS and Android devices.
 
 ## Authentication gate
 
@@ -91,13 +97,33 @@ The explicit `@emnapi/core` and `@emnapi/runtime` development dependencies
 resolve conflicting WebAssembly build-tool peer dependencies in the lockfile.
 Keep them aligned when updating the frontend build dependencies.
 
-## Appearance and colors
+## Configuration page
 
-The configuration page (`/configuration`) lets each user choose primary and
-secondary colors. The choices are saved in the browser's local storage and can
-be reset to the defaults, `#0e3a70` and `#3eb838`. Default CSS variables are
-defined in `src/global.scss`; keep the defaults in `core/theme.service.ts` in
-sync if changing them. The chat displays connection errors and offers a retry.
+The configuration page (`/configuration`) is open to every signed-in user and
+has two sections.
+
+### Appearance and colors
+
+Each user chooses primary and secondary colors. The choices are saved in the
+browser's local storage and can be reset to the defaults, `#0e3a70` and
+`#3eb838`. Default CSS variables are defined in `src/global.scss`; keep the
+defaults in `core/theme.service.ts` in sync if changing them. The chat displays
+connection errors and offers a retry.
+
+### Followed teams
+
+The page lists the teams the caller follows and lets them follow a new one by
+walking the reference data — **association → division → league → team** — each
+list staying disabled until its parent is picked (`GET /api/subscriptions/*`).
+The selected team is added with `POST /api/users/me/team-subscriptions`.
+
+The add respects the licence of the caller's role: the badge shows the
+consumption (`3 / 5`) and comes from `limits[].{max,used,canAddMore}` of
+`GET /api/users/me/subscriptions` (`max: null` means unlimited). The button is
+disabled when the cap is reached, and the backend re-checks it — a concurrent
+`409` surfaces as "limit reached". A followed team can be removed with
+`DELETE /api/users/me/team-subscriptions/{teamId}`, except during its 15-day
+lock: the page shows the unlock date and the backend answers `423 Locked`.
 
 ## Chat page
 
@@ -109,24 +135,46 @@ game ID chosen by the agent to load `GET /api/games/{gameId}` directly, so their
 goals, penalties and per-period totals do not depend on the model copying them.
 Both the local API and Functions host support the endpoint.
 
+## Team page
+
+The team page (`/team`) shows two blocks over the teams the caller follows
+(`GET /api/nav/teams`):
+
+1. **Teams I follow** — every followed team with its league, division and
+   association names; picking one loads its detail.
+2. **Selector** — association → division → league → team, each level listing
+   only the values that own at least one followed team (an association,
+   division or league without a followed team is never offered).
+
+Every identifier is a **database id** (`organizations.id`, `divisions.id`,
+`leagues.id`, `teams.id`). The selected team loads `GET /api/teams/{teamId}`:
+the backend validates the follow and resolves the published Spordle schedule
+from the database, so the page never handles a Spordle id. A caller who follows
+nothing sees a hint with a link to the Configuration page instead of the two
+blocks. The selection is mirrored in the query string (`association`,
+`division`, `league`, `team`).
+
 ## Weekly report page
 
-The weekly report page (`/teams-weekly-report`) loads the previous seven days through today
-by default. The date range is adjustable; games are filtered to the configured
-team IDs and ordered chronologically. Standings and games are shown per
-division, followed by all published division suspensions. Unavailable sources
-are clearly identified rather than presented as empty results.
-Division cards use the official league names returned by `GetLeagues`. Tracked
-teams and their scores are highlighted green for a win, gray for a tie, and red
-for a loss.
+The weekly report page (`/teams-weekly-report`) loads the previous seven days
+through today by default. The date range is adjustable. The page sends **only**
+the two dates: the backend builds the report from the teams the caller follows,
+so nothing is hardcoded and no id is passed by the client. A caller who follows
+nothing gets an empty report instead of another league's data.
 
-The initial division and team IDs are defined in `report/report.component.ts`.
-The authenticated `GET /api/weekly-report` accepts `startDate` and `endDate`
-in `yyyy-MM-dd` format, plus repeated `divisionId` and `teamId` parameters
-(up to 20 of each). It returns the original Spordle arrays for standings, games
-and suspensions, with an `available` flag per source. Requests are retried up
-to three times for transient failures; a failed source does not prevent the
-other sources from appearing. Both the local API and Functions host support it.
+Games are ordered chronologically. Standings and games are shown per followed
+league and schedule, followed by all published suspensions of that league.
+Unavailable sources are clearly identified rather than presented as empty
+results. Division cards use the league, division and schedule names stored in
+the database. Tracked teams and their scores are highlighted green for a win,
+gray for a tie, and red for a loss.
+
+The authenticated `GET /api/weekly-report` accepts `startDate` and `endDate` in
+`yyyy-MM-dd` format only — the followed teams come from the database. It returns
+the original Spordle arrays for standings, games and suspensions, with an
+`available` flag per source. Requests are retried up to three times for
+transient failures; a failed source does not prevent the other sources from
+appearing. Both the local API and Functions host support it.
 
 ## Project layout
 
@@ -140,9 +188,11 @@ src/
     app.component.ts     # login gate ↔ header + router outlet based on auth state
     app.routes.ts        # /chat, /team, /teams-weekly-report, /configuration, /admin, /admin/reference
     chat/chat.component.ts     # agent chat page, composer pinned at the bottom
-    team/team.component.ts     # association, league and team selection
-    report/report.component.ts # weekly report page and current ID selection
-    config/config.component.ts # configuration page (colors)
+    team/team.component.ts     # association, division, league and team selection (followed only)
+    report/report.component.ts # weekly report page (followed leagues, no hardcoded ids)
+    config/config.component.ts # configuration page (colors + followed teams)
+    config/subscription.models.ts # models of the follow-team selector and subscription list
+    config/subscription-helpers.ts # pure helpers of that section (unit tested)
     admin/admin.component.ts   # admin page: user list + role (licence) assignment
     admin/admin-reference.component.ts # admin page: divisions/leagues/teams import
     admin/reference-helpers.ts # pure helpers of the reference page (unit tested)

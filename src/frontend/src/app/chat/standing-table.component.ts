@@ -15,8 +15,9 @@ export type LeagueStandingRow = {
   goalsAgainst: string | number;
   goalDifferential: string | number;
   penaltyMinutes: string | number;
-  powerPlayPercentage: string | number;
-  penaltyKillPercentage: string | number;
+  /** Absent on schedules that do not track special teams, such as tournaments. */
+  powerPlayPercentage?: string | number | null;
+  penaltyKillPercentage?: string | number | null;
 };
 
 /** Arguments the agent passes to the show_league_standing component. */
@@ -123,11 +124,11 @@ export class StandingTableComponent {
     return raw !== undefined && raw !== null && this.standings().length === 0;
   });
 
-  display(value: string | number | undefined): string {
+  display(value: string | number | null | undefined): string {
     return value === undefined || value === null || value === '' ? '—' : String(value);
   }
 
-  percentage(value: string | number | undefined): string {
+  percentage(value: string | number | null | undefined): string {
     const text = this.display(value);
     return text === '—' || text.endsWith('%') ? text : `${text}%`;
   }

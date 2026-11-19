@@ -6,26 +6,6 @@ import { Subscription } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { Game, ReportDivision, Standing, Suspension, WeeklyReport } from './weekly-report.models';
 
-const DIVISION_IDS = [
-  194899, 194901, 194906, 194908, 194910, 194930, 194934, 194936, 194940, 194942, 194944, 194931, 194937, 194945,
-  194890, 194891, 194892, 194893, 194894, 194895,
-] as const;
-const TEAM_IDS = [
-  182497, 182498, 182222, 182220, 181829, 181826, 181303, 181300, 185754, 185755, 185751, 181088, 181090,
-  180492, 180494, 180322, 222322, 221751, 221750, 214757, 222320, 222321, 214756, 180671, 221752, 221749, 186200,
-  214187, 181669, 214186, 214188, 214189, 180762, 214191,
-] as const;
-// AA leagues belong to other Spordle offices, so the default-office league
-// lookup cannot name them; fall back to the titles published by the league.
-const DIVISION_NAMES: Record<number, string> = {
-  194890: 'M11 AA Saison',
-  194891: 'M11 BB Saison Section Rives',
-  194892: 'M11 BB Saison Section Vallée',
-  194893: 'M13 AA Saison',
-  194894: 'M15 AA Saison',
-  194895: 'M17 AA Saison',
-} as const;
-
 @Component({
   selector: 'app-report',
   standalone: true,
@@ -66,14 +46,14 @@ const DIVISION_NAMES: Record<number, string> = {
           <div><span class="eyebrow">{{ 'REPORT.OVERVIEW' | translate }}</span><h2>{{ 'REPORT.DIVISIONS' | translate }}</h2></div>
           <span class="date-range">{{ formatDate(result.startDate) }} — {{ formatDate(result.endDate) }}</span>
         </div>
-        @for (division of result.divisions; track division.divisionId; let index = $index) {
+        @for (division of result.divisions; track division.scheduleId; let index = $index) {
           <article class="division-card">
             <header class="division-header">
               <div class="division-number">{{ (index + 1).toString().padStart(2, '0') }}</div>
               <div><span class="division-label">{{ 'REPORT.DIVISION' | translate }}</span>
                 <h3>{{ divisionName(division) }}</h3>
               </div>
-              <span class="division-id">#{{ division.divisionId }}</span>
+              <span class="division-id">#{{ division.scheduleId }}</span>
             </header>
             <div class="division-content">
               <section class="report-section">
@@ -167,7 +147,9 @@ export class ReportComponent implements OnInit {
     this.request?.unsubscribe();
     this.loading.set(true);
     this.error.set(false);
-    this.request = this.api.getWeeklyReport(this.startDate, this.endDate, DIVISION_IDS, TEAM_IDS)
+    // The division and team ids are the caller's follows, resolved by the
+    // backend: the page only sends the date range.
+    this.request = this.api.getWeeklyReport(this.startDate, this.endDate)
       .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: report => { this.report.set(report); this.loading.set(false); },
         error: () => { this.error.set(true); this.loading.set(false); },
@@ -199,8 +181,12 @@ export class ReportComponent implements OnInit {
   }
 
   divisionName(division: ReportDivision): string {
-    if (division.leagueName) return division.leagueName;
-    if (DIVISION_NAMES[division.divisionId]) return DIVISION_NAMES[division.divisionId];
+    // The backend names the league, the division and the published schedule
+    // from the database; the published division label is the last fallback.
+    if (division.leagueName) {
+      const detail = [division.scheduleName, division.divisionName].filter(name => !!name).join(' · ');
+      return detail ? `${division.leagueName} · ${detail}` : division.leagueName;
+    }
     const name = division.standings.data?.find(row => row.team?.division)?.team.division;
     return name?.replace(/\bU11\s*([AB])\b/gi, (_, letter: string) => `M11${letter.toUpperCase()}`)
       || `${this.translate.instant('REPORT.DIVISION')} ${division.divisionId}`;

@@ -43,6 +43,12 @@ public static class HockeySeasonDataExtensions
         services.AddScoped<IUserProvisioningService, UserProvisioningService>();
         services.AddScoped<IScopeService, ScopeService>();
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<ISubscriptionCatalogService, SubscriptionCatalogService>();
+        // Singleton and stateless: it opens its own DbContext per call and
+        // takes the caller id as a parameter, so the singleton MCP tools and
+        // the agent can resolve it from the root provider.
+        services.AddSingleton<ICallerDataScopeService, CallerDataScopeService>();
+        services.AddHttpContextAccessor();
         services.AddScoped<IAdminUserService, AdminUserService>();
         services.AddScoped<IReferenceDataService, ReferenceDataService>();
         services.AddMemoryCache();

@@ -1,10 +1,13 @@
 using System.Text;
 using System.Text.Json;
+using HockeySeason.Application;
+using HockeySeason.Infrastructure.Data;
 using HockeySeason.LeagueApi;
 using HockeySeason.LeagueApi.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace HockeySeason.Functions;
@@ -15,7 +18,20 @@ namespace HockeySeason.Functions;
 /// delegates access control to the application (the ASP.NET Core middleware
 /// pipeline does not provide endpoint metadata for Functions triggers).
 /// </summary>
-public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService teams, IOptions<LeagueApiOptions> options, CallerScope callerScope)
+/// <remarks>
+/// Discovery (offices, leagues, teams) is limited to the caller's follows,
+/// resolved from the database: an id outside those follows is refused with a
+/// 403 rather than silently fetched from Spordle. While
+/// <c>Authorization:OpenAccess</c> is on, the whole reference data stays
+/// readable.
+/// </remarks>
+public sealed class TeamFunctions(
+    LeagueApiService league,
+    ITeamDetailService teams,
+    IOptions<LeagueApiOptions> options,
+    ICallerDataScopeService dataScope,
+    RequestUserResolver resolver,
+    IConfiguration configuration)
 {
 
     public class ClientPrincipal
@@ -70,6 +86,11 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
             return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
         }
         if (officeId <= 0) return InvalidIds();
+
+        var scope = await GetScopeAsync(context, cancellationToken);
+        if (scope.IsRestricted && !scope.ContainsDivision(officeId))
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
         var season = request.Query["seasonId"].ToString();
         return new OkObjectResult(await league.GetLeaguesAsync(officeId, string.IsNullOrWhiteSpace(season) ? options.Value.DefaultSeasonId : season, cancellationToken));
     }
@@ -84,9 +105,11 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
             return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
         }
         if (leagueId <= 0) return InvalidIds();
-        var scope = await callerScope.GetAsync(context, cancellationToken);
-        // if (scope is not null && !scope.SpordleLeagueIds.Contains(leagueId))
-        //     return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        var scope = await GetScopeAsync(context, cancellationToken);
+        if (scope.IsRestricted && !scope.ContainsSchedule(leagueId))
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
         return new OkObjectResult(await league.GetLeagueTeamsAsync(leagueId, cancellationToken));
     }
 
@@ -100,11 +123,68 @@ public sealed class TeamFunctions(LeagueApiService league, ITeamDetailService te
             return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
         }
         if (leagueId <= 0 || teamId <= 0) return InvalidIds();
-        var scope = await callerScope.GetAsync(context, cancellationToken);
-        // if (scope is not null && !scope.SpordleTeamIds.Contains(teamId))
-        //     return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        // Only a team the caller follows (or a team of a league they follow) is
+        // readable: the id is never trusted from the query string.
+        var scope = await GetScopeAsync(context, cancellationToken);
+        if (scope.IsRestricted && !scope.ContainsTeam(teamId))
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
         var result = await teams.GetAsync(leagueId, teamId, cancellationToken);
         return result is null ? new NotFoundResult() : new OkObjectResult(result);
+    }
+
+    /// <summary>
+    /// Detail of a followed team, keyed on database ids: the team page passes
+    /// the <c>teams.id</c> and <c>leagues.id</c> of its selectors, never a
+    /// Spordle id. The league is validated against the follows (403 otherwise)
+    /// and the published schedule is resolved from the database, trying every
+    /// schedule of the league because a category is played in several ones
+    /// ("Saison Rives", "Phase 2"…).
+    /// </summary>
+    [Function("FollowedTeamDetail")]
+    public async Task<IActionResult> FollowedTeamDetail(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "teams/{teamId:int}")] HttpRequest request,
+        int teamId, FunctionContext context, CancellationToken cancellationToken)
+    {
+        var authorization = FunctionsAuthorization.IsAuthenticatedV2(context);
+        if (!authorization.IsAuthenticated)
+        {
+            return FunctionsAuthorization.UnauthorizedResult(authorization.Reason);
+        }
+        if (teamId <= 0) return InvalidIds();
+        if (!DatabaseOptions.IsPersistenceConfigured(configuration)) return new NotFoundResult();
+
+        var userId = await resolver.GetOrCreateUserIdAsync(context, cancellationToken);
+        var followed = (await dataScope.GetFollowedTeamsAsync(userId, cancellationToken))
+            .FirstOrDefault(team => team.Id == teamId);
+        if (followed is null)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        var scheduleIds = followed.Schedules.Select(schedule => schedule.Id).ToArray();
+        if (scheduleIds.Length == 0)
+            return new NotFoundResult();
+
+        var result = await teams.GetAsync(scheduleIds, followed.ExternalId, cancellationToken);
+        return result is null ? new NotFoundResult() : new OkObjectResult(result);
+    }
+
+    /// <summary>
+    /// Scope of the caller. Open access, and a host without persistence (which
+    /// cannot resolve follows), keep the whole reference data readable; a
+    /// restricted caller only sees their follows.
+    /// </summary>
+    private async Task<CallerDataScope> GetScopeAsync(FunctionContext context, CancellationToken cancellationToken)
+    {
+        var unrestricted = configuration.GetSection(AuthorizationOptions.SectionName).Get<AuthorizationOptions>()
+            is { OpenAccess: true };
+        if (!DatabaseOptions.IsPersistenceConfigured(configuration))
+        {
+            return CallerDataScope.Unrestricted([], [], [], []);
+        }
+
+        var userId = await resolver.GetOrCreateUserIdAsync(context, cancellationToken);
+        return await dataScope.GetAsync(userId, unrestricted, cancellationToken);
     }
 
     private static BadRequestObjectResult InvalidIds() => new(new ValidationProblemDetails(

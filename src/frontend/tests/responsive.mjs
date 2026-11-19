@@ -37,6 +37,47 @@ const fixtures = {
   '/api/offices': [{ id: 1, name: 'Association Exemple' }],
   '/api/offices/1/leagues': [{ id: 1, name: 'Ligue Exemple' }],
   '/api/leagues/1/teams': [{ id: 1, name: teamName }],
+  // Team page: the teams the caller follows (database ids), then the
+  // association → division → league → team levels of the selector.
+  '/api/nav/teams': [{
+    teamId: 1, name: teamName, leagueId: 1, leagueName: 'Ligue Exemple',
+    divisionId: 6193, divisionName: 'Simple lettre', associationId: 1, associationName: 'Hockey Richelieu',
+  }],
+  '/api/nav/associations': [{ associationId: 1, name: 'Hockey Richelieu' }],
+  '/api/nav/associations/1/divisions': [{ divisionId: 6193, name: 'Simple lettre' }],
+  '/api/nav/divisions/6193/leagues': [{ leagueId: 1, name: 'Ligue Exemple' }],
+  '/api/nav/leagues/1/teams': [{ teamId: 1, name: teamName }],
+  // Detail of the selected followed team: keyed on teams.id only.
+  '/api/teams/1': {
+    leagueId: 1, team: standing, standings: [standing], games: [{ game: {
+      id: 1, date: '2026-01-03', time: '12:00', homeTeamId: 1, awayTeamId: 2,
+      homeTeamName: teamName, awayTeamName: opponentName, homeScore: 3, awayScore: 2,
+    } }], upcomingGames: [],
+    players: [{ participantId: 1, name: playerName, number: 9, goals: 3, assists: 2, points: 5 }],
+    totalGoals: 3, totalAssists: 2, totalPoints: 5, powerPlayGoals: 1,
+    shorthandedGoals: 0, penalties: 0, completeRosterAvailable: true,
+  },
+  // Configuration page: followed teams + licence headroom, and the
+  // association → division → league → team navigation of the selector.
+  '/api/users/me/subscriptions': {
+    teams: [{ teamId: 101, name: teamName, createdAt: '2026-11-01T12:00:00Z', lockedUntil: '2026-11-16T12:00:00Z' }],
+    leagues: [],
+    organizations: [],
+    limits: [
+      { kind: 'team', max: 5, used: 1, canAddMore: true },
+      { kind: 'league', max: 0, used: 0, canAddMore: false },
+      { kind: 'organization', max: null, used: 0, canAddMore: true },
+    ],
+  },
+  '/api/subscriptions/associations': { associations: [{ id: 1, name: 'Hockey Richelieu' }] },
+  '/api/subscriptions/associations/1/divisions': { divisions: [{ id: 6193, name: 'Simple lettre' }] },
+  '/api/subscriptions/divisions/6193/leagues': {
+    seasonId: '2026-27',
+    leagues: [{ id: '13c38dd1-e464-4835-af5f-75be8561daf6', name: 'M13 B' }],
+  },
+  '/api/subscriptions/leagues/13c38dd1-e464-4835-af5f-75be8561daf6/teams': {
+    teams: [{ id: 1, name: teamName }, { id: 102, name: opponentName }],
+  },
   '/api/leagues/1/teams/1': {
     leagueId: 1, team: standing, standings: [standing], games: [{ game: {
       id: 1, date: '2026-01-03', time: '12:00', homeTeamId: 1, awayTeamId: 2,
@@ -67,7 +108,7 @@ const fixtures = {
   '/api/weekly-report': {
     startDate: '2026-01-01', endDate: '2026-01-07', teamIds: [1],
     divisions: [{
-      divisionId: 1, leagueName: 'Ligue Exemple',
+      divisionId: 1, divisionName: 'Simple lettre', scheduleId: 1, scheduleName: 'Saison 1', leagueName: 'Ligue Exemple',
       standings: { available: true, data: [{ ...standing, team: { name: standing.teamName, division: standing.division } }] },
       games: { available: true, data: [{
         id: 1, date: '2026-01-03', startTime: '2026-01-03T12:00:00Z',
@@ -344,6 +385,39 @@ async function inspectGame(page, width, requestBodies) {
   });
 }
 
+async function inspectSubscriptionSelector(page, width) {
+  await check(`${width}px configuration: chemin association → division → ligue → équipe`, async () => {
+    const selects = page.locator('.selector-card select');
+    if (await selects.count() !== 4) throw new Error('quatre listes attendues (association, division, ligue, équipe)');
+    // A single association is preselected by the page: its divisions load
+    // immediately, the deeper levels stay blocked until the parent is picked.
+    await selects.nth(0).locator('option', { hasText: 'Hockey Richelieu' }).waitFor({ state: 'attached', timeout: 10000 });
+    if (!await selects.nth(3).isDisabled()) throw new Error('liste des équipes active avant la ligue');
+    await selects.nth(1).locator('option', { hasText: 'Simple lettre' }).waitFor({ state: 'attached', timeout: 10000 });
+    await selects.nth(1).selectOption({ label: 'Simple lettre' });
+    await selects.nth(2).locator('option', { hasText: 'M13 B' }).waitFor({ state: 'attached', timeout: 10000 });
+    if (!await selects.nth(3).isDisabled()) throw new Error('liste des équipes active avant la ligue');
+    await selects.nth(2).selectOption({ label: 'M13 B' });
+    await selects.nth(3).locator('option', { hasText: opponentName }).waitFor({ state: 'attached', timeout: 10000 });
+    await selects.nth(3).selectOption({ label: opponentName });
+    const add = page.locator('.add-button');
+    if (await add.isDisabled()) throw new Error('bouton d’ajout désactivé malgré une équipe et un quota disponible');
+    // The badge shows the licence consumption ("3 / 5" style).
+    const badge = page.locator('.limit-badge');
+    if (!/\d+ \/ (\d+|∞)/.test((await badge.textContent()).trim())) {
+      throw new Error(`quota illisible: ${await badge.textContent()}`);
+    }
+    await inspectLayout(page, 'configuration équipe choisie', width);
+  });
+  await check(`${width}px configuration: cibles tactiles`, async () => {
+    if (width > 900) return;
+    for (const selector of await page.locator('.selector-card select, .add-button, .remove-button').all()) {
+      const box = await selector.boundingBox();
+      if (!box || box.height < 34) throw new Error(`cible trop petite: ${JSON.stringify(box)}`);
+    }
+  });
+}
+
 async function runViewport(browser, baseUrl, viewport) {
   const { width, height } = viewport;
   console.log(`\nViewport ${width}×${height}px`);
@@ -397,13 +471,18 @@ async function runViewport(browser, baseUrl, viewport) {
     await inspectGame(page, width, requestBodies);
     await page.locator('.main-nav a[href="/team"]').click();
     await visible(page.locator('.team-page'));
+    // The follow list of the team page lists each followed team by name.
+    await visible(page.locator('.follow-list').getByText(teamName));
+    // Four selectors: association → division → league → team, limited to the follows.
     const selects = page.locator('.team-page select');
-    await selects.nth(0).locator('option', { hasText: 'Association Exemple' }).waitFor({ state: 'attached', timeout: 10000 });
-    await selects.nth(0).selectOption({ label: 'Association Exemple' });
-    await selects.nth(1).locator('option', { hasText: 'Ligue Exemple' }).waitFor({ state: 'attached', timeout: 10000 });
-    await selects.nth(1).selectOption({ label: 'Ligue Exemple' });
-    await selects.nth(2).locator('option', { hasText: teamName }).waitFor({ state: 'attached', timeout: 10000 });
-    await selects.nth(2).selectOption({ label: teamName });
+    await selects.nth(0).locator('option', { hasText: 'Hockey Richelieu' }).waitFor({ state: 'attached', timeout: 10000 });
+    await selects.nth(0).selectOption({ label: 'Hockey Richelieu' });
+    await selects.nth(1).locator('option', { hasText: 'Simple lettre' }).waitFor({ state: 'attached', timeout: 10000 });
+    await selects.nth(1).selectOption({ label: 'Simple lettre' });
+    await selects.nth(2).locator('option', { hasText: 'Ligue Exemple' }).waitFor({ state: 'attached', timeout: 10000 });
+    await selects.nth(2).selectOption({ label: 'Ligue Exemple' });
+    await selects.nth(3).locator('option', { hasText: teamName }).waitFor({ state: 'attached', timeout: 10000 });
+    await selects.nth(3).selectOption({ label: teamName });
     await visible(page.locator('.team-summary'));
     await visible(page.getByText(playerName));
     await visible(page.locator('.team-summary .games').getByText(opponentName, { exact: false }));
@@ -417,8 +496,10 @@ async function runViewport(browser, baseUrl, viewport) {
     await inspectNavigation(page, width, '/teams-weekly-report');
     await page.locator('.main-nav a[href="/configuration"]').click();
     await visible(page.locator('#config-title'));
+    await visible(page.locator('.followed-list').getByText(teamName));
     await inspectLayout(page, 'configuration', width);
     await inspectNavigation(page, width, '/configuration');
+    await inspectSubscriptionSelector(page, width);
     await page.locator('.main-nav a[href="/chat"]').click();
     await visible(page.locator('#chat-input'));
     await inspectNavigation(page, width, '/chat');

@@ -47,6 +47,7 @@ users ─┬─< user_roles >─┬─ roles            (licence : COACH / DIREC
 | `divisions` | `id`, `organization_id` FK, `name`, `external_id` UNIQUE, `created_at`, `updated_at` | Offices Spordle (6193, 6194) |
 | `seasons` | `id`, `name`, `external_id` TEXT UNIQUE, `created_at`, `updated_at` | Saisons Spordle (2026-27, …) |
 | `leagues` | `id`, `division_id` FK, `season_id` FK, `name`, `external_id`, `created_at`, `updated_at` | Catégories Spordle (« M13 B », nom français), une par (saison, catégorie) |
+| `league_schedules` | `id`, `league_id` FK, `external_id` UNIQUE, `name`, `created_at`, `updated_at` | Horaires Spordle d'une ligue : ids utilisés par les appels classement / matchs / suspensions |
 | `teams` | `id`, `league_id` FK, `name`, `external_id` UNIQUE, `created_at`, `updated_at` | Équipes Spordle |
 | `users` | `id`, `auth0_user_id` UNIQUE string, `email`, `name`, `first_name`, `last_name`, `stripe_customer_id` (nullable), `is_admin`, `created_at`, `updated_at` | Utilisateurs Auth0 + facturation future |
 | `roles` | `id`, `code` UNIQUE (coach/director/president), `name`, `max_followed_entities` | Licence : limite logicielle |
@@ -132,7 +133,7 @@ Deux options :
 ### Phase 4 — Endpoints utilisateurs & abonnements (1 j)
 - [x] `GET /api/users/me` — profil + rôles + limites + settings.
 - [x] `PUT /api/users/me/settings` — couleurs primaires/secondaires (+ extras).
-- [x] `POST /api/users/me/team-subscriptions` / `DELETE /api/users/me/team-subscriptions/{teamId}` — avec vérification de la limite du rôle (5 max coach).
+- [x] `POST /api/users/me/team-subscriptions` / `DELETE /api/users/me/team-subscriptions/{teamId}` — avec vérification de la limite du rôle (`roles.max_followed_entities`, 5 pour COACH) ; le retrait sous verrou répond `423 Locked`.
 - [x] `POST /api/users/me/league-subscriptions` / DELETE équivalent (5 max director).
 - [x] Logique de verrou : `locked_until = created_at + 15 j` à la création ;
   DELETE refusé si verrou actif **sauf** admin (ou `unlock_requested_at` tracé,
@@ -195,5 +196,9 @@ erDiagram
 | 2026-11-18 | Page d'admin : liste des utilisateurs + attribution des rôles (`GET /api/users`, `GET /api/roles`, `PUT /api/users/{userId}/roles`, page `/admin` réservée aux `is_admin`) | ✅ Implémenté |
 | 2026-11-11 | Accès ouvert temporaire (`Authorization:OpenAccess=true`) : périmètre, licences, verrou 15 j et garde admin désactivés pour tout utilisateur authentifié | ✅ Implémenté |
 | 2026-11-18 | Admin : import de référence par association/division/saison (`POST /api/reference/import`) — les ligues sont les **catégories Spordle** (nom français), les équipes de tous leurs horaires y sont rattachées, et ce qui disparaît de Spordle est supprimé avec ses abonnements | ✅ Implémenté |
+| 2026-11-18 | Page Configuration ouverte à tous : suivre une équipe par association → division → ligue → équipe (`GET /api/subscriptions/*`), avec limite `roles.max_followed_entities` du rôle (badge `3 / 5`), liste des équipes suivies et retrait (`423 Locked` sous verrou 15 j) | ✅ Implémenté |
+| 2026-11-18 | Tout le reste est limité aux suivis (`ICallerDataScopeService` depuis la BD) : rapport hebdomadaire et page équipe sans ids codés en dur (`GET /api/nav/*`), MCP tools de référence lus en BD (associations/divisions/ligues/équipes) et refus hors périmètre, seuls classement/matchs/feuilles de match/suspensions appelant encore Spordle ; nouvelle table `league_schedules` (ids d'horaires Spordle) | ✅ Implémenté |
+| 2026-11-18 | Déploiement de `league_schedules` : migrations `LeagueIsSeasonCategory` et `AddLeagueSchedules` appliquées à la BD hôte, puis **backfill** des horaires par un nouvel import idempotent (les 21 ligues existantes n'avaient pas d'horaires : 40 lignes créées). `/readyz` signale désormais les migrations en attente (503 + `pendingMigrations`) au lieu de répondre « ready » sur une BD en retard de schéma | ✅ Corrigé |
+| 2026-11-18 | Import de référence robuste aux variations Spordle : `shortName` nul, `division`/`gender` absents, et surtout `powerplayPct`/`penaltyKillPct` **omis** par les horaires de tournoi (les compteurs absents valent 0, les pourcentages restent `null`) ; un horaire illisible (JSON inattendu, HTTP, timeout) est désormais ignoré avec un avertissement au lieu d'annuler tout l'import | ✅ Corrigé |
 
 

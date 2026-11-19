@@ -1,145 +1,133 @@
 using System.ComponentModel;
+using HockeySeason.Application;
 using HockeySeason.LeagueApi;
-using HockeySeason.LeagueApi.Extensions;
 using HockeySeason.LeagueApi.Http;
 using HockeySeason.LeagueApi.Models;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
 namespace HockeySeason.Mcp;
 
 /// <summary>
-/// MCP tools exposing the Spordle league data: leagues, standings, teams,
-/// games and suspensions. Tool methods are plain calls into
-/// <see cref="LeagueApiService"/>, keeping this layer a thin adapter.
+/// MCP tools of the Hockey Assistant. The reference data — associations,
+/// divisions, leagues, teams and their schedules — is read from the database
+/// and limited to what the caller follows (association → division → league →
+/// team). Only the live figures still come from the public Spordle API:
+/// standings, games, box scores and suspensions, always called with schedule
+/// and team ids resolved from the database and validated against the caller's
+/// follows.
 /// </summary>
+/// <remarks>
+/// The caller's follows are resolved by <see cref="ICallerDataScopeService"/>
+/// for the subject carried by the current request; the MCP endpoint and the
+/// AG-UI agent endpoint both validate the bearer token before invoking a tool.
+/// Asking for a league, division or team outside those follows is refused with
+/// an <see cref="McpException"/>, so the assistant can only answer about what
+/// the user follows.
+/// </remarks>
 [McpServerToolType]
 public sealed class LeagueTools
 {
     private readonly LeagueApiService _leagueApiService;
-    private readonly LeagueApiOptions _options;
     private readonly ITeamDetailService _teamDetails;
+    private readonly ICallerDataScopeService _scope;
+    private readonly CallerIdentity _identity;
 
-    public LeagueTools(LeagueApiService leagueApiService, IOptions<LeagueApiOptions> options, ITeamDetailService teamDetails)
+    public LeagueTools(
+        LeagueApiService leagueApiService,
+        ITeamDetailService teamDetails,
+        ICallerDataScopeService scope,
+        CallerIdentity identity)
     {
         _leagueApiService = leagueApiService ?? throw new ArgumentNullException(nameof(leagueApiService));
-        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _teamDetails = teamDetails ?? throw new ArgumentNullException(nameof(teamDetails));
+        _scope = scope ?? throw new ArgumentNullException(nameof(scope));
+        _identity = identity ?? throw new ArgumentNullException(nameof(identity));
     }
 
-    [McpServerTool(Name = "GetOffices", Title = "Get Offices", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
-    [Description("Returns the supported Hockey Richelieu offices for finding leagues.")]
-    public IReadOnlyList<LeagueOffice> GetOffices() => LeagueOffices.All;
+    private Task<CallerDataScope> GetScopeAsync(CancellationToken cancellationToken) =>
+        _scope.GetForSubjectAsync(_identity.Subject, _identity.Unrestricted, cancellationToken);
 
-    [McpServerTool(Name = "GetTeamDetail", Title = "Get Team Detail", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = true, UseStructuredContent = true)]
-    [Description("Returns a team's division standings, completed games with full box scores, upcoming games, event-based player scoring and special-teams and penalty totals. Players without game events are not included. Resolve league and team IDs first.")]
-    public async Task<TeamDetailResponse> GetTeamDetail(
-        [Description("League schedule identifier.")] int leagueId,
-        [Description("Team identifier within the schedule.")] int teamId,
+    [McpServerTool(Name = "GetAssociations", Title = "Get Associations", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
+    [Description(
+        "Returns the associations you follow, either directly or through a followed division, " +
+        "league or team. Start here to navigate the data you are allowed to read.")]
+    public async Task<IReadOnlyList<ScopedAssociation>> GetAssociations(CancellationToken cancellationToken = default)
+    {
+        var scope = await GetScopeAsync(cancellationToken).ConfigureAwait(false);
+        return scope.Associations;
+    }
+
+    [McpServerTool(Name = "GetDivisions", Title = "Get Divisions", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
+    [Description(
+        "Returns the divisions (Spordle offices) you follow. Pass an association id from " +
+        "GetAssociations to restrict the list to that association.")]
+    public async Task<IReadOnlyList<ScopedDivision>> GetDivisions(
+        [Description("Optional association identifier returned by GetAssociations.")] int? associationId = null,
         CancellationToken cancellationToken = default)
     {
-        return await _teamDetails.GetAsync(leagueId, teamId, cancellationToken)
-            ?? throw new ModelContextProtocol.McpException("Team not found in the league standings.");
+        var scope = await GetScopeAsync(cancellationToken).ConfigureAwait(false);
+        return [.. scope.Divisions.Where(division => associationId is null || division.AssociationId == associationId)];
     }
 
-    /// <summary>
-    /// Returns all leagues (schedules) published for an office and season with their id and name.
-    /// </summary>
-    [McpServerTool(
-        Name = "GetLeagues",
-        Title = "Get Leagues",
-        ReadOnly = true,
-        Idempotent = true,
-        Destructive = false,
-        OpenWorld = true,
-        UseStructuredContent = true)]
+    [McpServerTool(Name = "GetLeagues", Title = "Get Leagues", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
     [Description(
-        "Returns all leagues (schedules) for an office and season, with each league's id and name. " +
-        "Defaults to office 6193 and season 2026-27. Use a returned id with GetLeagueStanding, " +
-        "GetLeagueTeams, GetLeagueGames or GetLeagueSuspensions.")]
-    public async Task<IReadOnlyList<League>> GetLeagues(
-        [Description("Office identifier. Defaults to 6193 (Sainte-Julie).")]
-        int? officeId = null,
-        [Description("Season identifier, for example 2026-27. Defaults to the configured season.")]
-        string? seasonId = null,
+        "Returns the leagues you follow, with the Spordle category id and the schedule ids. Pass a " +
+        "division id from GetDivisions to restrict the list. The schedule ids feed the live calls " +
+        "GetLeagueStanding, GetLeagueSuspension and GetTeamGames; the category id feeds GetLeagueTeams.")]
+    public async Task<IReadOnlyList<ScopedLeague>> GetLeagues(
+        [Description("Optional division identifier returned by GetDivisions.")] int? divisionId = null,
         CancellationToken cancellationToken = default)
     {
-        var offices = officeId ?? _options.DefaultOfficeId;
-        var season = string.IsNullOrWhiteSpace(seasonId) ? _options.DefaultSeasonId : seasonId;
-
-        return await _leagueApiService
-            .GetLeaguesAsync(offices, season, cancellationToken)
-            .ConfigureAwait(false);
+        var scope = await GetScopeAsync(cancellationToken).ConfigureAwait(false);
+        return [.. scope.Leagues.Where(league => divisionId is null || league.DivisionId == divisionId)];
     }
 
-    /// <summary>
-    /// Returns the current standings table of one league, ordered by ranking.
-    /// </summary>
-    [McpServerTool(
-        Name = "GetLeagueStanding",
-        Title = "Get League Standing",
-        ReadOnly = true,
-        Idempotent = true,
-        Destructive = false,
-        OpenWorld = false,
-        UseStructuredContent = true)]
+    [McpServerTool(Name = "GetLeagueTeams", Title = "Get League Teams", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
     [Description(
-        "Returns the standings table of one league (ranking, record, points, goals, special teams, " +
-        "discipline) for every team, ordered by ranking. Use GetLeagues to find the league id.")]
+        "Returns the teams you may see in one league, with their Spordle team id and the schedule id. " +
+        "A followed league lists all its teams; a league reached only through a followed team lists " +
+        "that team alone.")]
+    public async Task<IReadOnlyList<ScopedTeam>> GetLeagueTeams(
+        [Description("Spordle category identifier (guid) returned by GetLeagues.")] string leagueId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(leagueId))
+        {
+            throw new McpException("A league id from GetLeagues is required.");
+        }
+
+        var scope = await GetScopeAsync(cancellationToken).ConfigureAwait(false);
+        if (!scope.ContainsLeague(leagueId))
+        {
+            throw new McpException($"League '{leagueId}' is not one of the leagues you follow.");
+        }
+
+        return [.. scope.Teams.Where(team => string.Equals(team.LeagueExternalId, leagueId, StringComparison.Ordinal))];
+    }
+
+    [McpServerTool(Name = "GetLeagueStanding", Title = "Get League Standing", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = true, UseStructuredContent = true)]
+    [Description(
+        "Returns the current standings table of one league (ranking, record, points, goals, special " +
+        "teams, discipline) for every team, ordered by ranking. Pass a schedule id returned by " +
+        "GetLeagues; the figures come from the live league feed.")]
     public async Task<IReadOnlyList<LeagueStanding>> GetLeagueStanding(
-        [Description("League (schedule) identifier, for example 194908. Use GetLeagues to find it.")]
-        int leagueId,
+        [Description("Schedule identifier: a schedule id returned by GetLeagues.")] int scheduleId,
         CancellationToken cancellationToken = default)
     {
+        await EnsureScheduleVisibleAsync(scheduleId, cancellationToken).ConfigureAwait(false);
         return await _leagueApiService
-            .GetLeagueStandingsAsync(leagueId, cancellationToken)
+            .GetLeagueStandingsAsync(scheduleId, cancellationToken)
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Returns the id and name of every team in a league.
-    /// </summary>
-    [McpServerTool(
-        Name = "GetLeagueTeams",
-        Title = "Get League Teams",
-        ReadOnly = true,
-        Idempotent = true,
-        Destructive = false,
-        OpenWorld = false,
-        UseStructuredContent = true)]
-    [Description(
-        "Returns the id and name of every team in a league. Served from the league's standings " +
-        "endpoint, so it reflects the teams currently registered. Use GetLeagues to find the league id.")]
-    public async Task<IReadOnlyList<LeagueTeam>> GetLeagueTeams(
-        [Description("League (schedule) identifier, for example 194908. Use GetLeagues to find it.")]
-        int leagueId,
-        CancellationToken cancellationToken = default)
-    {
-        return await _leagueApiService
-            .GetLeagueTeamsAsync(leagueId, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Returns the games of a league (optionally one team) between two dates.
-    /// </summary>
-    [McpServerTool(
-        Name = "GetTeamGames",
-        Title = "Get Team Games",
-        ReadOnly = true,
-        Idempotent = true,
-        Destructive = false,
-        OpenWorld = true,
-        UseStructuredContent = true)]
+    [McpServerTool(Name = "GetTeamGames", Title = "Get Team Games", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = true, UseStructuredContent = true)]
     [Description(
         "Returns the games of a league between a start date and an end date, ordered by date and " +
-        "time, with both teams (id, name, logo) and the score when the game was played. Pass a team " +
-        "id to restrict to one team's games (home and away). Use GetLeagues to find the league id " +
-        "and GetLeagueTeams to find team ids. Pass a game id to GetGameDetail for goals and penalties.")]
+        "time, with both teams and the score when the game was played. Pass a team id to restrict " +
+        "to one team's games. The schedule id comes from GetLeagues, the team ids from GetLeagueTeams.")]
     public async Task<IReadOnlyList<LeagueGame>> GetTeamGames(
-        [Description("League (schedule) identifier, for example 194908. Use GetLeagues to find it.")]
-        int leagueId,
+        [Description("Schedule identifier: a schedule id returned by GetLeagues.")] int scheduleId,
         [Description("First date to include, in yyyy-MM-dd form, for example 2026-10-01.")]
         string startDate,
         [Description("Last date to include, in yyyy-MM-dd form, for example 2026-11-09.")]
@@ -155,7 +143,7 @@ public sealed class LeagueTools
                 System.Globalization.DateTimeStyles.None,
                 out var start))
         {
-            throw new ModelContextProtocol.McpException(
+            throw new McpException(
                 $"Invalid startDate '{startDate}'. The date must use the yyyy-MM-dd form, for example 2026-10-01.");
         }
 
@@ -166,64 +154,110 @@ public sealed class LeagueTools
                 System.Globalization.DateTimeStyles.None,
                 out var end))
         {
-            throw new ModelContextProtocol.McpException(
+            throw new McpException(
                 $"Invalid endDate '{endDate}'. The date must use the yyyy-MM-dd form, for example 2026-11-09.");
         }
 
+        var scope = await GetScopeAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureScheduleVisibleAsync(scheduleId, cancellationToken, scope).ConfigureAwait(false);
+        if (teamId is { } id && !scope.ContainsTeam(id))
+        {
+            throw new McpException($"Team {id} is not one of the teams you follow.");
+        }
+
         return await _leagueApiService
-            .GetLeagueGamesAsync(leagueId, teamId, start, end, cancellationToken)
+            .GetLeagueGamesAsync(scheduleId, teamId, start, end, cancellationToken)
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Returns the suspensions published for a league.
-    /// </summary>
-    [McpServerTool(
-        Name = "GetLeagueSuspension",
-        Title = "Get League Suspensions",
-        ReadOnly = true,
-        Idempotent = true,
-        Destructive = false,
-        OpenWorld = true,
-        UseStructuredContent = true)]
+    [McpServerTool(Name = "GetLeagueSuspension", Title = "Get League Suspensions", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = true, UseStructuredContent = true)]
     [Description(
-        "Returns the suspensions published for a league: status, suspended player (name, number, " +
-        "position), team, suspension code, the game it was issued in, games to sit out and games " +
-        "already served. Use GetLeagues to find the league id.")]
+        "Returns the suspensions published for a league: status, suspended player, team, code, the " +
+        "game it was issued in, games to sit out and games already served. Pass a schedule id " +
+        "returned by GetLeagues.")]
     public async Task<IReadOnlyList<LeagueSuspension>> GetLeagueSuspension(
-        [Description("League (schedule) identifier, for example 194908. Use GetLeagues to find it.")]
-        int leagueId,
+        [Description("Schedule identifier: a schedule id returned by GetLeagues.")] int scheduleId,
         CancellationToken cancellationToken = default)
     {
+        await EnsureScheduleVisibleAsync(scheduleId, cancellationToken).ConfigureAwait(false);
         return await _leagueApiService
-            .GetLeagueSuspensionsAsync(leagueId, cancellationToken)
+            .GetLeagueSuspensionsAsync(scheduleId, cancellationToken)
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Returns the full box score of one game.
-    /// </summary>
-    [McpServerTool(
-        Name = "GetGameDetail",
-        Title = "Get Game Detail",
-        ReadOnly = true,
-        Idempotent = true,
-        Destructive = false,
-        OpenWorld = true,
-        UseStructuredContent = true)]
+    [McpServerTool(Name = "GetGameDetail", Title = "Get Game Detail", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = true, UseStructuredContent = true)]
     [Description(
-        "Returns the box score of one game: both teams, scoreboard figures per team (result, " +
-        "penalty minutes, power play and penalty kill), goals scored per team per period in " +
-        "PeriodGoals, every goal (period, elapsed time, scorer, " +
-        "assists, power play and shorthanded flags) and every penalty (period, elapsed time, " +
-        "player, infraction in French, duration). Use GetTeamGames to find the game id.")]
+        "Returns the box score of one game: both teams, scoreboard figures per team, goals per " +
+        "period, every goal (scorer, assists, special teams) and every penalty. Use the game id " +
+        "returned by GetTeamGames.")]
     public async Task<LeagueGameDetail> GetGameDetail(
         [Description("Identifier of the game, as returned by GetTeamGames. Must be positive.")]
         int gameId,
         CancellationToken cancellationToken = default)
     {
-        return await _leagueApiService
+        if (gameId <= 0)
+        {
+            throw new McpException("The game id must be positive.");
+        }
+
+        var scope = await GetScopeAsync(cancellationToken).ConfigureAwait(false);
+        var detail = await _leagueApiService
             .GetLeagueGameDetailAsync(gameId, cancellationToken)
             .ConfigureAwait(false);
+        // The box score is fetched from Spordle, but only a game involving a
+        // visible team may be read.
+        if (scope.IsRestricted
+            && !scope.ContainsTeam(detail.HomeTeam.Id)
+            && !scope.ContainsTeam(detail.AwayTeam.Id))
+        {
+            throw new McpException($"Game {gameId} does not involve any team you follow.");
+        }
+
+        return detail;
+    }
+
+    [McpServerTool(Name = "GetTeamDetail", Title = "Get Team Detail", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = true, UseStructuredContent = true)]
+    [Description(
+        "Returns a team's division standings, completed games with full box scores, upcoming games, " +
+        "event-based player scoring and special-teams and penalty totals. Players without game " +
+        "events are not included. Use GetLeagueTeams to resolve the team id.")]
+    public async Task<TeamDetailResponse> GetTeamDetail(
+        [Description("Team identifier returned by GetLeagueTeams.")] int teamId,
+        CancellationToken cancellationToken = default)
+    {
+        var scope = await GetScopeAsync(cancellationToken).ConfigureAwait(false);
+        var team = scope.Teams.FirstOrDefault(candidate => candidate.Id == teamId);
+        if (team is null)
+        {
+            throw new McpException($"Team {teamId} is not one of the teams you follow.");
+        }
+
+        if (team.ScheduleId is not { } scheduleId)
+        {
+            throw new McpException($"No published schedule is stored for team {teamId}.");
+        }
+
+        return await _teamDetails.GetAsync(scheduleId, teamId, cancellationToken).ConfigureAwait(false)
+            ?? throw new McpException("Team not found in the league standings.");
+    }
+
+    /// <summary>
+    /// Refuses a schedule id outside the caller's follows (standings, games and
+    /// suspensions are keyed on it).
+    /// </summary>
+    private async Task EnsureScheduleVisibleAsync(
+        int scheduleId, CancellationToken cancellationToken, CallerDataScope? scope = null)
+    {
+        if (scheduleId <= 0)
+        {
+            throw new McpException("A schedule id from GetLeagues is required.");
+        }
+
+        scope ??= await GetScopeAsync(cancellationToken).ConfigureAwait(false);
+        if (scope.IsRestricted && !scope.ContainsSchedule(scheduleId))
+        {
+            throw new McpException(
+                $"Schedule {scheduleId} is not one of the schedules you follow. Use an id returned by GetLeagues.");
+        }
     }
 }

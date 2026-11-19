@@ -1,52 +1,9 @@
-using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using HockeySeason.LeagueApi.Http;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Primitives;
 
 namespace HockeySeason.LeagueApi;
-
-/// <summary>Validated parameters for a weekly report.</summary>
-public sealed record WeeklyReportRequest(DateOnly StartDate, DateOnly EndDate, int[] DivisionIds, int[] TeamIds)
-{
-    public static bool TryParse(
-        string? startDate, string? endDate, StringValues divisionIds, StringValues teamIds,
-        out WeeklyReportRequest? request)
-    {
-        request = null;
-        if (!DateOnly.TryParseExact(startDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var start)
-            || !DateOnly.TryParseExact(endDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var end)
-            || start > end
-            || !TryParseIds(divisionIds, out var divisions)
-            || !TryParseIds(teamIds, out var teams))
-        {
-            return false;
-        }
-
-        request = new(start, end, divisions, teams);
-        return true;
-    }
-
-    private static bool TryParseIds(StringValues values, out int[] ids)
-    {
-        ids = [];
-        if (values.Count is 0 or > 50)
-            return false;
-
-        var parsed = new List<int>();
-        foreach (var value in values)
-        {
-            if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id <= 0)
-                return false;
-            if (!parsed.Contains(id))
-                parsed.Add(id);
-        }
-        ids = [.. parsed];
-        return true;
-    }
-}
 
 /// <summary>
 /// One unmodified Spordle response, or an explicit unavailable status carrying
@@ -54,64 +11,108 @@ public sealed record WeeklyReportRequest(DateOnly StartDate, DateOnly EndDate, i
 /// </summary>
 public sealed record WeeklyReportSource(bool Available, JsonElement? Data, string? Error);
 
-/// <summary>Raw Spordle data for a requested division.</summary>
+/// <summary>
+/// Raw Spordle data for one followed league/schedule. <see cref="ScheduleId"/>
+/// is the Spordle schedule the figures were read from (stored in the database),
+/// <see cref="DivisionName"/> and <see cref="LeagueName"/> the database names of
+/// the league the followed team belongs to, <see cref="ScheduleName"/> the
+/// published schedule name, and <see cref="TeamIds"/> the followed teams the
+/// card reports.
+/// </summary>
 public sealed record WeeklyReportDivision(
-    int DivisionId, string? LeagueName, WeeklyReportSource Standings, WeeklyReportSource Games, WeeklyReportSource Suspensions);
+    int DivisionId,
+    string DivisionName,
+    string? LeagueName,
+    int ScheduleId,
+    string? ScheduleName,
+    int[] TeamIds,
+    WeeklyReportSource Standings,
+    WeeklyReportSource Games,
+    WeeklyReportSource Suspensions);
 
 /// <summary>Raw source data and selection parameters for the report.</summary>
 public sealed record WeeklyReportResponse(
     DateOnly StartDate, DateOnly EndDate, int[] TeamIds, IReadOnlyList<WeeklyReportDivision> Divisions);
 
+/// <summary>
+/// A league/schedule of the report: the league of a team the caller follows,
+/// its Spordle schedule id (from the database) and the teams it reports. A
+/// category played in several schedules yields one entry per schedule.
+/// </summary>
+public sealed record WeeklyReportLeague(
+    int DivisionId, string DivisionName, int ScheduleId, string ScheduleName, string LeagueName, int[] TeamIds);
+
 public interface IWeeklyReportService
 {
-    Task<WeeklyReportResponse> GetAsync(WeeklyReportRequest request, CancellationToken cancellationToken);
+    /// <summary>
+    /// Builds the report of the given leagues. The leagues, their schedule ids
+    /// and their teams come from the caller's follows (resolved by the host),
+    /// so the service never receives an unrestricted list.
+    /// </summary>
+    Task<WeeklyReportResponse> GetAsync(
+        DateOnly startDate, DateOnly endDate, IReadOnlyList<WeeklyReportLeague> leagues,
+        CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Weekly report over the public Spordle API: the live standings, games and
+/// suspensions of the leagues the caller follows, read with the schedule ids
+/// stored in the database.
+/// </summary>
 public sealed class WeeklyReportService(
     LeagueApiService leagueApi,
-    IOptions<LeagueApiOptions> options,
     ILogger<WeeklyReportService> logger) : IWeeklyReportService
-{    public async Task<WeeklyReportResponse> GetAsync(WeeklyReportRequest request, CancellationToken cancellationToken)
+{
+    public async Task<WeeklyReportResponse> GetAsync(
+        DateOnly startDate,
+        DateOnly endDate,
+        IReadOnlyList<WeeklyReportLeague> leagues,
+        CancellationToken cancellationToken)
     {
-        var leagueNames = await GetLeagueNamesAsync(cancellationToken);
-        var divisions = await Task.WhenAll(request.DivisionIds.Select(id => GetDivisionAsync(id, request, cancellationToken)));
-        return new(request.StartDate, request.EndDate, request.TeamIds,
-            divisions.Select(division => division with { LeagueName = leagueNames.GetValueOrDefault(division.DivisionId) }).ToArray());
+        ArgumentNullException.ThrowIfNull(leagues);
+
+        var divisions = await Task.WhenAll(
+            leagues.Select(league => GetDivisionAsync(league, startDate, endDate, cancellationToken)));
+
+        // A category is played in several schedules and a team only appears in
+        // its own: a card whose standings do not publish any followed team is
+        // dropped. An unavailable standings table proves nothing and keeps the
+        // card, so a transient Spordle failure never hides a league.
+        var reported = divisions.Where(division => PublishesAFollowedTeam(division)).ToArray();
+        var teamIds = reported
+            .SelectMany(division => division.TeamIds)
+            .Distinct()
+            .Order()
+            .ToArray();
+        return new(startDate, endDate, teamIds, reported);
     }
 
-    private async Task<IReadOnlyDictionary<int, string>> GetLeagueNamesAsync(CancellationToken cancellationToken)
-    {
-        for (var attempt = 1; ; attempt++)
-        {
-            try
-            {
-                using var attemptCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                attemptCancellation.CancelAfter(TimeSpan.FromSeconds(8));
-                var leagues = await leagueApi.GetLeaguesAsync(
-                    options.Value.DefaultOfficeId, options.Value.DefaultSeasonId, attemptCancellation.Token);
-                return leagues.ToDictionary(league => league.Id, league => league.Name);
-            }
-            catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var transient = ex is not HttpRequestException http
-                    || http.StatusCode is null or HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
-                    || (int)http.StatusCode >= 500;
-                logger.LogWarning(ex, "Spordle leagues unavailable, attempt {Attempt}", attempt);
-                if (!transient || attempt >= 3)
-                    return new Dictionary<int, string>();
-                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
-            }
-        }
-    }
+    private static bool PublishesAFollowedTeam(WeeklyReportDivision division) =>
+        !division.Standings.Available
+        || division.Standings.Data is not { ValueKind: JsonValueKind.Array } standings
+        || standings.EnumerateArray().Any(row =>
+            row.TryGetProperty("teamId", out var teamId)
+            && teamId.TryGetInt32(out var id)
+            && division.TeamIds.Contains(id));
 
-    private async Task<WeeklyReportDivision> GetDivisionAsync(int id, WeeklyReportRequest request, CancellationToken cancellationToken)
+    private async Task<WeeklyReportDivision> GetDivisionAsync(
+        WeeklyReportLeague league, DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken)
     {
-        var standings = FetchAsync(id, "standings", ct => leagueApi.GetRawStandingsAsync(id, ct), cancellationToken);
-        var games = FetchAsync(id, "games", ct => leagueApi.GetRawGamesAsync(id, request.StartDate, request.EndDate, ct), cancellationToken);
-        var suspensions = FetchAsync(id, "suspensions", ct => leagueApi.GetRawSuspensionsAsync(id, ct), cancellationToken);
+        var scheduleId = league.ScheduleId;
+        var standings = FetchAsync(league.DivisionId, "standings", ct => leagueApi.GetRawStandingsAsync(scheduleId, ct), cancellationToken);
+        var games = FetchAsync(league.DivisionId, "games", ct => leagueApi.GetRawGamesAsync(scheduleId, startDate, endDate, ct), cancellationToken);
+        var suspensions = FetchAsync(league.DivisionId, "suspensions", ct => leagueApi.GetRawSuspensionsAsync(scheduleId, ct), cancellationToken);
         await Task.WhenAll(standings, games, suspensions);
-        return new(id, null, await standings, await games, await suspensions);
+        return new(
+            league.DivisionId,
+            league.DivisionName,
+            league.LeagueName,
+            scheduleId,
+            league.ScheduleName,
+            league.TeamIds,
+            await standings,
+            await games,
+            await suspensions);
     }
 
     private async Task<WeeklyReportSource> FetchAsync(
@@ -121,7 +122,8 @@ public sealed class WeeklyReportService(
         {
             string lastError;
             try
-            {                using var attemptCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            {
+                using var attemptCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 attemptCancellation.CancelAfter(TimeSpan.FromSeconds(8));
                 var data = await fetch(attemptCancellation.Token);
                 if (data.ValueKind != JsonValueKind.Array)

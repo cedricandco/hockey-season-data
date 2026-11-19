@@ -114,6 +114,50 @@ namespace HockeySeason.Infrastructure.Migrations
                     b.ToTable("leagues", (string)null);
                 });
 
+            modelBuilder.Entity("HockeySeason.Infrastructure.Data.LeagueSchedule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("external_id");
+
+                    b.Property<int>("LeagueId")
+                        .HasColumnType("integer")
+                        .HasColumnName("league_id");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_league_schedules");
+
+                    b.HasIndex("ExternalId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_league_schedules_external_id");
+
+                    b.HasIndex("LeagueId")
+                        .HasDatabaseName("ix_league_schedules_league_id");
+
+                    b.ToTable("league_schedules", (string)null);
+                });
+
             modelBuilder.Entity("HockeySeason.Infrastructure.Data.LeagueSubscription", b =>
                 {
                     b.Property<int>("Id")
@@ -583,6 +627,18 @@ namespace HockeySeason.Infrastructure.Migrations
                     b.Navigation("Season");
                 });
 
+            modelBuilder.Entity("HockeySeason.Infrastructure.Data.LeagueSchedule", b =>
+                {
+                    b.HasOne("HockeySeason.Infrastructure.Data.League", "League")
+                        .WithMany("Schedules")
+                        .HasForeignKey("LeagueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_league_schedules_leagues_league_id");
+
+                    b.Navigation("League");
+                });
+
             modelBuilder.Entity("HockeySeason.Infrastructure.Data.LeagueSubscription", b =>
                 {
                     b.HasOne("HockeySeason.Infrastructure.Data.League", "League")
@@ -698,6 +754,8 @@ namespace HockeySeason.Infrastructure.Migrations
 
             modelBuilder.Entity("HockeySeason.Infrastructure.Data.League", b =>
                 {
+                    b.Navigation("Schedules");
+
                     b.Navigation("Teams");
                 });
 

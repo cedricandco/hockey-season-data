@@ -32,10 +32,37 @@ public sealed record TeamDetailResponse(
 public interface ITeamDetailService
 {
     Task<TeamDetailResponse?> GetAsync(int leagueId, int teamId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Detail of a team read from the first schedule that publishes it. A
+    /// league is played in several schedules ("Saison Rives", "Phase 2"…), so
+    /// the schedule holding the team is unknown until its standings are read;
+    /// a schedule without the team only costs its standings call.
+    /// </summary>
+    Task<TeamDetailResponse?> GetAsync(
+        IReadOnlyList<int> scheduleIds, int teamId, CancellationToken cancellationToken);
 }
 
 public sealed class TeamDetailService(LeagueApiService league) : ITeamDetailService
 {
+    public async Task<TeamDetailResponse?> GetAsync(
+        IReadOnlyList<int> scheduleIds, int teamId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scheduleIds);
+        foreach (var scheduleId in scheduleIds)
+        {
+            // The standings decide membership: a schedule that does not
+            // publish the team returns null before any game is read.
+            var detail = await GetAsync(scheduleId, teamId, cancellationToken);
+            if (detail is not null)
+            {
+                return detail;
+            }
+        }
+
+        return null;
+    }
+
     public async Task<TeamDetailResponse?> GetAsync(int leagueId, int teamId, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(leagueId);

@@ -40,6 +40,11 @@ export interface Suspension {
 
 export interface ReportDivision {
   divisionId: number;
+  divisionName?: string | null;
+  /** Spordle schedule the figures were read from; one card per schedule. */
+  scheduleId: number;
+  /** Published schedule name ("M13 B Saison Vallée Phase 1"). */
+  scheduleName?: string | null;
   leagueName?: string | null;
   standings: ReportSource<Standing>;
   games: ReportSource<Game>;

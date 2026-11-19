@@ -57,11 +57,15 @@ dotnet run --project HockeySeason.AppHost
 ```
 
 The AppHost runs the Functions host with `func start` (port 7071) and starts
-Angular's development server, which builds the frontend. Angular starts only
-after the Functions host's `/api/healthz` endpoint responds successfully. Open the
-dashboard URL shown in the console, or visit
-`http://localhost:4200`. The Angular proxy receives the API address from Aspire.
-Ports 4200 and 7071 must be available.
+Angular's development server, which builds the frontend on port 6767. Angular
+starts only after the Functions host's `/api/healthz` endpoint responds
+successfully. Open the dashboard URL shown in the console, or visit
+`http://localhost:6767`. The Angular proxy receives the API address from Aspire.
+Ports 6767 and 7071 must be available.
+
+In VS Code, the checked-in **`C#: HockeySeason.AppHost`** launch configuration
+(`.vscode/launch.json`) runs the same orchestration: pick it in the Run and
+Debug view (or press F5) with no need for a terminal.
 
 ### Separate terminals
 
@@ -73,7 +77,9 @@ Ports 4200 and 7071 must be available.
 
    Listens on `http://localhost:7071`. Exposes:
    - `GET /api/healthz` → `{ "status": "ok" }`
-   - `GET /api/readyz` → `{ "status": "ready" }`
+   - `GET /api/readyz` → `{ "status": "ready" }`, plus the database state
+     (`{ "database": "ok" }`, `"not_configured"`, or `503` with
+     `pendingMigrations` when the schema is behind the bundled migrations)
    - `GET /api/health` → `{ "environment": "...", "time": { "utcNow": "...", "timeZoneId": "UTC" } }`
    - `POST /api/mcp` — MCP Streamable HTTP endpoint (tool: `get-server-time`)
    - `POST /api/agui/hockey-season-data.agent` — AG-UI translation agent

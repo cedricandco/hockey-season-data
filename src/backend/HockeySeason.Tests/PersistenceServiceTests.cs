@@ -110,9 +110,185 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
         Assert.Equal(SubscriptionError.None, (await users.AddTeamSubscriptionAsync(userId, 300)).Error);
 
         var beforeLockExpiry = await users.RemoveTeamSubscriptionAsync(userId, 300, isAdmin: false);
-        Assert.Equal(SubscriptionError.LimitReached, beforeLockExpiry);
+        Assert.Equal(SubscriptionError.Locked, beforeLockExpiry);
 
         Assert.Equal(SubscriptionError.None, await users.RemoveTeamSubscriptionAsync(userId, 300, isAdmin: true));
+    }
+
+    [Fact]
+    public async Task UserService_LimitsReportHeadroomPerKind()
+    {
+        var factory = CreateFactory();
+        var users = CreateUserService(factory);
+        var userId = await SeedCoachAsync(factory);
+        for (var i = 1; i <= 6; i++)
+        {
+            await SeedTeamAsync(factory, $"{200 + i}", leagueExternalId: "100", divisionExternalId: "10");
+        }
+
+        Assert.Equal(SubscriptionError.None, (await users.AddTeamSubscriptionAsync(userId, 201)).Error);
+
+        var limits = (await users.GetLimitsAsync(userId)).ToDictionary(limit => limit.Kind);
+        Assert.Equal(5, limits["team"].Max);
+        Assert.Equal(1, limits["team"].Used);
+        Assert.True(limits["team"].CanAddMore);
+        // No DIRECTOR licence: leagues cannot be followed individually.
+        Assert.Equal(0, limits["league"].Max);
+        Assert.False(limits["league"].CanAddMore);
+
+        // The add call reports the licence cap with the headroom, so the page
+        // can disable the selector without a second round trip.
+        for (var i = 2; i <= 5; i++)
+        {
+            Assert.Equal(SubscriptionError.None, (await users.AddTeamSubscriptionAsync(userId, 200 + i)).Error);
+        }
+        var rejected = await users.AddTeamSubscriptionAsync(userId, 206);
+        Assert.Equal(SubscriptionError.LimitReached, rejected.Error);
+        Assert.Equal(5, rejected.Limit!.Used);
+        Assert.False(rejected.Limit.CanAddMore);
+    }
+
+    [Fact]
+    public async Task CallerDataScope_ExposesOnlyTheFollowedTeamAndItsParents()
+    {
+        var factory = CreateFactory();
+        // One league of division 6193 with two teams; another league of division
+        // 6194. Only team 410 and its league are followed.
+        await SeedTeamAsync(factory, "410", leagueExternalId: "followed-team-league", divisionExternalId: "6193");
+        await SeedTeamAsync(factory, "411", leagueExternalId: "followed-team-league", divisionExternalId: "6193");
+        await SeedTeamAsync(factory, "420", leagueExternalId: "other-league", divisionExternalId: "6194");
+        await SeedScheduleAsync(factory, "followed-team-league", 194908);
+        await SeedScheduleAsync(factory, "other-league", 194910);
+        var userId = await SeedFollowerAsync(factory, followedTeamExternalId: "410");
+        var service = new CallerDataScopeService(factory);
+
+        var scope = await service.GetAsync(userId);
+
+        Assert.True(scope.IsRestricted);
+        // The followed team, its league and division are reachable, with its
+        // schedule id read from the database.
+        var team = Assert.Single(scope.Teams);
+        Assert.Equal(410, team.Id);
+        Assert.Equal(194908, team.ScheduleId);
+        Assert.Equal("followed-team-league", team.LeagueExternalId);
+        Assert.Contains(scope.Leagues, league => league.ExternalId == "followed-team-league");
+        Assert.Contains(scope.Divisions, division => division.Id == 6193);
+        // The sibling team of the same league is NOT exposed: only a followed
+        // league exposes all of its teams.
+        Assert.False(scope.ContainsTeam(411));
+        // Another division is out of reach too.
+        Assert.DoesNotContain(scope.Divisions, division => division.Id == 6194);
+        Assert.False(scope.ContainsDivision(6194));
+    }
+
+    [Fact]
+    public async Task CallerDataScope_ExposesAllTeamsOfAFollowedLeague()
+    {
+        var factory = CreateFactory();
+        await SeedTeamAsync(factory, "430", leagueExternalId: "followed-league", divisionExternalId: "6193");
+        await SeedTeamAsync(factory, "431", leagueExternalId: "followed-league", divisionExternalId: "6193");
+        await SeedTeamAsync(factory, "440", leagueExternalId: "unfollowed-league", divisionExternalId: "6193");
+        await SeedScheduleAsync(factory, "followed-league", 194899);
+        var userId = await SeedFollowerAsync(factory, followedLeagueExternalId: "followed-league");
+        var service = new CallerDataScopeService(factory);
+
+        var scope = await service.GetAsync(userId);
+
+        Assert.Equal([430, 431], scope.Teams.Select(team => team.Id).OrderBy(id => id));
+        Assert.DoesNotContain(scope.Teams, team => team.Id == 440);
+        Assert.True(scope.ContainsLeague("followed-league"));
+        Assert.False(scope.ContainsLeague("unfollowed-league"));
+    }
+
+    [Fact]
+    public async Task CallerDataScope_FollowsNothingIsEmptyAndUnrestrictedIsWholeCatalogue()
+    {
+        var factory = CreateFactory();
+        await SeedTeamAsync(factory, "450", leagueExternalId: "some-league", divisionExternalId: "6193");
+        await SeedScheduleAsync(factory, "some-league", 194908);
+        var provisioning = new UserProvisioningService(factory, NullLogger<UserProvisioningService>.Instance);
+        var userId = (await provisioning.ProvisionAsync(new("auth0|nothing", null, null, null))).UserId;
+        var service = new CallerDataScopeService(factory);
+
+        var empty = await service.GetAsync(userId);
+        Assert.True(empty.IsRestricted);
+        Assert.Empty(empty.Teams);
+        Assert.Empty(empty.Leagues);
+        Assert.Empty(empty.Associations);
+
+        // The temporary open-access phase reads the whole reference data.
+        var whole = await service.GetAsync(userId, unrestricted: true);
+        Assert.False(whole.IsRestricted);
+        Assert.Contains(whole.Teams, team => team.Id == 450);
+        Assert.NotEmpty(whole.Associations);
+    }
+
+    [Fact]
+    public async Task CallerDataScope_FollowedTeamsCarryDatabaseIdsAndParents()
+    {
+        var factory = CreateFactory();
+        await SeedTeamAsync(factory, "410", leagueExternalId: "followed-team-league", divisionExternalId: "6193");
+        await SeedTeamAsync(factory, "411", leagueExternalId: "followed-team-league", divisionExternalId: "6193");
+        await SeedTeamAsync(factory, "420", leagueExternalId: "other-league", divisionExternalId: "6194");
+        await SeedScheduleAsync(factory, "followed-team-league", 194908);
+        var userId = await SeedFollowerAsync(factory, followedTeamExternalId: "410");
+        var service = new CallerDataScopeService(factory);
+
+        var team = Assert.Single(await service.GetFollowedTeamsAsync(userId));
+
+        // The team is addressed by its database id; the Spordle team id stays
+        // available for the live read endpoints.
+        await using (var db = CreateContext())
+        {
+            Assert.Equal(await db.Teams.Where(t => t.ExternalId == "410").Select(t => t.Id).SingleAsync(), team.Id);
+        }
+        Assert.Equal(410, team.ExternalId);
+        Assert.Equal("League", team.LeagueName);
+        Assert.Equal("Div", team.DivisionName);
+        Assert.Equal("Org", team.AssociationName);
+        Assert.True(team.LeagueId > 0);
+        Assert.True(team.DivisionId > 0);
+        Assert.True(team.AssociationId > 0);
+        // The schedule the detail call is keyed on comes from the database.
+        Assert.Equal(194908, Assert.Single(team.Schedules).Id);
+        // A sibling team of the same league is not a follow, and the other
+        // division is out of reach.
+        Assert.DoesNotContain(await service.GetFollowedTeamsAsync(userId), item => item.ExternalId == 411);
+    }
+
+    [Fact]
+    public async Task CallerDataScope_FollowedTeamsIgnoreOpenAccess()
+    {
+        var factory = CreateFactory();
+        await SeedTeamAsync(factory, "460", leagueExternalId: "some-league", divisionExternalId: "6193");
+        await SeedScheduleAsync(factory, "some-league", 194908);
+        var provisioning = new UserProvisioningService(factory, NullLogger<UserProvisioningService>.Instance);
+        var userId = (await provisioning.ProvisionAsync(new("auth0|nothing", null, null, null))).UserId;
+        var service = new CallerDataScopeService(factory);
+
+        // The team page and the weekly report are about my teams: a caller who
+        // follows nothing never gets the whole catalogue, even under open access.
+        Assert.Empty(await service.GetFollowedTeamsAsync(userId));
+        Assert.Contains((await service.GetAsync(userId, unrestricted: true)).Teams, team => team.Id == 460);
+    }
+
+    [Fact]
+    public async Task SubscriptionCatalog_WalksAssociationDivisionLeagueTeam()    {
+        var factory = CreateFactory();
+        await SeedTeamAsync(factory, "410", leagueExternalId: "13c38dd1-e464-4835-af5f-75be8561daf6", divisionExternalId: "6193");
+        var catalog = new SubscriptionCatalogService(factory);
+
+        var association = Assert.Single(await catalog.GetAssociationsAsync());
+        var division = Assert.Single(await catalog.GetDivisionsAsync(association.Id));
+        Assert.Equal(6193, division.Id);
+
+        var leagues = await catalog.GetLeaguesAsync(division.Id);
+        Assert.Equal("2026-27", leagues.SeasonId);
+        var league = Assert.Single(leagues.Leagues);
+        Assert.Equal("league", league.Name.ToLowerInvariant());
+
+        var team = Assert.Single(await catalog.GetTeamsAsync(league.Id));
+        Assert.Equal(410, team.Id);
     }
 
     [Fact]
@@ -250,6 +426,63 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
             db.Teams.Add(new() { LeagueId = league.Id, Name = $"Team {teamExternalId}", ExternalId = teamExternalId });
         }
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>Stores a Spordle schedule under the league with the given external id.</summary>
+    private static async Task SeedScheduleAsync(IDbContextFactory<HockeySeasonDbContext> factory, string leagueExternalId, int scheduleId)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        var league = await db.Leagues.SingleAsync(league => league.ExternalId == leagueExternalId);
+        if (!await db.LeagueSchedules.AnyAsync(schedule => schedule.ExternalId == scheduleId.ToString()))
+        {
+            db.LeagueSchedules.Add(new LeagueSchedule
+            {
+                LeagueId = league.Id,
+                ExternalId = scheduleId.ToString(),
+                Name = $"Schedule {scheduleId}",
+            });
+            await db.SaveChangesAsync();
+        }
+    }
+
+    /// <summary>
+    /// Provisions a user and records the requested follows (team, league or
+    /// organization, by Spordle external id).
+    /// </summary>
+    private static async Task<int> SeedFollowerAsync(
+        IDbContextFactory<HockeySeasonDbContext> factory,
+        string? followedTeamExternalId = null,
+        string? followedLeagueExternalId = null)
+    {
+        var provisioning = new UserProvisioningService(factory, NullLogger<UserProvisioningService>.Instance);
+        var userId = (await provisioning.ProvisionAsync(new($"auth0|follower-{Guid.NewGuid():N}", null, null, null))).UserId;
+
+        await using var db = await factory.CreateDbContextAsync();
+        if (followedTeamExternalId is not null)
+        {
+            var teamId = await db.Teams.Where(team => team.ExternalId == followedTeamExternalId).Select(team => team.Id).SingleAsync();
+            db.TeamSubscriptions.Add(new TeamSubscription
+            {
+                UserId = userId,
+                TeamId = teamId,
+                CreatedAt = DateTimeOffset.UnixEpoch,
+                UpdatedAt = DateTimeOffset.UnixEpoch,
+                LockedUntil = DateTimeOffset.UnixEpoch,
+            });
+        }
+        if (followedLeagueExternalId is not null)
+        {
+            var leagueId = await db.Leagues.Where(league => league.ExternalId == followedLeagueExternalId).Select(league => league.Id).SingleAsync();
+            db.LeagueSubscriptions.Add(new LeagueSubscription
+            {
+                UserId = userId,
+                LeagueId = leagueId,
+                CreatedAt = DateTimeOffset.UnixEpoch,
+                UpdatedAt = DateTimeOffset.UnixEpoch,
+            });
+        }
+        await db.SaveChangesAsync();
+        return userId;
     }
 
     private sealed class TestDbContextFactory(DbContextOptions<HockeySeasonDbContext> options)

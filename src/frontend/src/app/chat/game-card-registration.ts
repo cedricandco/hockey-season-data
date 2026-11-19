@@ -23,8 +23,9 @@ const leagueStandingRowSchema = z.object({
   goalsAgainst: z.number(),
   goalDifferential: z.number(),
   penaltyMinutes: z.number(),
-  powerPlayPercentage: z.number(),
-  penaltyKillPercentage: z.number(),
+  // Schedules that do not track special teams (tournaments) publish no figure.
+  powerPlayPercentage: z.number().nullable().optional(),
+  penaltyKillPercentage: z.number().nullable().optional(),
 });
 
 /** Call from an injection context when a chat surface supports tool rendering. */

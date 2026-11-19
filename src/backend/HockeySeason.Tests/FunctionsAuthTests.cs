@@ -106,6 +106,26 @@ public sealed class FunctionsAuthTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Readiness_Degrades503_WhenMigrationsArePending()
+    {
+        // A reachable database whose schema is behind the bundled migrations
+        // answers every query on a new table with 42P01: readiness must refuse
+        // to declare the host ready in that state.
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Postgres"] = "Host=test" })
+            .Build();
+        var probes = new ProbeFunctions(configuration, new UnappliedSchemaFactory());
+
+        var result = await probes.Readyz(new DefaultHttpContext().Request, CancellationToken.None);
+
+        var degraded = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, degraded.StatusCode);
+        using var body = JsonDocument.Parse(JsonSerializer.Serialize(degraded.Value));
+        Assert.Equal("migrations_pending", body.RootElement.GetProperty("status").GetString());
+        Assert.NotEmpty(body.RootElement.GetProperty("pendingMigrations").EnumerateArray());
+    }
+
+    [Fact]
     public void JwtValidator_AcceptsTokenForConfiguredAudience()
     {
         var validator = CreateValidator();
@@ -169,5 +189,21 @@ public sealed class FunctionsAuthTests : IAsyncLifetime
     private sealed class UnreachableFactory : IDbContextFactory<HockeySeasonDbContext>
     {
         public HockeySeasonDbContext CreateDbContext() => throw new InvalidOperationException("db unreachable");
+    }
+
+    /// <summary>
+    /// A reachable SQLite database without any migration applied: the context
+    /// has pending migrations while <c>CanConnectAsync</c> succeeds.
+    /// </summary>
+    private sealed class UnappliedSchemaFactory : IDbContextFactory<HockeySeasonDbContext>, IDisposable
+    {
+        private readonly Microsoft.Data.Sqlite.SqliteConnection _connection = new("DataSource=:memory:");
+
+        public UnappliedSchemaFactory() => _connection.Open();
+
+        public HockeySeasonDbContext CreateDbContext() =>
+            new(new DbContextOptionsBuilder<HockeySeasonDbContext>().UseSqlite(_connection).Options);
+
+        public void Dispose() => _connection.Dispose();
     }
 }

@@ -1,13 +1,26 @@
 .team-page { max-width: 1100px; margin: 0 auto; }
 .team-page { padding: 2rem 1rem; }
+.team-blocks { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
+.follow-list-block, .selector-block { flex: 1 1 320px; min-width: 0; }
+.follow-list-block h2, .selector-block h2 { margin: 0 0 .75rem; font-size: 1.1rem; }
+.follow-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.follow-item { border: 1px solid #d6dde5; border-radius: 10px; overflow: hidden; }
+.follow-item.selected { border-color: #1d4ed8; box-shadow: 0 0 0 1px #1d4ed8; }
+.follow-button { display: grid; gap: .2rem; width: 100%; padding: .7rem .9rem; text-align: left; background: none; border: 0; cursor: pointer; color: inherit; font: inherit; }
+.follow-button:hover { background: #f3f6fa; }
+.follow-name { font-weight: 600; }
+.follow-context { font-size: .85rem; opacity: .75; }
 .selectors { display: flex; flex-wrap: wrap; gap: 1rem; }
 .selectors label { display: grid; gap: .4rem; flex: 1 1 220px; font-weight: 600; }
 .selectors select { padding: .7rem; border: 1px solid #aeb8c4; border-radius: 8px; background: var(--ion-background-color, #fff); color: inherit; max-width: 100%; }
 .error { color: #b42318; }
+.config-link { margin-left: .35rem; font-weight: 600; color: #1d4ed8; }
 @media (max-width: 600px) {
   .team-page { padding: .5rem 0 1.5rem; }
   .team-page h1 { font-size: 1.5rem; }
+  .team-blocks { gap: 1rem; }
   .selectors { gap: .75rem; }
   .selectors label { flex-basis: 100%; }
   .selectors select { min-height: 44px; width: 100%; font-size: 1rem; }
+  .follow-button { min-height: 44px; }
 }

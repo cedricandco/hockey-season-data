@@ -31,6 +31,7 @@ public sealed class ScopeService(
         var teamIds = new HashSet<int>();
         var leagueIds = new HashSet<string>(StringComparer.Ordinal);
         var officeIds = new HashSet<int>();
+        var wholeLeagueIds = new HashSet<string>(StringComparer.Ordinal);
 
         // Direct team subscriptions → their owning leagues.
         var followedTeams = await db.TeamSubscriptions
@@ -66,6 +67,7 @@ public sealed class ScopeService(
         foreach (var league in followedLeagues)
         {
             leagueIds.Add(league.LeagueExternalId);
+            wholeLeagueIds.Add(league.LeagueExternalId);
             officeIds.Add(int.Parse(league.DivisionExternalId));
             foreach (var teamExternalId in league.TeamExternalIds)
             {
@@ -94,6 +96,7 @@ public sealed class ScopeService(
             foreach (var leagueExternalId in organization.LeagueExternalIds)
             {
                 leagueIds.Add(leagueExternalId);
+                wholeLeagueIds.Add(leagueExternalId);
             }
             foreach (var divisionExternalId in organization.DivisionExternalIds)
             {
@@ -104,7 +107,8 @@ public sealed class ScopeService(
         var scope = new UserScope(
             teamIds.ToImmutableHashSet(),
             leagueIds.ToImmutableHashSet(),
-            officeIds.ToImmutableHashSet());
+            officeIds.ToImmutableHashSet(),
+            wholeLeagueIds.ToImmutableHashSet());
         cache.Set(CacheKey(userId), scope, CacheDuration);
         return scope;
     }

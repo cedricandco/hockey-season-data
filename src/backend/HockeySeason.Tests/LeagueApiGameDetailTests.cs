@@ -231,7 +231,7 @@ public sealed class LeagueApiGameDetailTests
     public async Task GameDetailFunction_ReturnsCompleteGoalsAndPeriodCounts()
     {
         var handler = new RoutingHandler();
-        var function = new GameDetailFunction(CreateService(handler), FunctionsTests.UnfilteredScope());
+        var function = FunctionsTests.CreateGameDetailFunction(CreateService(handler));
         var request = new DefaultHttpContext().Request;
         var authContext = FunctionsTests.CreateFunctionContextForRequest(request);
 
@@ -249,7 +249,7 @@ public sealed class LeagueApiGameDetailTests
     public async Task GameDetailFunction_ReturnsAllEventsAndCalculatedPeriodsAsJson()
     {
         var handler = new RoutingHandler();
-        var function = new GameDetailFunction(CreateService(handler), FunctionsTests.UnfilteredScope());
+        var function = FunctionsTests.CreateGameDetailFunction(CreateService(handler));
         var request = new DefaultHttpContext().Request;
         var authContext = FunctionsTests.CreateFunctionContextForRequest(request);
 
@@ -375,3 +375,4 @@ public sealed class LeagueApiGameDetailTests
         }
     }
 }
+

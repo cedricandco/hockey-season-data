@@ -11,7 +11,22 @@ public sealed record ReferenceTeam(int Id, string Name);
 /// teams the category publishes through its schedules. <see cref="Name"/> is
 /// the French name, which is what the users read.
 /// </summary>
-public sealed record ReferenceLeague(string ExternalId, string Name, IReadOnlyList<ReferenceTeam> Teams);
+/// <param name="ExternalId">Spordle category id (guid).</param>
+/// <param name="Name">French display name.</param>
+/// <param name="Teams">Teams published by any of the league schedules.</param>
+/// <param name="Schedules">
+/// Spordle schedules of the category, with the id the standings, games and
+/// suspensions endpoints expect. Stored so the read tools resolve ids from the
+/// database instead of calling Spordle.
+/// </param>
+public sealed record ReferenceLeague(
+    string ExternalId,
+    string Name,
+    IReadOnlyList<ReferenceTeam> Teams,
+    IReadOnlyList<ReferenceSchedule> Schedules);
+
+/// <summary>A Spordle schedule of a league: the id used by the Spordle read endpoints.</summary>
+public sealed record ReferenceSchedule(int Id, string Name);
 
 /// <summary>Request of an association/season import.</summary>
 /// <param name="OrganizationId">

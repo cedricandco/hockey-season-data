@@ -28,6 +28,7 @@ public sealed class HockeySeasonDbContext(DbContextOptions<HockeySeasonDbContext
     public DbSet<Division> Divisions => Set<Division>();
     public DbSet<Season> Seasons => Set<Season>();
     public DbSet<League> Leagues => Set<League>();
+    public DbSet<LeagueSchedule> LeagueSchedules => Set<LeagueSchedule>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<User> Users => Set<User>();
     public DbSet<Role> Roles => Set<Role>();
@@ -98,6 +99,23 @@ public sealed class HockeySeasonDbContext(DbContextOptions<HockeySeasonDbContext
                 .WithOne(x => x.League)
                 .HasForeignKey(x => x.LeagueId)
                 .OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(x => x.Schedules)
+                .WithOne(x => x.League)
+                .HasForeignKey(x => x.LeagueId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<LeagueSchedule>(entity =>
+        {
+            entity.ToTable("league_schedules");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).UseIdentityByDefaultColumn().ValueGeneratedOnAdd();
+            entity.Property(x => x.Name).IsRequired();
+            entity.Property(x => x.ExternalId).IsRequired();
+            // The Spordle schedule id keys every standings/games/suspensions
+            // call, so it is the identity of the row.
+            entity.HasIndex(x => x.ExternalId).IsUnique();
+            entity.HasIndex(x => x.LeagueId);
         });
 
         modelBuilder.Entity<Team>(entity =>

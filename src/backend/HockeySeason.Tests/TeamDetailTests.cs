@@ -41,6 +41,20 @@ public sealed class TeamDetailTests
     }
 
     [Fact]
+    public async Task Standings_KeepATeamWhoseShortNameIsNull()
+    {
+        // Some teams publish no abbreviation: the league sends "shortName": null,
+        // which must not fail the deserialization of the whole standings table.
+        var standings = await CreateLeague(new NullShortNameHandler())
+            .GetLeagueStandingsAsync(100, CancellationToken.None);
+
+        var row = Assert.Single(standings);
+        Assert.Equal(1, row.TeamId);
+        Assert.Equal("Alpha", row.TeamName);
+        Assert.Null(row.ShortName);
+    }
+
+    [Fact]
     public async Task TeamDetail_KeepsANullPlayerNumberFromAPenalizedCoach()
     {
         var handler = new TeamHandler { BoxScoreExtraPenalty = """
@@ -74,7 +88,7 @@ public sealed class TeamDetailTests
     {
         var handler = new TeamHandler();
         var league = CreateLeague(handler);
-        var function = new TeamFunctions(league, new TeamDetailService(league), Options.Create(new LeagueApiOptions()), FunctionsTests.UnfilteredScope());
+        var function = FunctionsTests.CreateTeamFunctions(league, new TeamDetailService(league));
         var request = new DefaultHttpContext().Request;
         var context = FunctionsTests.CreateFunctionContextForRequest(request);
 
@@ -101,7 +115,7 @@ public sealed class TeamDetailTests
     public async Task Functions_ExposeSameDiscoveryAndTeamDetail()
     {
         var league = CreateLeague(new TeamHandler());
-        var function = new TeamFunctions(league, new TeamDetailService(league), Options.Create(new LeagueApiOptions()), FunctionsTests.UnfilteredScope());
+        var function = FunctionsTests.CreateTeamFunctions(league, new TeamDetailService(league));
         var request = new DefaultHttpContext().Request;
         var authContext = FunctionsTests.CreateFunctionContextForRequest(request);
         Assert.IsType<OkObjectResult>(function.Offices(request, authContext));
@@ -116,7 +130,7 @@ public sealed class TeamDetailTests
     private static TeamDetailService CreateService(TeamHandler handler)
         => new(CreateLeague(handler));
 
-    private static LeagueApiService CreateLeague(TeamHandler handler)
+    private static LeagueApiService CreateLeague(HttpMessageHandler handler)
     {
         var client = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/api/") };
         var options = Options.Create(new LeagueApiOptions { BaseAddress = client.BaseAddress, ApiKey = "test" });
@@ -176,6 +190,21 @@ public sealed class TeamDetailTests
                     """;
             else return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload, Encoding.UTF8, "application/json") });
+        }
+    }
+
+    /// <summary>Standings payload where a team publishes no abbreviation.</summary>
+    private sealed class NullShortNameHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var payload = """
+                [{"teamId":1,"ranking":1,"gamesPlayed":1,"wins":1,"losses":0,"ties":0,"points":2,"goalFor":1,"goalAgainst":0,"diff":1,"pim":2,"powerplayPct":50,"penaltyKillPct":100,"team":{"id":1,"name":"Alpha","shortName":null,"division":"M13","gender":"M"}}]
+                """;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+            });
         }
     }
 }

@@ -70,6 +70,27 @@ public sealed class League
     public Division Division { get; set; } = null!;
     public Season Season { get; set; } = null!;
     public List<Team> Teams { get; set; } = [];
+    public List<LeagueSchedule> Schedules { get; set; } = [];
+}
+
+/// <summary>
+/// One Spordle schedule ("horaire") of a league, e.g. "M13 B Saison Rives".
+/// The Spordle API keys its standings, games and suspensions on the schedule
+/// id, so this row is what the read tools call when a league is followed: the
+/// ids come from the database, the live figures from Spordle.
+/// </summary>
+public sealed class LeagueSchedule
+{
+    public int Id { get; set; }
+    public int LeagueId { get; set; }
+    /// <summary>Spordle schedule id (e.g. 194908), unique.</summary>
+    public required string ExternalId { get; set; }
+    /// <summary>Published schedule name, for example "M13 B Saison Vallée Phase 1".</summary>
+    public required string Name { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    public League League { get; set; } = null!;
 }
 
 /// <summary>A team published by a Spordle league.</summary>
@@ -78,7 +99,11 @@ public sealed class Team
     public int Id { get; set; }
     public int LeagueId { get; set; }
     public required string Name { get; set; }
-    /// <summary>Spordle team id, unique.</summary>
+    /// <summary>
+    /// A Spordle team id, unique. The team may be published by several
+    /// schedules of the same league; the id is the same team, so the row is
+    /// shared rather than duplicated.
+    /// </summary>
     public required string ExternalId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

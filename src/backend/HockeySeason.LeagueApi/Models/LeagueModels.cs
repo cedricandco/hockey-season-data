@@ -33,12 +33,15 @@ public sealed record LeagueCategory(string Id, string Name, string? NameFr)
 }
 
 /// <summary>
-/// One row of a league standings table.
+/// One row of a league standings table. <see cref="ShortName"/>,
+/// <see cref="PowerPlayPercentage"/> and <see cref="PenaltyKillPercentage"/> are
+/// null when the schedule does not publish them (tournaments and schedules
+/// without a played game publish no special-team figures).
 /// </summary>
 public sealed record LeagueStanding(
     int TeamId,
     string TeamName,
-    string ShortName,
+    string? ShortName,
     string Division,
     string Gender,
     int Ranking,
@@ -51,8 +54,8 @@ public sealed record LeagueStanding(
     int GoalsAgainst,
     int GoalDifferential,
     int PenaltyMinutes,
-    double PowerPlayPercentage,
-    double PenaltyKillPercentage,
+    double? PowerPlayPercentage,
+    double? PenaltyKillPercentage,
     int? GroupId = null);
 
 /// <summary>

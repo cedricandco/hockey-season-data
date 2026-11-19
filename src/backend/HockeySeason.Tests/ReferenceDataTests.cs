@@ -84,6 +84,72 @@ public sealed class ReferenceDataTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Import_ToleratesSchedulesWithoutSpecialTeamStats()
+    {
+        // A tournament schedule publishes standings rows without
+        // powerplayPct/penaltyKillPct (and without division/gender/shortName):
+        // its teams must still be imported instead of aborting the whole import.
+        var handler = new SpordleHandler();
+        handler.SchedulesWithoutSpecialTeams.Add(194909);
+        var service = CreateService(handler);
+
+        var result = await service.ImportAsync(new(OrganizationId, "6193", "2026-27"));
+
+        Assert.Equal(["M13 B", "M15 A"], result.CreatedLeagues);
+        Assert.Equal(3, result.CreatedTeams);
+        Assert.Empty(result.Warnings);
+
+        await using var db = new HockeySeasonDbContext(_options);
+        var league = await db.Leagues
+            .Include(l => l.Teams)
+            .SingleAsync(l => l.ExternalId == "13c38dd1-e464-4835-af5f-75be8561daf6");
+        // The tournament schedule and the regular one are unioned by team id.
+        Assert.Equal(["Alpha", "Beta"], league.Teams.Select(team => team.Name).OrderBy(name => name));
+    }
+
+    [Fact]
+    public async Task Import_SkipsAStandingsPlaceholderWithoutATeam()
+    {
+        // Placeholder and bracket rows carry no team: they must be ignored
+        // instead of failing the schedule (and the import with it).
+        var handler = new SpordleHandler();
+        handler.SchedulesWithPlaceholderRows.Add(194909);
+        var service = CreateService(handler);
+
+        var result = await service.ImportAsync(new(OrganizationId, "6193", "2026-27"));
+
+        Assert.Equal(3, result.CreatedTeams);
+        Assert.Empty(result.Warnings);
+
+        await using var db = new HockeySeasonDbContext(_options);
+        var league = await db.Leagues
+            .Include(l => l.Teams)
+            .SingleAsync(l => l.ExternalId == "13c38dd1-e464-4835-af5f-75be8561daf6");
+        Assert.Equal(["Alpha", "Beta"], league.Teams.Select(team => team.Name).OrderBy(name => name));
+    }
+
+    [Fact]
+    public async Task Import_SkipsAScheduleWhoseStandingsCannotBeRead()
+    {
+        // An unreadable payload costs that schedule alone: the other schedules of
+        // the category still import, with a warning naming what was skipped.
+        var handler = new SpordleHandler();
+        handler.SchedulesWithUnreadableStandings.Add(194909);
+        var service = CreateService(handler);
+
+        var result = await service.ImportAsync(new(OrganizationId, "6193", "2026-27"));
+
+        Assert.Equal(["M13 B", "M15 A"], result.CreatedLeagues);
+        Assert.Contains(result.Warnings, warning => warning.Contains("194909", StringComparison.Ordinal));
+
+        await using var db = new HockeySeasonDbContext(_options);
+        var league = await db.Leagues
+            .Include(l => l.Teams)
+            .SingleAsync(l => l.ExternalId == "13c38dd1-e464-4835-af5f-75be8561daf6");
+        Assert.Equal(["Alpha", "Beta"], league.Teams.Select(team => team.Name).OrderBy(name => name));
+    }
+
+    [Fact]
     public async Task Import_IsIdempotentAndUpdatesInsteadOfDuplicating()
     {
         var handler = new SpordleHandler();
@@ -349,6 +415,22 @@ public sealed class ReferenceDataTests : IAsyncLifetime
             [194931] = [(201, "Gamma")],
         };
 
+        /// <summary>
+        /// Tournaments that publish no special-team figures, mirroring a
+        /// Spordle schedule whose standings omit powerplayPct/penaltyKillPct
+        /// (and, for a division-less tournament, the division/gender members).
+        /// </summary>
+        public HashSet<int> SchedulesWithoutSpecialTeams { get; } = [];
+
+        /// <summary>
+        /// Schedules whose standings payload has a shape the DTO does not
+        /// expect (an unexpected JSON member on a tournament, for example).
+        /// </summary>
+        public HashSet<int> SchedulesWithUnreadableStandings { get; } = [];
+
+        /// <summary>Schedules whose standings include a placeholder row with no team.</summary>
+        public HashSet<int> SchedulesWithPlaceholderRows { get; } = [];
+
         public void Remove(string id) => _teams.Remove(int.Parse(id));
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -400,6 +482,43 @@ public sealed class ReferenceDataTests : IAsyncLifetime
                 var scheduleId = int.Parse(path.Split('/')[^2]);
                 if (!_teams.TryGetValue(scheduleId, out var teams))
                     return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+
+                if (SchedulesWithUnreadableStandings.Contains(scheduleId))
+                {
+                    // A payload the DTO cannot read must cost the schedule, not
+                    // the whole import.
+                    return Json("""[{"teamId":101,"ranking":"first"}]""");
+                }
+
+                if (SchedulesWithPlaceholderRows.Contains(scheduleId))
+                {
+                    // Placeholder/bracket row without a team, next to a real one.
+                    return Json("""
+                        [{"teamId":101,"ranking":1,"team":{"id":101,"name":"Alpha","shortName":null}},
+                         {"teamId":0,"ranking":2}]
+                        """);
+                }
+
+                if (SchedulesWithoutSpecialTeams.Contains(scheduleId))
+                {
+                    // Wire shape of a tournament: no special-team percentages, no
+                    // division/gender on the team, and "shortName": null.
+                    return Json(System.Text.Json.JsonSerializer.Serialize(teams.Select((team, index) => new
+                    {
+                        teamId = team.Id,
+                        ranking = index + 1,
+                        gamesPlayed = 0,
+                        wins = 0,
+                        losses = 0,
+                        ties = 0,
+                        points = 0,
+                        goalFor = 0,
+                        goalAgainst = 0,
+                        diff = 0,
+                        pim = 0,
+                        team = new { id = team.Id, name = team.Name, shortName = (string?)null },
+                    })));
+                }
 
                 return Json(System.Text.Json.JsonSerializer.Serialize(teams.Select((team, index) => new
                 {

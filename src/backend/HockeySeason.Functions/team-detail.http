@@ -1,19 +1,31 @@
 @baseUrl = http://localhost:7071
 @token = replace-with-login-token
 
-### Offices
-GET {{baseUrl}}/api/offices
+### Team page navigation: the teams I follow (database ids)
+GET {{baseUrl}}/api/nav/teams
 Authorization: Bearer {{token}}
 
-### Leagues
-GET {{baseUrl}}/api/offices/6193/leagues?seasonId=2026-27
+### Associations that own a followed team
+GET {{baseUrl}}/api/nav/associations
 Authorization: Bearer {{token}}
 
-### Teams
-GET {{baseUrl}}/api/leagues/194908/teams
+### Divisions of that association that own a followed team
+GET {{baseUrl}}/api/nav/associations/1/divisions
 Authorization: Bearer {{token}}
 
-### Team detail
+### Leagues of that division that own a followed team
+GET {{baseUrl}}/api/nav/divisions/1/leagues
+Authorization: Bearer {{token}}
+
+### Followed teams of that league
+GET {{baseUrl}}/api/nav/leagues/1/teams
+Authorization: Bearer {{token}}
+
+### Detail of a followed team, keyed on teams.id (the schedule is resolved server-side)
+GET {{baseUrl}}/api/teams/1
+Authorization: Bearer {{token}}
+
+### Detail keyed on Spordle ids (chat card / agent output)
 GET {{baseUrl}}/api/leagues/194908/teams/181303
 Authorization: Bearer {{token}}
 

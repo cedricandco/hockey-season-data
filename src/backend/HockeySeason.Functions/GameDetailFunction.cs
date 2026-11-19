@@ -1,11 +1,24 @@
+using HockeySeason.Application;
+using HockeySeason.Infrastructure.Data;
 using HockeySeason.LeagueApi.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Configuration;
 
 namespace HockeySeason.Functions;
 
-public sealed class GameDetailFunction(LeagueApiService league, CallerScope callerScope)
+/// <summary>
+/// Box score of one game. A game is readable when at least one of its teams is
+/// followed by the caller (or belongs to a league the caller follows);
+/// otherwise the call is refused, so a game id cannot be used to read a team
+/// outside the caller's follows.
+/// </summary>
+public sealed class GameDetailFunction(
+    LeagueApiService league,
+    ICallerDataScopeService dataScope,
+    RequestUserResolver resolver,
+    IConfiguration configuration)
 {
     [Function("GameDetail")]
     public async Task<IActionResult> Run(
@@ -24,12 +37,21 @@ public sealed class GameDetailFunction(LeagueApiService league, CallerScope call
             return new BadRequestObjectResult(new ValidationProblemDetails(
                 new Dictionary<string, string[]> { ["gameId"] = ["The game ID must be positive."] }));
 
-        var game = await league.GetLeagueGameDetailAsync(gameId, cancellationToken);
-        var scope = await callerScope.GetAsync(context, cancellationToken);
-        if (scope is null)
-            return new OkObjectResult(game);
+        var unrestricted = configuration.GetSection(AuthorizationOptions.SectionName).Get<AuthorizationOptions>()
+            is { OpenAccess: true };
+        var noPersistence = !unrestricted && !DatabaseOptions.IsPersistenceConfigured(configuration);
 
-        var visible = true; //scope.SpordleTeamIds.Contains(game.HomeTeam.Id) || scope.SpordleTeamIds.Contains(game.AwayTeam.Id);
+        var game = await league.GetLeagueGameDetailAsync(gameId, cancellationToken);
+        if (noPersistence)
+        {
+            return new OkObjectResult(game);
+        }
+
+        var userId = await resolver.GetOrCreateUserIdAsync(context, cancellationToken);
+        var scope = await dataScope.GetAsync(userId, unrestricted, cancellationToken);
+        var visible = !scope.IsRestricted
+            || scope.ContainsTeam(game.HomeTeam.Id)
+            || scope.ContainsTeam(game.AwayTeam.Id);
         return visible ? new OkObjectResult(game) : new StatusCodeResult(StatusCodes.Status403Forbidden);
     }
 }

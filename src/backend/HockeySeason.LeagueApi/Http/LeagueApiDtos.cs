@@ -49,6 +49,11 @@ internal sealed record CategoryRowDto
     public string? NameFr { get; init; }
 }
 
+/// <summary>
+/// One row of a league standings table. Schedules that do not track
+/// special-team figures (tournaments, for example) omit them, so the
+/// percentages are null rather than zero.
+/// </summary>
 internal sealed record StandingsRowDto
 {
     public required int TeamId { get; init; }
@@ -60,36 +65,40 @@ internal sealed record StandingsRowDto
     [JsonPropertyName("manualRanking")]
     public int? ManualRanking { get; init; }
 
+    // Counters default to zero: a schedule with no played or approved game
+    // omits them instead of publishing zeros.
+
     [JsonPropertyName("gamesPlayed")]
-    public required int GamesPlayed { get; init; }
+    public int GamesPlayed { get; init; }
 
-    public required int Wins { get; init; }
+    public int Wins { get; init; }
 
-    public required int Losses { get; init; }
+    public int Losses { get; init; }
 
-    public required int Ties { get; init; }
+    public int Ties { get; init; }
 
-    public required int Points { get; init; }
+    public int Points { get; init; }
 
     [JsonPropertyName("goalFor")]
-    public required int GoalsFor { get; init; }
+    public int GoalsFor { get; init; }
 
     [JsonPropertyName("goalAgainst")]
-    public required int GoalsAgainst { get; init; }
+    public int GoalsAgainst { get; init; }
 
     [JsonPropertyName("diff")]
-    public required int GoalDifferential { get; init; }
+    public int GoalDifferential { get; init; }
 
     [JsonPropertyName("pim")]
-    public required int PenaltyMinutes { get; init; }
+    public int PenaltyMinutes { get; init; }
 
     [JsonPropertyName("powerplayPct")]
-    public required double PowerPlayPercentage { get; init; }
+    public double? PowerPlayPercentage { get; init; }
 
     [JsonPropertyName("penaltyKillPct")]
-    public required double PenaltyKillPercentage { get; init; }
+    public double? PenaltyKillPercentage { get; init; }
 
-    public required StandingsTeamDto Team { get; init; }
+    /// <summary>Absent on rows that only reserve a slot (placeholder or bracket row).</summary>
+    public StandingsTeamDto? Team { get; init; }
 }
 
 internal sealed record StandingsTeamDto
@@ -98,12 +107,14 @@ internal sealed record StandingsTeamDto
 
     public required string Name { get; init; }
 
+    /// <summary>The league sends null for teams that publish no abbreviation.</summary>
     [JsonPropertyName("shortName")]
-    public required string ShortName { get; init; }
+    public string? ShortName { get; init; }
 
-    public required string Division { get; init; }
+    /// <summary>Absent on tournament schedules.</summary>
+    public string? Division { get; init; }
 
-    public required string Gender { get; init; }
+    public string? Gender { get; init; }
 }
 
 internal sealed record GameRowDto

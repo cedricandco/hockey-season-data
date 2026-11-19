@@ -15,10 +15,11 @@ public enum UserRoleCode
 /// <summary>Role granted to a user, with its licence limit.</summary>
 public sealed record UserRoleSummary(int RoleId, UserRoleCode Code, string DisplayName, int MaxFollowedEntities);
 
-/// <summary>Teams and leagues the user follows directly.</summary>
+/// <summary>Teams, leagues and associations the user follows.</summary>
 public sealed record UserSubscriptions(
     IReadOnlyList<UserTeamSubscription> Teams,
-    IReadOnlyList<UserLeagueSubscription> Leagues);
+    IReadOnlyList<UserLeagueSubscription> Leagues,
+    IReadOnlyList<UserOrganizationSubscription> Organizations);
 
 /// <summary>
 /// One followed team, with its lock window: the identifier is the Spordle team
@@ -28,4 +29,10 @@ public sealed record UserTeamSubscription(int TeamId, string? Name, DateTimeOffs
 
 /// <summary>One followed league: the identifier is the Spordle category id (guid).</summary>
 public sealed record UserLeagueSubscription(string LeagueId, string? Name, DateTimeOffset CreatedAt);
+
+/// <summary>
+/// One followed association (PRESIDENT scope): the identifier is the Spordle
+/// id (<c>organizations.external_id</c>), like teams and leagues.
+/// </summary>
+public sealed record UserOrganizationSubscription(int OrganizationId, string? Name, DateTimeOffset CreatedAt);
 

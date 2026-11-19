@@ -108,7 +108,7 @@ public sealed class ReferenceDataService(
             published.AddRange((await leagueApi.GetSeasonsAsync(officeId, cancellationToken))
                 .Select(season => new ReferenceSeason(season.SeasonId, season.Name, season.IsCurrent)));
         }
-        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
+        catch (Exception exception) when (IsUnavailable(exception))
         {
             // The office may publish no season: the known seasons stay usable.
             logger.LogWarning(exception, "Seasons of office {OfficeId} are unavailable.", officeId);
@@ -156,45 +156,62 @@ public sealed class ReferenceDataService(
         foreach (var category in categories)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var teams = await ReadCategoryTeamsAsync(officeId, request.SeasonId, category, warnings, cancellationToken);
-            if (teams.Count == 0)
+            var schedules = await ReadCategorySchedulesAsync(
+                officeId, request.SeasonId, category, warnings, cancellationToken);
+            if (schedules.Count == 0)
             {
                 // Nothing to expose: a category without a published team has no
                 // standings, and keeping an empty league would only add noise.
                 continue;
             }
 
-            leagues.Add(new ReferenceLeague(category.Id, category.FrenchName, teams));
+            var teams = await ReadSchedulesTeamsAsync(schedules, warnings, cancellationToken);
+            if (teams.Count == 0)
+            {
+                continue;
+            }
+
+            leagues.Add(new ReferenceLeague(
+                category.Id,
+                category.FrenchName,
+                teams,
+                [.. schedules.Select(schedule => new ReferenceSchedule(schedule.Id, schedule.Name))]));
         }
 
         return await PersistAsync(request, organization.Id, organization.Name, officeId, office.Name,
             leagues, warnings, cancellationToken);
     }
 
-    /// <summary>
-    /// Teams of one category: the union of the standings of every schedule the
-    /// category is played in ("Rives", "Vallée"…), by Spordle team id.
-    /// </summary>
-    private async Task<IReadOnlyList<ReferenceTeam>> ReadCategoryTeamsAsync(
+    /// <summary>Schedules of one category, or an empty list with a warning when Spordle fails.</summary>
+    private async Task<IReadOnlyList<HockeySeason.LeagueApi.Models.League>> ReadCategorySchedulesAsync(
         int officeId,
         string seasonId,
         LeagueCategory category,
         List<string> warnings,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<HockeySeason.LeagueApi.Models.League> schedules;
         try
         {
-            schedules = await leagueApi.GetCategorySchedulesAsync(
+            return await leagueApi.GetCategorySchedulesAsync(
                 officeId, seasonId, category.Id, cancellationToken);
         }
-        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
+        catch (Exception exception) when (IsUnavailable(exception))
         {
             logger.LogWarning(exception, "Schedules of category {CategoryId} are unavailable.", category.Id);
             warnings.Add($"Les horaires de la ligue « {category.FrenchName} » sont indisponibles : la ligue est ignorée.");
             return [];
         }
+    }
 
+    /// <summary>
+    /// Teams of one category: the union of the standings of every schedule the
+    /// category is played in ("Rives", "Vallée"…), by Spordle team id.
+    /// </summary>
+    private async Task<IReadOnlyList<ReferenceTeam>> ReadSchedulesTeamsAsync(
+        IReadOnlyList<HockeySeason.LeagueApi.Models.League> schedules,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
         var teams = new Dictionary<int, ReferenceTeam>();
         foreach (var schedule in schedules)
         {
@@ -204,7 +221,7 @@ public sealed class ReferenceDataService(
             {
                 scheduleTeams = await leagueApi.GetLeagueTeamsAsync(schedule.Id, cancellationToken);
             }
-            catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
+            catch (Exception exception) when (IsUnavailable(exception))
             {
                 logger.LogWarning(exception, "Teams of schedule {ScheduleId} are unavailable.", schedule.Id);
                 warnings.Add($"Les équipes de l'horaire « {schedule.Name} » sont indisponibles.");
@@ -219,6 +236,15 @@ public sealed class ReferenceDataService(
 
         return [.. teams.Values.OrderBy(team => team.Name, StringComparer.OrdinalIgnoreCase)];
     }
+
+    /// <summary>
+    /// True for a Spordle read that failed without invalidating the whole
+    /// import: an unreachable endpoint, a cancelled/timed-out attempt, or a
+    /// payload whose shape is not the expected one. Those are reported as a
+    /// warning so the remaining schedules still import.
+    /// </summary>
+    private static bool IsUnavailable(Exception exception) =>
+        exception is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException;
 
     private async Task<ReferenceImportResult> PersistAsync(
         ReferenceImportRequest request,
@@ -299,6 +325,7 @@ public sealed class ReferenceDataService(
             .Where(league => league.SeasonId == season.Id
                 && league.Division.OrganizationId == organization.Id)
             .Include(league => league.Teams)
+            .Include(league => league.Schedules)
             .ToListAsync(cancellationToken);
         var leaguesByExternalId = associationLeagues
             .GroupBy(league => league.ExternalId, StringComparer.Ordinal)
@@ -353,6 +380,61 @@ public sealed class ReferenceDataService(
             }
 
             keptLeagueIds.Add(league.Id);
+
+            // Schedules carry the Spordle ids the standings, games and
+            // suspensions calls are keyed on, so they follow the league.
+            var schedulesByExternalId = league.Schedules
+                .GroupBy(schedule => schedule.ExternalId, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+            var keptScheduleIds = new HashSet<int>();
+            foreach (var sourceSchedule in source.Schedules)
+            {
+                var scheduleExternalId = sourceSchedule.Id.ToString(CultureInfo.InvariantCulture);
+                keptScheduleIds.Add(sourceSchedule.Id);
+                if (schedulesByExternalId.TryGetValue(scheduleExternalId, out var schedule))
+                {
+                    if (schedule.Name != sourceSchedule.Name)
+                    {
+                        schedule.Name = sourceSchedule.Name;
+                        schedule.UpdatedAt = now;
+                        leagueChanged = true;
+                    }
+                    continue;
+                }
+
+                // The schedule may already exist under another league row of the
+                // same season (a category re-parented between offices): its
+                // Spordle id is unique, so the row is moved, never duplicated.
+                var relocatedSchedule = await db.LeagueSchedules
+                    .FirstOrDefaultAsync(candidate => candidate.ExternalId == scheduleExternalId, cancellationToken);
+                if (relocatedSchedule is null)
+                {
+                    db.LeagueSchedules.Add(new LeagueSchedule
+                    {
+                        LeagueId = league.Id,
+                        ExternalId = scheduleExternalId,
+                        Name = sourceSchedule.Name,
+                        CreatedAt = now,
+                        UpdatedAt = now,
+                    });
+                }
+                else
+                {
+                    relocatedSchedule.LeagueId = league.Id;
+                    relocatedSchedule.Name = sourceSchedule.Name;
+                    relocatedSchedule.UpdatedAt = now;
+                }
+                leagueChanged = true;
+            }
+
+            var staleSchedules = league.Schedules
+                .Where(schedule => !IsKept(schedule.ExternalId, keptScheduleIds))
+                .ToList();
+            if (staleSchedules.Count > 0)
+            {
+                db.LeagueSchedules.RemoveRange(staleSchedules);
+                leagueChanged = true;
+            }
 
             var teamsByExternalId = league.Teams
                 .GroupBy(team => team.ExternalId, StringComparer.Ordinal)

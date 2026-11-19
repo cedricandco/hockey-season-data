@@ -21,7 +21,10 @@ public sealed record CreateLeagueSubscriptionRequest(string? LeagueId);
 /// Every function provisions the caller on first use through
 /// <see cref="RequestUserResolver"/>.
 /// </summary>
-public sealed class UserFunctions(RequestUserResolver resolver, IUserService users)
+public sealed class UserFunctions(
+    RequestUserResolver resolver,
+    IUserService users,
+    ISubscriptionCatalogService catalog)
 {
     [Function("UserAccount")]
     public async Task<IActionResult> Account(
@@ -71,10 +74,86 @@ public sealed class UserFunctions(RequestUserResolver resolver, IUserService use
 
         var userId = await resolver.GetOrCreateUserIdAsync(context, cancellationToken);
         var subscriptions = await users.GetSubscriptionsAsync(userId, cancellationToken);
+        var limits = await users.GetLimitsAsync(userId, cancellationToken);
         return new OkObjectResult(new
         {
             Teams = subscriptions.Teams.Select(team => new { team.TeamId, team.Name, team.CreatedAt, team.LockedUntil }),
             Leagues = subscriptions.Leagues.Select(league => new { league.LeagueId, league.Name, league.CreatedAt }),
+            Organizations = subscriptions.Organizations.Select(organization =>
+                new { organization.OrganizationId, organization.Name, organization.CreatedAt }),
+            Limits = limits.Select(limit => new { limit.Kind, limit.Max, limit.Used, limit.CanAddMore }),
+        });
+    }
+
+    /// <summary>
+    /// Associations offered by the "follow a team" selector. Any authenticated
+    /// caller may read the reference data: it is shared and read-only.
+    /// </summary>
+    [Function("SubscriptionAssociations")]
+    public async Task<IActionResult> Associations(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "subscriptions/associations")] HttpRequest request,
+        FunctionContext context, CancellationToken cancellationToken)
+    {
+        if (Unauthorized(context) is { } denied) return denied;
+
+        var associations = await catalog.GetAssociationsAsync(cancellationToken);
+        return new OkObjectResult(new
+        {
+            associations = associations.Select(item => new { item.Id, item.Name }),
+        });
+    }
+
+    /// <summary>Divisions (Spordle offices) of one association.</summary>
+    [Function("SubscriptionDivisions")]
+    public async Task<IActionResult> Divisions(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "subscriptions/associations/{associationId:int}/divisions")] HttpRequest request,
+        int associationId, FunctionContext context, CancellationToken cancellationToken)
+    {
+        if (Unauthorized(context) is { } denied) return denied;
+        if (associationId <= 0) return InvalidBody();
+
+        var divisions = await catalog.GetDivisionsAsync(associationId, cancellationToken);
+        return new OkObjectResult(new
+        {
+            divisions = divisions.Select(item => new { item.Id, item.Name }),
+        });
+    }
+
+    /// <summary>
+    /// Leagues (Spordle categories, French name) of a division for a season;
+    /// the latest imported season is used when <c>seasonId</c> is omitted.
+    /// </summary>
+    [Function("SubscriptionLeagues")]
+    public async Task<IActionResult> LeagueCatalog(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "subscriptions/divisions/{divisionId:int}/leagues")] HttpRequest request,
+        int divisionId, FunctionContext context, CancellationToken cancellationToken)
+    {
+        if (Unauthorized(context) is { } denied) return denied;
+        if (divisionId <= 0) return InvalidBody();
+
+        var season = request.Query["seasonId"].ToString();
+        var options = await catalog.GetLeaguesAsync(
+            divisionId, string.IsNullOrWhiteSpace(season) ? null : season.Trim(), cancellationToken);
+        return new OkObjectResult(new
+        {
+            options.SeasonId,
+            leagues = options.Leagues.Select(league => new { league.Id, league.Name }),
+        });
+    }
+
+    /// <summary>Teams of one league (Spordle category guid), by Spordle team id.</summary>
+    [Function("SubscriptionTeams")]
+    public async Task<IActionResult> TeamCatalog(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "subscriptions/leagues/{leagueId}/teams")] HttpRequest request,
+        string leagueId, FunctionContext context, CancellationToken cancellationToken)
+    {
+        if (Unauthorized(context) is { } denied) return denied;
+        if (string.IsNullOrWhiteSpace(leagueId)) return InvalidBody();
+
+        var teams = await catalog.GetTeamsAsync(leagueId, cancellationToken);
+        return new OkObjectResult(new
+        {
+            teams = teams.Select(item => new { item.Id, item.Name }),
         });
     }
 
@@ -90,7 +169,7 @@ public sealed class UserFunctions(RequestUserResolver resolver, IUserService use
 
         var userId = await resolver.GetOrCreateUserIdAsync(context, cancellationToken);
         var result = await users.AddTeamSubscriptionAsync(userId, body.EntityId, cancellationToken);
-        return Map(result.Error); // LockedUntil is exposed via GET users/me/subscriptions
+        return Map(result.Error); // LockedUntil and headroom come from GET users/me/subscriptions
     }
 
     [Function("RemoveTeamSubscription")]
@@ -208,6 +287,15 @@ public sealed class UserFunctions(RequestUserResolver resolver, IUserService use
         },
         SubscriptionError.OutOfScope => new StatusCodeResult(StatusCodes.Status403Forbidden),
         SubscriptionError.Duplicate => new ConflictObjectResult(new { error = "already_followed" }),
+        SubscriptionError.Locked => new ObjectResult(new ProblemDetails
+        {
+            Status = StatusCodes.Status423Locked,
+            Title = "team_locked",
+            Detail = "The team was followed less than 15 days ago: removal is locked until the lock window ends.",
+        })
+        {
+            StatusCode = StatusCodes.Status423Locked,
+        },
         _ => new BadRequestResult(),
     };
 }
