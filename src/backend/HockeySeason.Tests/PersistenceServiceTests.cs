@@ -207,11 +207,11 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task CallerDataScope_ExposesOnlyTheFollowedTeamAndItsParents()
+    public async Task CallerDataScope_FollowedTeamOpensItsWholeLeague()
     {
         var factory = CreateFactory();
         // One league of division 6193 with two teams; another league of division
-        // 6194. Only team 410 and its league are followed.
+        // 6194. Only team 410 is followed.
         await SeedTeamAsync(factory, "410", leagueExternalId: "followed-team-league", divisionExternalId: "6193");
         await SeedTeamAsync(factory, "411", leagueExternalId: "followed-team-league", divisionExternalId: "6193");
         await SeedTeamAsync(factory, "420", leagueExternalId: "other-league", divisionExternalId: "6194");
@@ -223,20 +223,69 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
         var scope = await service.GetAsync(userId);
 
         Assert.True(scope.IsRestricted);
-        // The followed team, its league and division are reachable, with its
-        // schedule id read from the database.
-        var team = Assert.Single(scope.Teams);
-        Assert.Equal(410, team.Id);
-        Assert.Equal(194908, team.ScheduleId);
-        Assert.Equal("followed-team-league", team.LeagueExternalId);
+        // The followed team and its opponents of the same league are readable,
+        // with the schedule id read from the database.
+        Assert.Equal([410, 411], scope.Teams.Select(team => team.Id).OrderBy(id => id));
+        Assert.Equal(194908, scope.Teams.Single(team => team.Id == 410).ScheduleId);
         Assert.Contains(scope.Leagues, league => league.ExternalId == "followed-team-league");
         Assert.Contains(scope.Divisions, division => division.Id == 6193);
-        // The sibling team of the same league is NOT exposed: only a followed
-        // league exposes all of its teams.
-        Assert.False(scope.ContainsTeam(411));
-        // Another division is out of reach too.
+        // Another division is out of reach: following a team opens its league,
+        // not the whole division.
         Assert.DoesNotContain(scope.Divisions, division => division.Id == 6194);
         Assert.False(scope.ContainsDivision(6194));
+        Assert.False(scope.ContainsTeam(420));
+    }
+
+    [Fact]
+    public async Task GetLeagueTeams_ListsAllTeamsOfAFollowedTeamLeagueAndNothingOtherwise()
+    {
+        var factory = CreateFactory();
+        await SeedTeamAsync(factory, "410", leagueExternalId: "followed-team-league", divisionExternalId: "6193");
+        await SeedTeamAsync(factory, "411", leagueExternalId: "followed-team-league", divisionExternalId: "6193");
+        await SeedTeamAsync(factory, "420", leagueExternalId: "other-league", divisionExternalId: "6193");
+        await SeedTeamAsync(factory, "430", leagueExternalId: "unreached-league", divisionExternalId: "6194");
+        await SeedScheduleAsync(factory, "followed-team-league", 194908);
+        await SeedScheduleAsync(factory, "other-league", 194910);
+        var userId = await SeedFollowerAsync(factory, followedTeamExternalId: "410");
+        var service = new CallerDataScopeService(factory);
+
+        var followedLeagueId = await LeagueIdAsync(factory, "followed-team-league");
+        var otherLeagueId = await LeagueIdAsync(factory, "other-league");
+        var databaseTeamId = await TeamIdAsync(factory, "411");
+
+        // One followed team opens its whole league: every team of it is listed,
+        // keyed on database ids with the Spordle id kept for the live calls.
+        var teams = await service.GetLeagueTeamsAsync(userId, followedLeagueId);
+        Assert.Equal([410, 411], teams.Select(team => team.ExternalId).OrderBy(id => id));
+        Assert.Equal(databaseTeamId, teams.Single(team => team.ExternalId == 411).Id);
+        Assert.Equal([194908], teams.Single(team => team.ExternalId == 410).Schedules.Select(schedule => schedule.Id));
+
+        // A league without a follow lists nothing, and an unknown league id too.
+        Assert.Empty(await service.GetLeagueTeamsAsync(userId, otherLeagueId));
+        Assert.Empty(await service.GetLeagueTeamsAsync(userId, 999999));
+
+        // A team of an opened league is selectable directly; one of a closed
+        // league is not (the page answers 403).
+        Assert.NotNull(await service.GetSelectableTeamAsync(userId, databaseTeamId));
+        Assert.Null(await service.GetSelectableTeamAsync(userId, await TeamIdAsync(factory, "420")));
+
+        // A caller who follows nothing sees no league team at all.
+        var stranger = (await new UserProvisioningService(factory, NullLogger<UserProvisioningService>.Instance)
+            .ProvisionAsync(new($"auth0|stranger-{Guid.NewGuid():N}", null, null, null))).UserId;
+        Assert.Empty(await service.GetLeagueTeamsAsync(stranger, followedLeagueId));
+        Assert.Null(await service.GetSelectableTeamAsync(stranger, databaseTeamId));
+    }
+
+    private static async Task<int> LeagueIdAsync(IDbContextFactory<HockeySeasonDbContext> factory, string externalId)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.Leagues.Where(league => league.ExternalId == externalId).Select(league => league.Id).SingleAsync();
+    }
+
+    private static async Task<int> TeamIdAsync(IDbContextFactory<HockeySeasonDbContext> factory, string externalId)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.Teams.Where(team => team.ExternalId == externalId).Select(team => team.Id).SingleAsync();
     }
 
     [Fact]

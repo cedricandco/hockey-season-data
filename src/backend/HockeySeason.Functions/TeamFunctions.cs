@@ -135,12 +135,14 @@ public sealed class TeamFunctions(
     }
 
     /// <summary>
-    /// Detail of a followed team, keyed on database ids: the team page passes
-    /// the <c>teams.id</c> and <c>leagues.id</c> of its selectors, never a
-    /// Spordle id. The league is validated against the follows (403 otherwise)
-    /// and the published schedule is resolved from the database, trying every
-    /// schedule of the league because a category is played in several ones
-    /// ("Saison Rives", "Phase 2"…).
+    /// Detail of a team the page may open, keyed on database ids: the team page
+    /// passes a <c>teams.id</c> of its selectors, never a Spordle id. A team the
+    /// caller follows may be opened, and so may any team of a league that
+    /// contains one — following a team opens its whole league. The league is
+    /// validated against that rule (403 otherwise) and the published schedule
+    /// is resolved from the database, trying every schedule of the league
+    /// because a category is played in several ones ("Saison Rives", "Phase
+    /// 2"…).
     /// </summary>
     [Function("FollowedTeamDetail")]
     public async Task<IActionResult> FollowedTeamDetail(
@@ -156,16 +158,15 @@ public sealed class TeamFunctions(
         if (!DatabaseOptions.IsPersistenceConfigured(configuration)) return new NotFoundResult();
 
         var userId = await resolver.GetOrCreateUserIdAsync(context, cancellationToken);
-        var followed = (await dataScope.GetFollowedTeamsAsync(userId, cancellationToken))
-            .FirstOrDefault(team => team.Id == teamId);
-        if (followed is null)
+        var selectable = await dataScope.GetSelectableTeamAsync(userId, teamId, cancellationToken);
+        if (selectable is null)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
-        var scheduleIds = followed.Schedules.Select(schedule => schedule.Id).ToArray();
+        var scheduleIds = selectable.Schedules.Select(schedule => schedule.Id).ToArray();
         if (scheduleIds.Length == 0)
             return new NotFoundResult();
 
-        var result = await teams.GetAsync(scheduleIds, followed.ExternalId, cancellationToken);
+        var result = await teams.GetAsync(scheduleIds, selectable.ExternalId, cancellationToken);
         return result is null ? new NotFoundResult() : new OkObjectResult(result);
     }
 

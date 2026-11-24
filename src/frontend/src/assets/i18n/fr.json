@@ -13,9 +13,9 @@
   },
   "TEAM": {
     "TITLE": "Détail d’une équipe",
-    "SUBTITLE": "Retrouvez vos équipes suivies ou choisissez une équipe parmi celles que vous suivez.",
+    "SUBTITLE": "Retrouvez vos équipes suivies, ou choisissez une équipe de leurs ligues — suivre une équipe ouvre sa ligue entière, adversaires compris.",
     "MY_TEAMS": "Équipes que je suis",
-    "SELECTOR": "Choisir une équipe parmi mes équipes suivies",
+    "SELECTOR": "Choisir une équipe parmi les ligues que je suis (adversaires inclus)",
     "DIVISION": "Division",
     "NO_FOLLOWS": "Vous ne suivez aucune équipe pour le moment.",
     "NO_FOLLOWS_LINK": "Aller à la page Configuration",

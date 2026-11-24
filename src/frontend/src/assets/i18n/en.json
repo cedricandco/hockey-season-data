@@ -12,9 +12,9 @@
     "ADMIN_SHORT": "Admin"
   },
   "TEAM": {
-    "TITLE": "Team details",     "SUBTITLE": "Find your followed teams or pick one among the teams you follow.",
+    "TITLE": "Team details",     "SUBTITLE": "Find your followed teams, or pick one from their leagues — following a team opens its whole league, opponents included.",
         "MY_TEAMS": "Teams I follow",
-        "SELECTOR": "Pick a team among my followed teams",
+        "SELECTOR": "Pick a team from the leagues I follow (opponents included)",
         "DIVISION": "Division",
     "NO_FOLLOWS": "You do not follow any team yet.",
     "NO_FOLLOWS_LINK": "Go to the Settings page",

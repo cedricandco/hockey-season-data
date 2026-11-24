@@ -550,6 +550,14 @@ public sealed class UserFunctionsTests
         public Task<IReadOnlyList<FollowedTeam>> GetFollowedTeamsAsync(
             int userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(FunctionsTests.FollowedTeamsFrom(scope));
+
+        public Task<IReadOnlyList<SelectableTeam>> GetLeagueTeamsAsync(
+            int userId, int leagueId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SelectableTeam>>([]);
+
+        public Task<SelectableTeam?> GetSelectableTeamAsync(
+            int userId, int teamId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<SelectableTeam?>(null);
     }
 
     private sealed class FakeReferenceData : IReferenceDataService

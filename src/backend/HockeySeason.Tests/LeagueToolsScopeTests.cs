@@ -110,7 +110,7 @@ public sealed class LeagueToolsScopeTests
 
         var exception = await Assert.ThrowsAsync<McpException>(
             () => tools.GetTeamDetail(999999, CancellationToken.None));
-        Assert.Contains("not one of the teams you follow", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("not one of the teams you may read", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -137,5 +137,13 @@ public sealed class LeagueToolsScopeTests
             int userId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<FollowedTeam>>(
                 [new FollowedTeam(182497, 182497, "Grizzlys", 1, "M13 B", [new FollowedSchedule(194899, "M13 B Saison")], 6193, "Simple lettre", 1, "Hockey Richelieu")]);
+
+        public Task<IReadOnlyList<SelectableTeam>> GetLeagueTeamsAsync(
+            int userId, int leagueId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SelectableTeam>>([]);
+
+        public Task<SelectableTeam?> GetSelectableTeamAsync(
+            int userId, int teamId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<SelectableTeam?>(null);
     }
 }

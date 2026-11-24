@@ -8,16 +8,19 @@ using Microsoft.Extensions.Configuration;
 namespace HockeySeason.Functions;
 
 /// <summary>
-/// Navigation of the team page, limited to the teams the caller follows.
+/// Navigation of the team page, limited to the caller's follows and the
+/// leagues they open.
 /// </summary>
 /// <remarks>
 /// The reference data comes from the database and every identifier returned is
 /// a database id: an association is its <c>organizations.id</c>, a division its
 /// <c>divisions.id</c>, a league its <c>leagues.id</c> and a team its
-/// <c>teams.id</c>. Only the follows are listed - an association, division or
-/// league appears only when at least one of its teams is followed, so a team
-/// outside the follows can neither be reached nor guessed. The Spordle ids stay
-/// behind the API: the detail endpoint resolves the published schedule itself.
+/// <c>teams.id</c>. Associations, divisions and leagues list only what owns a
+/// followed team — a team outside the follows can neither be reached nor
+/// guessed — but once a league is opened (one of its teams is followed, or the
+/// league/association is followed) all of its teams are listed: following a
+/// team opens its whole league. The Spordle ids stay behind the API: the
+/// detail endpoint resolves the published schedule itself.
 /// </remarks>
 public sealed class SubscriptionNavigationFunctions(
     ICallerDataScopeService dataScope,
@@ -78,9 +81,8 @@ public sealed class SubscriptionNavigationFunctions(
         if (Unauthorized(context) is { } denied) return denied;
         if (leagueId <= 0) return InvalidId();
 
-        var teams = await GetTeamsAsync(context, cancellationToken);
+        var teams = await GetLeagueTeamsAsync(context, leagueId, cancellationToken);
         return new OkObjectResult(teams
-            .Where(team => team.LeagueId == leagueId)
             .Select(team => new { TeamId = team.Id, team.Name })
             .OrderBy(team => team.Name, StringComparer.OrdinalIgnoreCase));
     }
@@ -125,6 +127,24 @@ public sealed class SubscriptionNavigationFunctions(
 
         var userId = await resolver.GetOrCreateUserIdAsync(context, cancellationToken);
         return await dataScope.GetFollowedTeamsAsync(userId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Teams the team page can open in one league: all of them once the league
+    /// holds a followed team — following a team opens its whole league — and
+    /// nothing otherwise (and nothing for a host without persistence, which
+    /// cannot resolve follows).
+    /// </summary>
+    private async Task<IReadOnlyList<SelectableTeam>> GetLeagueTeamsAsync(
+        FunctionContext context, int leagueId, CancellationToken cancellationToken)
+    {
+        if (!DatabaseOptions.IsPersistenceConfigured(configuration))
+        {
+            return [];
+        }
+
+        var userId = await resolver.GetOrCreateUserIdAsync(context, cancellationToken);
+        return await dataScope.GetLeagueTeamsAsync(userId, leagueId, cancellationToken);
     }
 
     private static ObjectResult? Unauthorized(FunctionContext context)

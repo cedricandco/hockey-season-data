@@ -86,8 +86,8 @@ public sealed class LeagueTools
     [McpServerTool(Name = "GetLeagueTeams", Title = "Get League Teams", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
     [Description(
         "Returns the teams you may see in one league, with their Spordle team id and the schedule id. " +
-        "A followed league lists all its teams; a league reached only through a followed team lists " +
-        "that team alone.")]
+        "Following a team opens its whole league: every team of the league is listed, not only the " +
+        "one followed. A league you follow directly, or one inside a followed association, is open too.")]
     public async Task<IReadOnlyList<ScopedTeam>> GetLeagueTeams(
         [Description("Spordle category identifier (guid) returned by GetLeagues.")] string leagueId,
         CancellationToken cancellationToken = default)
@@ -162,7 +162,7 @@ public sealed class LeagueTools
         await EnsureScheduleVisibleAsync(scheduleId, cancellationToken, scope).ConfigureAwait(false);
         if (teamId is { } id && !scope.ContainsTeam(id))
         {
-            throw new McpException($"Team {id} is not one of the teams you follow.");
+            throw new McpException($"Team {id} is not one of the teams you may read.");
         }
 
         return await _leagueApiService
@@ -210,7 +210,7 @@ public sealed class LeagueTools
             && !scope.ContainsTeam(detail.HomeTeam.Id)
             && !scope.ContainsTeam(detail.AwayTeam.Id))
         {
-            throw new McpException($"Game {gameId} does not involve any team you follow.");
+            throw new McpException($"Game {gameId} does not involve any team you may read.");
         }
 
         return detail;
@@ -220,7 +220,8 @@ public sealed class LeagueTools
     [Description(
         "Returns a team's division standings, completed games with full box scores, upcoming games, " +
         "event-based player scoring and special-teams and penalty totals. Players without game " +
-        "events are not included. Use GetLeagueTeams to resolve the team id.")]
+        "events are not included. Use GetLeagueTeams to resolve the team id; any team of a league " +
+        "that contains a followed team works, not only the followed one.")]
     public async Task<TeamDetailResponse> GetTeamDetail(
         [Description("Team identifier returned by GetLeagueTeams.")] int teamId,
         CancellationToken cancellationToken = default)
@@ -229,7 +230,7 @@ public sealed class LeagueTools
         var team = scope.Teams.FirstOrDefault(candidate => candidate.Id == teamId);
         if (team is null)
         {
-            throw new McpException($"Team {teamId} is not one of the teams you follow.");
+            throw new McpException($"Team {teamId} is not one of the teams you may read.");
         }
 
         if (team.ScheduleId is not { } scheduleId)

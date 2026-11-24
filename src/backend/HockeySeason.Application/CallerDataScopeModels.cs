@@ -38,8 +38,9 @@ public sealed record ScopedTeam(int Id, string Name, string LeagueExternalId, in
 /// <summary>
 /// Data the caller may read, resolved from the database follows: the
 /// associations, divisions, leagues and teams of the caller, never the whole
-/// reference data. Implements "you can only ask about what you follow": a
-/// followed team exposes its league and division as read-only parents, a
+/// reference data. Implements "you can only ask about what you follow":
+/// following a team opens its whole league — every team of the league is
+/// readable, with the division and association as read-only parents — a
 /// followed league exposes all its teams, and a followed association exposes
 /// all its divisions and leagues.
 /// </summary>
@@ -69,7 +70,7 @@ public sealed record CallerDataScope(
     /// <summary>Nothing is followed: no association, division, league or team.</summary>
     public static CallerDataScope NothingFollowed() => new(true, [], [], [], []);
 
-    /// <summary>Whether the caller follows the team (Spordle team id).</summary>
+    /// <summary>Whether the team (Spordle team id) is readable: followed directly, or any team of a league that contains one.</summary>
     public bool ContainsTeam(int teamId) => Teams.Any(team => team.Id == teamId);
 
     /// <summary>Whether the caller may read the league (Spordle category guid).</summary>
@@ -115,6 +116,22 @@ public sealed record FollowedTeam(
     string AssociationName);
 
 /// <summary>
+/// A team the team page can open: one the caller follows, or any team of a
+/// league that contains one — following a team opens its whole league.
+/// <see cref="Id"/> is the database id the page sends back,
+/// <see cref="ExternalId"/> is the Spordle team id the live read endpoints
+/// expect and <see cref="Schedules"/> are the published schedules of its
+/// league, which the detail call tries.
+/// </summary>
+public sealed record SelectableTeam(
+    int Id,
+    int ExternalId,
+    string Name,
+    int LeagueId,
+    string LeagueName,
+    IReadOnlyList<FollowedSchedule> Schedules);
+
+/// <summary>
 /// Use case: resolve what a caller may browse from the database
 /// (association → division → league → team). This is the single source of the
 /// "only what I follow" rule for the weekly report, the team page and the MCP
@@ -139,6 +156,24 @@ public interface ICallerDataScopeService
     /// </summary>
     Task<IReadOnlyList<FollowedTeam>> GetFollowedTeamsAsync(
         int userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Teams the team page can list for one league: all of them once one team
+    /// of the league is followed — following a team opens its whole league —
+    /// and nothing otherwise. Ids are database ids, the page's vocabulary;
+    /// <see cref="SelectableTeam.ExternalId"/> is the Spordle team id the live
+    /// endpoints expect.
+    /// </summary>
+    Task<IReadOnlyList<SelectableTeam>> GetLeagueTeamsAsync(
+        int userId, int leagueId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// One team the team page can open by database id: a followed team, or any
+    /// team of a league that contains one. Null when the team lives outside
+    /// those leagues (the page answers 403) or carries no Spordle id.
+    /// </summary>
+    Task<SelectableTeam?> GetSelectableTeamAsync(
+        int userId, int teamId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Same as <see cref="GetAsync(int, bool, CancellationToken)"/> for a caller

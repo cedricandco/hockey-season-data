@@ -307,6 +307,23 @@ public sealed class FunctionsTests
         public Task<IReadOnlyList<FollowedTeam>> GetFollowedTeamsAsync(
             int userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(FollowedTeamsFrom(scope));
+
+        public Task<IReadOnlyList<SelectableTeam>> GetLeagueTeamsAsync(
+            int userId, int leagueId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SelectableTeam>>(
+                FollowedTeamsFrom(scope)
+                    .Where(team => team.LeagueId == leagueId)
+                    .Select(team => new SelectableTeam(
+                        team.Id, team.ExternalId, team.Name, team.LeagueId, team.LeagueName, team.Schedules))
+                    .ToList());
+
+        public Task<SelectableTeam?> GetSelectableTeamAsync(
+            int userId, int teamId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(FollowedTeamsFrom(scope)
+                .Where(team => team.Id == teamId)
+                .Select(team => (SelectableTeam?)new SelectableTeam(
+                    team.Id, team.ExternalId, team.Name, team.LeagueId, team.LeagueName, team.Schedules))
+                .FirstOrDefault());
     }
 
     /// <summary>

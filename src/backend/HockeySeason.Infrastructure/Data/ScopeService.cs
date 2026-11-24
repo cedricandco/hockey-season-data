@@ -7,11 +7,12 @@ namespace HockeySeason.Infrastructure.Data;
 
 /// <summary>
 /// Computes the visible data scope of a user: the union of team subscriptions
-/// (direct), the leagues owning those teams, league subscriptions, and every
-/// league of the organizations the user follows (PRESIDENT scope, decision
-/// A2). Spordle (external) ids are returned — the vocabulary the frontend and
-/// the public league API use. Team and office ids are Spordle integers, league
-/// ids are the Spordle category guids. Results are cached 60 seconds per user.
+/// (direct), the leagues owning those teams — opened as a whole, so every
+/// team of them is readable — league subscriptions, and every league of the
+/// organizations the user follows (PRESIDENT scope, decision A2). Spordle
+/// (external) ids are returned — the vocabulary the frontend and the public
+/// league API use. Team and office ids are Spordle integers, league ids are
+/// the Spordle category guids. Results are cached 60 seconds per user.
 /// </summary>
 public sealed class ScopeService(
     IDbContextFactory<HockeySeasonDbContext> dbContextFactory,
@@ -33,7 +34,8 @@ public sealed class ScopeService(
         var officeIds = new HashSet<int>();
         var wholeLeagueIds = new HashSet<string>(StringComparer.Ordinal);
 
-        // Direct team subscriptions → their owning leagues.
+        // Direct team subscriptions → their owning leagues, opened as a whole:
+        // following a team exposes its league, so every team of it is readable.
         var followedTeams = await db.TeamSubscriptions
             .AsNoTracking()
             .Where(subscription => subscription.UserId == userId)
@@ -50,6 +52,7 @@ public sealed class ScopeService(
             teamIds.Add(int.Parse(team.TeamExternalId));
             leagueIds.Add(team.LeagueExternalId);
             officeIds.Add(int.Parse(team.DivisionExternalId));
+            wholeLeagueIds.Add(team.LeagueExternalId);
         }
 
         // Direct league subscriptions.

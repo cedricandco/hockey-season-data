@@ -31,6 +31,8 @@ public sealed class TeamPageNavigationTests
         Assert.Equal([2, 1], await ReadAsync(function.Associations(request, context, CancellationToken.None), "associationId"));
         Assert.Equal([10], await ReadAsync(function.Divisions(request, 1, context, CancellationToken.None), "divisionId"));
         Assert.Equal([100], await ReadAsync(function.Leagues(request, 10, context, CancellationToken.None), "leagueId"));
+        // One followed team opens its whole league: every team of league 100 is
+        // listed, so the selector offers the opponents too.
         Assert.Equal([500], await ReadAsync(function.Teams(request, 100, context, CancellationToken.None), "teamId"));
 
         // An association, division or league without a followed team is not
@@ -38,6 +40,30 @@ public sealed class TeamPageNavigationTests
         // a path to it.
         Assert.Empty(await ReadAsync(function.Divisions(request, 999, context, CancellationToken.None), "divisionId"));
         Assert.Empty(await ReadAsync(function.Leagues(request, 999, context, CancellationToken.None), "leagueId"));
+        Assert.Empty(await ReadAsync(function.Teams(request, 999, context, CancellationToken.None), "teamId"));
+    }
+
+    [Fact]
+    public async Task TeamLevel_ListsEveryTeamOfALeagueThatHoldsAFollowedTeam()
+    {
+        // Follow list: one followed team in league 100; the league holds two
+        // more teams the user does not follow.
+        var function = CreateNavigation(
+            [new FollowedTeam(500, 181303, "Grizzly 1", 100, "M11A",
+                [new FollowedSchedule(194908, "M11A Saison")], 10, "Simple lettre", 1, "Hockey Richelieu")],
+            [
+                new SelectableTeam(500, 181303, "Grizzly 1", 100, "M11A", [new FollowedSchedule(194908, "M11A Saison")]),
+                new SelectableTeam(502, 181305, "Grizzly 2", 100, "M11A", [new FollowedSchedule(194908, "M11A Saison")]),
+                new SelectableTeam(503, 181306, "Falcon", 100, "M11A", [new FollowedSchedule(194908, "M11A Saison")]),
+            ]);
+        var (context, request) = CreateContext();
+
+        // Every team of the opened league is listed, followed or not, ordered
+        // by name (Falcon < Grizzly 1 < Grizzly 2).
+        Assert.Equal([503, 500, 502], await ReadAsync(function.Teams(request, 100, context, CancellationToken.None), "teamId"));
+
+        // A league nobody follows lists nothing: its teams can neither be
+        // reached nor guessed.
         Assert.Empty(await ReadAsync(function.Teams(request, 999, context, CancellationToken.None), "teamId"));
     }
 
@@ -87,6 +113,11 @@ public sealed class TeamPageNavigationTests
     private static SubscriptionNavigationFunctions CreateNavigation(IReadOnlyList<FollowedTeam> teams) =>
         new(new StubScope(teams), new RequestUserResolver(new StubProvisioning()), FunctionsTests.WithTestDatabase());
 
+    private static SubscriptionNavigationFunctions CreateNavigation(
+        IReadOnlyList<FollowedTeam> teams, IReadOnlyList<SelectableTeam> leagueTeams) =>
+        new(new StubScope(teams, leagueTeams), new RequestUserResolver(new StubProvisioning()),
+            FunctionsTests.WithTestDatabase());
+
     private static (Microsoft.Azure.Functions.Worker.FunctionContext Context, HttpRequest Request) CreateContext()
     {
         var request = new DefaultHttpContext().Request;
@@ -114,7 +145,9 @@ public sealed class TeamPageNavigationTests
             20, "Double lettre", 2, "Autre association"),
     ];
 
-    private sealed class StubScope(IReadOnlyList<FollowedTeam> teams) : ICallerDataScopeService
+    private sealed class StubScope(
+        IReadOnlyList<FollowedTeam> teams,
+        IReadOnlyList<SelectableTeam>? leagueTeams = null) : ICallerDataScopeService
     {
         public Task<CallerDataScope> GetAsync(int userId, bool unrestricted = false, CancellationToken cancellationToken = default) =>
             Task.FromResult(CallerDataScope.NothingFollowed());
@@ -124,6 +157,27 @@ public sealed class TeamPageNavigationTests
 
         public Task<IReadOnlyList<FollowedTeam>> GetFollowedTeamsAsync(int userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(teams);
+
+        public Task<IReadOnlyList<SelectableTeam>> GetLeagueTeamsAsync(
+            int userId, int leagueId, CancellationToken cancellationToken = default)
+        {
+            var list = (leagueTeams ?? teams
+                .Where(team => team.LeagueId == leagueId)
+                .Select(team => new SelectableTeam(
+                    team.Id, team.ExternalId, team.Name, team.LeagueId, team.LeagueName, team.Schedules))
+                .ToList())
+                .Where(team => leagueTeams is null || team.LeagueId == leagueId)
+                .ToList();
+            return Task.FromResult<IReadOnlyList<SelectableTeam>>(list);
+        }
+
+        public Task<SelectableTeam?> GetSelectableTeamAsync(
+            int userId, int teamId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<SelectableTeam?>(teams.FirstOrDefault(team => team.Id == teamId) is { } followed
+                ? new SelectableTeam(
+                    followed.Id, followed.ExternalId, followed.Name,
+                    followed.LeagueId, followed.LeagueName, followed.Schedules)
+                : null);
     }
 
     private sealed class StubProvisioning : IUserProvisioningService

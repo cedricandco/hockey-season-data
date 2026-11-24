@@ -62,6 +62,11 @@ export class ApiService {
     return this.http.get<NavLeague[]>(`${this.baseUrl}/nav/divisions/${divisionId}/leagues`);
   }
 
+  /**
+   * Teams the team page can open in one league, limited to the caller's
+   * follows: a followed team opens its whole league, so every team of the
+   * league is listed once one of its teams is followed.
+   */
   getNavTeams(leagueId: number): Observable<NavTeam[]> {
     return this.http.get<NavTeam[]>(`${this.baseUrl}/nav/leagues/${leagueId}/teams`);
   }

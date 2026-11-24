@@ -207,9 +207,12 @@ Legacy aliases kept for existing scripts, both delegating to the same use case:
 (`admin/*` is reserved by the Functions host, hence the `import/` prefix.)
 
 Business endpoints are limited to the caller's follows, resolved from the
-database (`ICallerDataScopeService`): a followed team exposes its league and
-division, a followed league exposes all its teams, a followed association
-exposes all its divisions and leagues. Nothing else is listed or readable.
+database (`ICallerDataScopeService`): following a team opens its whole league
+(every team of the league is readable, the user needs it to browse the
+opponents), a followed league exposes all its teams, a followed association
+exposes all its divisions and leagues, and the division and association of a
+followed team come along as read-only parents. Nothing else is listed or
+readable.
 
 | Endpoint | Purpose |
 |---|---|
@@ -218,16 +221,17 @@ exposes all its divisions and leagues. Nothing else is listed or readable.
 | `GET /api/nav/associations` | Associations that own at least one followed team (`organizations.id`) |
 | `GET /api/nav/associations/{associationId}/divisions` | Divisions of that association that own a followed team (`divisions.id`) |
 | `GET /api/nav/divisions/{divisionId}/leagues` | Leagues of that division that own a followed team (`leagues.id`) |
-| `GET /api/nav/leagues/{leagueId}/teams` | Followed teams of that league (`teams.id`) |
-| `GET /api/teams/{teamId}` | Detail of a followed team, keyed on `teams.id`; the schedule is resolved from the database — 403 outside the follows |
+| `GET /api/nav/leagues/{leagueId}/teams` | Every team of that league once one of its teams is followed (`teams.id`) — following a team opens its whole league |
+| `GET /api/teams/{teamId}` | Detail of a readable team — a followed one or any team of a league that contains one — keyed on `teams.id`; the schedule is resolved from the database — 403 outside the opened leagues |
 | `GET /api/leagues/{scheduleId}/teams` | Teams of a schedule, read from Spordle — 403 outside the follows |
-| `GET /api/leagues/{scheduleId}/teams/{teamId}` | Team detail keyed on Spordle ids (chat card / agent output) — 403 when the team is not followed |
-| `GET /api/games/{gameId}` | Box score — 403 when neither team is followed |
+| `GET /api/leagues/{scheduleId}/teams/{teamId}` | Team detail keyed on Spordle ids (chat card / agent output) — 403 when the team is not readable |
+| `GET /api/games/{gameId}` | Box score — 403 when neither team is readable |
 
 The team-page navigation returns **database ids** and lists only the values
-that own at least one followed team: an association, division or league with no
-followed team is never offered, so a team outside the follows can neither be
-reached nor guessed. The Spordle ids stay behind the API.
+that own at least one followed team at the association, division and league
+levels — but once a league is opened, all of its teams are offered: following a
+team opens its whole league. A league with no follow is never offered, so an
+unfollowed division stays unreachable; the Spordle ids stay behind the API.
 
 When no database is configured these endpoints run unfiltered rather than
 failing (database-less host, tests) — except the team page and the weekly
@@ -318,10 +322,11 @@ into application use cases:
 
 The reference data — associations, divisions, leagues, teams and their
 schedules — comes from the **database** and is limited to what the caller
-follows (`ICallerDataScopeService`, resolved from the request's bearer token).
+follows (`ICallerDataScopeService`, resolved from the request's bearer token);
+following a team opens its whole league, so every team of it is readable too.
 Only the live figures still come from the public Spordle API, always with the
 `league_schedules.external_id` ids read from the database. A tool call for a
-league, schedule, team or game outside the caller's follows is refused with an
+league, schedule, team or game outside the caller's scope is refused with an
 MCP error, so the assistant cannot answer about entities the user does not
 follow.
 
@@ -341,7 +346,7 @@ Configuration lives in the `LeagueApi` section (`appsettings.json`):
 | `GetAssociations` | — | database: followed associations |
 | `GetDivisions` | `associationId?` | database: followed divisions |
 | `GetLeagues` | `divisionId?` | database: followed leagues + `scheduleIds` |
-| `GetLeagueTeams` | `leagueId` (category guid) | database: followed league (all teams) or followed team |
+| `GetLeagueTeams` | `leagueId` (category guid) | database: every team of an opened league (followed, or holding a followed team) |
 | `GetTeamDetail` | `teamId` | Spordle, keyed on the stored schedule id |
 | `GetLeagueStanding` | `scheduleId` | `GET sp/schedules/{scheduleId}/teamStats` (60 s cache) |
 | `GetTeamGames` | `scheduleId`, `startDate`, `endDate`, `teamId?` | `GET sp/games?filter=<json>` |

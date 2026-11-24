@@ -10,9 +10,9 @@ namespace HockeySeason.Functions;
 
 /// <summary>
 /// Box score of one game. A game is readable when at least one of its teams is
-/// followed by the caller (or belongs to a league the caller follows);
-/// otherwise the call is refused, so a game id cannot be used to read a team
-/// outside the caller's follows.
+/// in the caller's readable scope — a followed team, or any team of a league
+/// that contains one; otherwise the call is refused, so a game id cannot be
+/// used to read a team outside the caller's follows.
 /// </summary>
 public sealed class GameDetailFunction(
     LeagueApiService league,

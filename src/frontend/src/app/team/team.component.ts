@@ -18,9 +18,11 @@ function positiveInt(value: string | null): number {
  *
  * 1. the follow list — every team I follow, with its league, division and
  *    association names; picking one loads its detail;
- * 2. the selector — association → division → league → team, each level
- *    listing only the values with at least one followed team, so nothing
- *    outside the follows can be picked.
+ * 2. the selector — association → division → league → team. The first three
+ *    levels list only the values with at least one followed team; picking a
+ *    league opens it: its team list then holds every team of the league, not
+ *    only the followed one, so the opponents of my team are browsable too
+ *    (following a team opens its whole league).
  *
  * Every identifier is a database id: the detail call is keyed on `teams.id`
  * and the backend resolves the published Spordle schedule itself.
