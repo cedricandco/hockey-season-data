@@ -6,7 +6,7 @@
 }
 .team-header {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: 1.2rem 1.4rem; background: linear-gradient(120deg, #123b70, #1d568c); color: #fff;
+  padding: 1.2rem 1.4rem; background: var(--brand-gradient); color: #fff;
 }
 .team-heading { min-width: 0; }
 .team-eyebrow { color: #c9deef; font-size: .68rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }

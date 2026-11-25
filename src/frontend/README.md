@@ -164,7 +164,9 @@ connection errors and offers a retry.
 
 The header chrome is not driven by the theme variables: both the signed-in
 `.site-header` and the mobile bottom navigation use the fixed brand gradient
-`#000B3A → #00124A → #001B66`.
+`#000B3A → #00124A → #001B66`, exposed as `--brand-gradient` in
+`src/global.scss`. The headers of the team detail and game detail cards reuse
+that variable so a detail card looks like an extension of the site header.
 
 ### Brand assets
 

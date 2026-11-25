@@ -1,6 +1,9 @@
 :root {
   --color-primary: #00124A;
   --color-secondary: #22C5FD;
+  /* Fixed brand gradient of the site header, reused by the detail cards
+     (team, game) so their headers match the site chrome. */
+  --brand-gradient: linear-gradient(90deg, #000B3A 0%, #00124A 50%, #001B66 100%);
   font-family: Inter, "Segoe UI", Arial, sans-serif;
   color: #17283e;
   background: #f5f7fa;
@@ -16,12 +19,7 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 }
 
 .site-header {
-  background: linear-gradient(
-    90deg,
-    #000B3A 0%,
-    #00124A 50%,
-    #001B66 100%
-  );
+  background: var(--brand-gradient);
   color: #fff;
   box-shadow: 0 3px 14px #102f4c20;
 }
@@ -277,7 +275,7 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
 }
 .game-card-header {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 12px 18px; background: linear-gradient(135deg, var(--color-primary) 0%, #001B66 100%);
+  padding: 12px 18px; background: var(--brand-gradient);
   color: #fff;
 }
 .game-card-meta { display: flex; align-items: center; gap: 9px; min-width: 0; flex-wrap: wrap; }
