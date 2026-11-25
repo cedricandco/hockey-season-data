@@ -1,16 +1,31 @@
 import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, ParamMap, Router, RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { Observable, Subscription } from 'rxjs';
 import { ApiService } from '../core/api.service';
-import { FollowedTeam, NavChoice, NavDivision, NavLeague, NavTeam, TeamDetail } from './team.models';
+import {
+  FollowedTeam, NavChoice, NavDivision, NavLeague, NavTeam, RouteSelection, TeamPageDetail, TeamPagePath,
+} from './team.models';
 import { TeamSummaryComponent } from './team-summary.component';
+import { TeamGamesComponent } from './team-games.component';
+import { nextSelectionStep, sameSelection } from './team-route';
 
 function positiveInt(value: string | null): number {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 0;
 }
+
+function selectionOf(params: ParamMap): RouteSelection {
+  return {
+    association: positiveInt(params.get('association')),
+    division: positiveInt(params.get('division')),
+    league: positiveInt(params.get('league')),
+    team: positiveInt(params.get('team')),
+  };
+}
+
+const NO_SELECTION: RouteSelection = { association: 0, division: 0, league: 0, team: 0 };
 
 /**
  * Team page, in two blocks over the teams the caller follows
@@ -26,11 +41,17 @@ function positiveInt(value: string | null): number {
  *
  * Every identifier is a database id: the detail call is keyed on `teams.id`
  * and the backend resolves the published Spordle schedule itself.
+ *
+ * The selection lives in the query string, so a view of the page is linkable —
+ * the next games link their opponent that way. The page watches the parameters
+ * instead of reading them once, because the router reuses this component
+ * between two links on the same page; {@link nextSelectionStep} decides what to
+ * load next, which keeps the restore exact across the asynchronous reads.
  */
 @Component({
   selector: 'app-team',
   standalone: true,
-  imports: [FormsModule, RouterLink, TranslatePipe, TeamSummaryComponent],
+  imports: [FormsModule, RouterLink, TranslatePipe, TeamSummaryComponent, TeamGamesComponent],
   styleUrl: './team.component.scss',
   template: `
     <section class="team-page">
@@ -48,7 +69,7 @@ function positiveInt(value: string | null): number {
             <h2>{{ 'TEAM.MY_TEAMS' | translate }}</h2>
             <ul class="follow-list">
               @for (team of followed(); track team.teamId) {
-                <li class="follow-item" [class.selected]="team.teamId === teamId">
+                <li class="follow-item" [class.selected]="team.teamId === selection().team">
                   <button type="button" class="follow-button" (click)="selectTeam(team.teamId)">
                     <span class="follow-name">{{ team.name }}</span>
                     <span class="follow-context">{{ team.leagueName }} · {{ team.divisionName }} · {{ team.associationName }}</span>
@@ -62,7 +83,7 @@ function positiveInt(value: string | null): number {
             <h2>{{ 'TEAM.SELECTOR' | translate }}</h2>
             <div class="selectors">
               <label>{{ 'TEAM.OFFICE' | translate }}
-                <select [ngModel]="associationId" (ngModelChange)="selectAssociation($event)">
+                <select [ngModel]="selection().association" (ngModelChange)="selectAssociation($event)">
                   <option [ngValue]="0">{{ 'TEAM.SELECT' | translate }}</option>
                   @for (association of associations(); track association.associationId) {
                     <option [ngValue]="association.associationId">{{ association.name }}</option>
@@ -70,7 +91,8 @@ function positiveInt(value: string | null): number {
                 </select>
               </label>
               <label>{{ 'TEAM.DIVISION' | translate }}
-                <select [ngModel]="divisionId" (ngModelChange)="selectDivision($event)" [disabled]="!associationId || loading()">
+                <select [ngModel]="selection().division" (ngModelChange)="selectDivision($event)"
+                  [disabled]="!selection().association || loading()">
                   <option [ngValue]="0">{{ 'TEAM.SELECT' | translate }}</option>
                   @for (division of divisions(); track division.divisionId) {
                     <option [ngValue]="division.divisionId">{{ division.name }}</option>
@@ -78,7 +100,8 @@ function positiveInt(value: string | null): number {
                 </select>
               </label>
               <label>{{ 'TEAM.LEAGUE' | translate }}
-                <select [ngModel]="leagueId" (ngModelChange)="selectLeague($event)" [disabled]="!divisionId || loading()">
+                <select [ngModel]="selection().league" (ngModelChange)="selectLeague($event)"
+                  [disabled]="!selection().division || loading()">
                   <option [ngValue]="0">{{ 'TEAM.SELECT' | translate }}</option>
                   @for (league of leagues(); track league.leagueId) {
                     <option [ngValue]="league.leagueId">{{ league.name }}</option>
@@ -86,7 +109,8 @@ function positiveInt(value: string | null): number {
                 </select>
               </label>
               <label>{{ 'TEAM.TEAM' | translate }}
-                <select [ngModel]="teamId" (ngModelChange)="selectTeam($event)" [disabled]="!leagueId || loading()">
+                <select [ngModel]="selection().team" (ngModelChange)="selectTeam($event)"
+                  [disabled]="!selection().league || loading()">
                   <option [ngValue]="0">{{ 'TEAM.SELECT' | translate }}</option>
                   @for (team of teams(); track team.teamId) { <option [ngValue]="team.teamId">{{ team.name }}</option> }
                 </select>
@@ -98,114 +122,160 @@ function positiveInt(value: string | null): number {
         @if (loading()) { <p role="status">{{ 'TEAM.LOADING' | translate }}</p> }
         @if (error()) { <p class="error" role="alert">{{ 'TEAM.ERROR' | translate }} <button type="button" (click)="retry()">{{ 'TEAM.RETRY' | translate }}</button></p> }
       }
-      <app-team-summary [team]="detail()" />
+      <app-team-summary [team]="detail()" [showGames]="false">
+        <app-team-games [team]="detail()" [path]="path()" />
+      </app-team-summary>
     </section>
   `,
 })
 export class TeamComponent {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private subscription?: Subscription;
   private followsSubscription?: Subscription;
+  private routeSubscription?: Subscription;
+  /** Query string currently wanted; re-read after each level finishes loading. */
+  private wanted = NO_SELECTION;
+
   readonly followed = signal<FollowedTeam[]>([]);
   readonly associations = signal<NavChoice[]>([]);
   readonly divisions = signal<NavDivision[]>([]);
   readonly leagues = signal<NavLeague[]>([]);
   readonly teams = signal<NavTeam[]>([]);
-  readonly detail = signal<TeamDetail | null>(null);
+  readonly selection = signal<RouteSelection>(NO_SELECTION);
+  readonly detail = signal<TeamPageDetail | null>(null);
   readonly loading = signal(false);
   readonly loadingFollows = signal(true);
   readonly error = signal(false);
   readonly noFollows = signal(false);
-
-  associationId = 0;
-  divisionId = 0;
-  leagueId = 0;
-  teamId = 0;
+  /** Association/division/league of the selected team, restored by each opponent link. */
+  readonly path = signal<TeamPagePath | null>(null);
+  /** Null means "not read yet": the restore must load the level before trusting an absence. */
+  private loaded = { associations: false, divisions: false, leagues: false, teams: false };
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
       this.subscription?.unsubscribe();
       this.followsSubscription?.unsubscribe();
+      this.routeSubscription?.unsubscribe();
     });
-    const params = inject(ActivatedRoute).snapshot.queryParamMap;
-    // The follow list fills the two blocks of the page; the associations are
-    // read separately because the URL levels are restored through them.
     this.loadFollows();
-    this.loadAssociations(() => this.restore(positiveInt(params.get('association')),
-      positiveInt(params.get('division')), positiveInt(params.get('league')), positiveInt(params.get('team'))));
+    // The associations are the entry point of every restore, so they are read
+    // before the parameters are watched.
+    this.routeSubscription = this.route.queryParamMap.subscribe(params => {
+      this.wanted = selectionOf(params);
+      this.applyWanted();
+    });
   }
 
   selectAssociation(id: number): void {
-    this.associationId = id; this.divisionId = 0; this.leagueId = 0; this.teamId = 0;
-    this.divisions.set([]); this.leagues.set([]); this.teams.set([]); this.detail.set(null);
+    this.setSelection({ ...NO_SELECTION, association: id });
     this.syncUrl();
     if (id) this.loadDivisions(); else this.cancel();
   }
   selectDivision(id: number): void {
-    this.divisionId = id; this.leagueId = 0; this.teamId = 0;
-    this.leagues.set([]); this.teams.set([]); this.detail.set(null);
+    const current = this.selection();
+    this.setSelection({ ...NO_SELECTION, association: current.association, division: id });
     this.syncUrl();
     if (id) this.loadLeagues(); else this.cancel();
   }
   selectLeague(id: number): void {
-    this.leagueId = id; this.teamId = 0; this.teams.set([]); this.detail.set(null);
+    const current = this.selection();
+    this.setSelection({ ...NO_SELECTION, association: current.association, division: current.division, league: id });
     this.syncUrl();
     if (id) this.loadTeams(); else this.cancel();
   }
   selectTeam(id: number): void {
-    this.detail.set(null);
     const followed = this.followed().find(item => item.teamId === id);
-    if (followed && followed.leagueId !== this.leagueId) {
+    if (followed && followed.leagueId !== this.selection().league) {
       // A team picked in the follow list: the selector is aligned on its path
       // and each level is loaded, so the drop-downs show where the team lives.
-      this.associationId = followed.associationId;
-      this.divisionId = followed.divisionId;
-      this.leagueId = followed.leagueId;
-      this.teamId = id;
+      this.setSelection({ association: followed.associationId, division: followed.divisionId, league: followed.leagueId, team: id });
       this.syncUrl();
       this.loadDivisions(() => this.loadLeagues(() => this.loadTeams(() => this.loadDetail())));
       return;
     }
-    this.teamId = id;
+    this.setSelection({ ...this.selection(), team: id });
     this.syncUrl();
     if (id) this.loadDetail(); else this.cancel();
   }
 
-  // Applies the association/division/league/team query parameters one level at a time.
-  private restore(association: number, division: number, league: number, team: number): void {
-    if (!association || !this.associations().some(item => item.associationId === association)) return;
-    this.associationId = association;
-    this.loadDivisions(() => {
-      if (!division || !this.divisions().some(item => item.divisionId === division)) return;
-      this.divisionId = division;
-      this.loadLeagues(() => {
-        if (!league || !this.leagues().some(item => item.leagueId === league)) return;
-        this.leagueId = league;
-        this.loadTeams(() => {
-          if (!team || !this.teams().some(item => item.teamId === team)) return;
-          this.teamId = team;
-          this.loadDetail();
-        });
-      });
-    });
+  /**
+   * Walks towards {@link wanted} one level at a time, loading the level it
+   * cannot trust yet and asking again once it arrives. A URL level that does
+   * not exist in the follows stops the walk at the deepest valid selection, so
+   * the page can never offer a path outside them.
+   */
+  private applyWanted(): void {
+    // The association list is the entry point of the page: without it the
+    // restore cannot decide anything, even when the URL holds no selection.
+    if (!this.loaded.associations) {
+      this.loadAssociations();
+      return;
+    }
+
+    const step = nextSelectionStep({
+      associations: this.loaded.associations ? this.associations().map(item => item.associationId) : null,
+      divisions: this.loaded.associations && this.loaded.divisions ? this.divisions().map(item => item.divisionId) : null,
+      leagues: this.loaded.divisions && this.loaded.leagues ? this.leagues().map(item => item.leagueId) : null,
+      teams: this.loaded.leagues && this.loaded.teams ? this.teams().map(item => item.teamId) : null,
+      selection: this.selection(),
+    }, this.wanted);
+
+    if (!sameSelection(step.selection, this.selection())) this.setSelection(step.selection);
+
+    switch (step.action) {
+      case 'load-associations': this.loadAssociations(); break;
+      case 'load-divisions': this.loadDivisions(() => this.applyWanted()); break;
+      case 'load-leagues': this.loadLeagues(() => this.applyWanted()); break;
+      case 'load-teams': this.loadTeams(() => this.applyWanted()); break;
+      case 'load-team': this.loadDetail(); break;
+      case 'settled':
+        // A truncated selection leaves the URL ahead of the page: rewrite it so
+        // the address bar matches what is shown (a stale team id must not stay).
+        if (!sameSelection(step.selection, this.wanted)) this.syncUrl();
+        break;
+    }
   }
+
+  /** Adopts a selection and drops what belonged to a level that is no longer valid. */
+  private setSelection(selection: RouteSelection): void {
+    const current = this.selection();
+    if (selection.association !== current.association) {
+      this.divisions.set([]); this.leagues.set([]); this.teams.set([]);
+      this.loaded = { ...this.loaded, divisions: false, leagues: false, teams: false };
+    } else if (selection.division !== current.division) {
+      this.leagues.set([]); this.teams.set([]);
+      this.loaded = { ...this.loaded, leagues: false, teams: false };
+    } else if (selection.league !== current.league) {
+      this.teams.set([]);
+      this.loaded = { ...this.loaded, teams: false };
+    }
+    this.selection.set(selection);
+    if (selection.team !== current.team) this.detail.set(null);
+    this.cancel();
+  }
+
   private syncUrl(): void {
+    const selection = this.selection();
     void this.router.navigate([], {
       queryParams: {
-        association: this.associationId || null,
-        division: this.divisionId || null,
-        league: this.leagueId || null,
-        team: this.teamId || null,
+        association: selection.association || null,
+        division: selection.division || null,
+        league: selection.league || null,
+        team: selection.team || null,
       },
       replaceUrl: true,
     });
   }
+
   retry(): void {
-    if (this.teamId) this.loadDetail();
-    else if (this.leagueId) this.loadTeams();
-    else if (this.divisionId) this.loadLeagues();
-    else if (this.associationId) this.loadDivisions();
+    const selection = this.selection();
+    if (selection.team) this.loadDetail();
+    else if (selection.league) this.loadTeams();
+    else if (selection.division) this.loadLeagues();
+    else if (selection.association) this.loadDivisions();
     else { this.loadFollows(); this.loadAssociations(); }
   }
 
@@ -224,21 +294,35 @@ export class TeamComponent {
     });
   }
   private loadAssociations(done?: () => void): void {
-    this.load(this.api.getNavAssociations(), value => this.associations.set(value), done);
+    this.load(this.api.getNavAssociations(), value => {
+      this.associations.set(value);
+      this.loaded.associations = true;
+    }, done ?? (() => this.applyWanted()));
   }
   private loadDivisions(done?: () => void): void {
-    this.load(this.api.getNavDivisions(this.associationId), value => this.divisions.set(value), done);
+    this.load(this.api.getNavDivisions(this.selection().association), value => {
+      this.divisions.set(value);
+      this.loaded.divisions = true;
+    }, done);
   }
   private loadLeagues(done?: () => void): void {
-    this.load(this.api.getNavLeagues(this.divisionId), value => this.leagues.set(value), done);
+    this.load(this.api.getNavLeagues(this.selection().division), value => {
+      this.leagues.set(value);
+      this.loaded.leagues = true;
+    }, done);
   }
   private loadTeams(done?: () => void): void {
-    this.load(this.api.getNavTeams(this.leagueId), value => this.teams.set(value), done);
+    this.load(this.api.getNavTeams(this.selection().league), value => {
+      this.teams.set(value);
+      this.loaded.teams = true;
+    }, done);
   }
   private loadDetail(): void {
     // The backend validates the follow and resolves the schedule, so the page
     // only sends the database team id.
-    this.load(this.api.getFollowedTeamDetail(this.teamId), value => this.detail.set(value));
+    const selection = this.selection();
+    this.path.set({ association: selection.association, division: selection.division, league: selection.league });
+    this.load(this.api.getFollowedTeamDetail(selection.team), value => this.detail.set(value));
   }
   private cancel(): void { this.subscription?.unsubscribe(); this.loading.set(false); this.error.set(false); }
   private load<T>(source: Observable<T>, set: (value: T) => void, done?: () => void): void {

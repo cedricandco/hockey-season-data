@@ -35,6 +35,25 @@ public sealed record SubscriptionTeam(int Id, string Name);
 public sealed record SubscriptionLeagueOptions(string? SeasonId, IReadOnlyList<SubscriptionLeague> Leagues);
 
 /// <summary>
+/// A team an association president may follow by typing its base name, with
+/// the league and division it plays in so the page can list it without another
+/// call. <see cref="Id"/> is the Spordle team id, the value the team
+/// subscription endpoints expect.
+/// </summary>
+public sealed record PresidentTeam(int Id, string Name, string LeagueName, string DivisionName);
+
+/// <summary>
+/// Teams of an association whose name starts with the typed base name, in the
+/// latest imported season of the association ("grizzly" → every GRIZZLY team
+/// of every league, division and category).
+/// </summary>
+public sealed record PresidentTeamOptions(
+    int AssociationId,
+    string AssociationName,
+    string BaseName,
+    IReadOnlyList<PresidentTeam> Teams);
+
+/// <summary>
 /// Read-only navigation for the "follow a team" selector: association →
 /// division → league → team, over the reference data mirrored from Spordle.
 /// Every identifier returned is the one the next level expects, and the team
@@ -64,4 +83,14 @@ public interface ISubscriptionCatalogService
     /// </summary>
     Task<IReadOnlyList<SubscriptionTeam>> GetTeamsAsync(
         string leagueId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Teams of one association whose name starts with <paramref name="baseName"/>
+    /// (case- and accent-insensitive, whole words), across every division,
+    /// league and category of the latest imported season. Used by the
+    /// association-president selector, where typing a base name selects all of
+    /// its teams at once.
+    /// </summary>
+    Task<PresidentTeamOptions> GetTeamsByBaseNameAsync(
+        int associationId, string baseName, CancellationToken cancellationToken = default);
 }

@@ -16,6 +16,14 @@ public sealed record SettingsRequest(string? PrimaryColor, string? SecondaryColo
 public sealed record CreateLeagueSubscriptionRequest(string? LeagueId);
 
 /// <summary>
+/// Request body of POST /api/users/me/president-team-subscriptions: the
+/// association (a row of <c>organizations</c>) and the base name of a team,
+/// e.g. "Grizzly". Every team of the association whose name starts with it is
+/// followed at once.
+/// </summary>
+public sealed record FollowTeamsByBaseNameRequest(int AssociationId, string? BaseName);
+
+/// <summary>
 /// Local account endpoints (PostgreSQL): profile, visual settings and the
 /// team / league / organization subscriptions bounded by the caller's licence.
 /// Every function provisions the caller on first use through
@@ -157,6 +165,74 @@ public sealed class UserFunctions(
         return new OkObjectResult(new
         {
             teams = teams.Select(item => new { item.Id, item.Name }),
+        });
+    }
+
+    /// <summary>
+    /// Teams of one association whose name starts with the typed base name,
+    /// across every division, league and category — the association-president
+    /// selector. Any authenticated caller may preview the match; following the
+    /// teams requires the PRESIDENT licence.
+    /// </summary>
+    [Function("SubscriptionTeamsByBaseName")]
+    public async Task<IActionResult> TeamCatalogByBaseName(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "subscriptions/associations/{associationId:int}/teams")] HttpRequest request,
+        int associationId, FunctionContext context, CancellationToken cancellationToken)
+    {
+        if (Unauthorized(context) is { } denied) return denied;
+        if (associationId <= 0) return InvalidBody();
+
+        var baseName = request.Query["baseName"].ToString();
+        if (string.IsNullOrWhiteSpace(baseName)) return InvalidBody();
+
+        var options = await catalog.GetTeamsByBaseNameAsync(associationId, baseName.Trim(), cancellationToken);
+        return new OkObjectResult(new
+        {
+            options.AssociationId,
+            options.AssociationName,
+            options.BaseName,
+            teams = options.Teams.Select(team => new { team.Id, team.Name, team.LeagueName, team.DivisionName }),
+        });
+    }
+
+    /// <summary>
+    /// Follows every team of an association whose name starts with the base
+    /// name, in one call (PRESIDENT licence). The president scope lifts the
+    /// team cap and the 15-day lock, so the batch can be pruned immediately
+    /// with the regular team-subscription DELETE.
+    /// </summary>
+    [Function("AddPresidentTeamSubscriptions")]
+    public async Task<IActionResult> AddPresidentTeams(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "users/me/president-team-subscriptions")] HttpRequest request,
+        FunctionContext context, CancellationToken cancellationToken)
+    {
+        if (Unauthorized(context) is { } denied) return denied;
+
+        var body = await ReadBodyAsync<FollowTeamsByBaseNameRequest>(request, cancellationToken);
+        if (body is null || body.AssociationId <= 0 || string.IsNullOrWhiteSpace(body.BaseName)) return InvalidBody();
+
+        var userId = await resolver.GetOrCreateUserIdAsync(context, cancellationToken);
+        var matches = await catalog.GetTeamsByBaseNameAsync(body.AssociationId, body.BaseName.Trim(), cancellationToken);
+        if (matches.Teams.Count == 0)
+        {
+            return new NotFoundObjectResult(new { error = "no_matching_team" });
+        }
+
+        var result = await users.AddPresidentTeamSubscriptionsAsync(
+            userId, [.. matches.Teams.Select(team => team.Id)], cancellationToken);
+        if (result.Error != SubscriptionError.None)
+        {
+            return Map(result.Error);
+        }
+
+        return new OkObjectResult(new
+        {
+            AssociationId = matches.AssociationId,
+            matches.AssociationName,
+            matches.BaseName,
+            Added = result.AddedTeamIds,
+            AlreadyFollowed = result.AlreadyFollowedTeamIds,
+            Unknown = result.UnknownTeamIds,
         });
     }
 

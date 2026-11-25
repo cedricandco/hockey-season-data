@@ -42,6 +42,17 @@ public interface IUserService
     /// <summary>Unfollows a league.</summary>
     Task<SubscriptionError> RemoveLeagueSubscriptionAsync(int userId, string leagueId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Follows several teams at once — the association-president flow, where
+    /// typing a base name selects every team of it across the leagues,
+    /// divisions and categories of one association. The PRESIDENT licence
+    /// lifts the team cap and the 15-day removal lock, so the president can
+    /// prune the list immediately. Teams already followed are reported, not
+    /// refused; a caller without the PRESIDENT role changes nothing.
+    /// </summary>
+    Task<TeamBatchSubscriptionResult> AddPresidentTeamSubscriptionsAsync(
+        int userId, IReadOnlyList<int> teamIds, CancellationToken cancellationToken = default);
+
     /// <summary>Follows a whole association (PRESIDENT scope).</summary>
     Task<SubscriptionResult> AddOrganizationSubscriptionAsync(int userId, int organizationId, CancellationToken cancellationToken = default);
 

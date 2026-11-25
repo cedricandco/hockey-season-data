@@ -40,12 +40,13 @@ safe areas. The chat standings show a compact table on narrow screens, with
 the remaining statistics under a details control. Other wide tables remain
 scrollable horizontally.
 
-`npm run test:responsive` drives the whole app in Chrome/Edge, but its login
-step still targets the old six-digit access-code form: it currently stops
-waiting for `#access-code`, which the Auth0 redirect gate no longer renders.
-The check is therefore expected to fail end-to-end until that harness is
-updated; the configuration page assertions were extended with the follow-team
-selector (`inspectSubscriptionSelector`).
+`npm run test:responsive` drives the whole app in Chrome/Edge. The app
+authenticates through Auth0 Universal Login, so the suite serves a fake tenant
+(`mockAuth0` in `tests/responsive.mjs`): `/authorize` redirects straight back,
+`/oauth/token` mints RS256 tokens signed by a key generated at startup, and
+`/.well-known/jwks.json` publishes the matching public key so the SDK's signature
+check passes. Each width runs the login, chat, game card, team page (including
+the games block), weekly report and configuration page assertions.
 
 Run the unit tests with:
 
@@ -55,7 +56,8 @@ npm test
 
 The browser layout checks (`npm run test:responsive`) start their own frontend
 server, use simulated API responses, and run in a locally installed Chrome or
-Edge; they do not require the backend. If the browser is not found
+Edge; they do not require the backend. `VIEWPORTS=320,1280 npm run
+test:responsive` restricts the run to those widths. If the browser is not found
 automatically, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its executable.
 Browser emulation does not replace checking the virtual keyboard and safe areas
 on real iOS and Android devices.
@@ -139,6 +141,24 @@ disabled when the cap is reached, and the backend re-checks it — a concurrent
 `DELETE /api/users/me/team-subscriptions/{teamId}`, except during its 15-day
 lock: the page shows the unlock date and the backend answers `423 Locked`.
 
+### Association president (base name)
+
+A caller holding the PRESIDENT licence also sees an **Association president**
+card at the top of the section. It picks an association and takes a team **base
+name** (a datalist suggests the base names already followed); the backend lists
+`GET /api/subscriptions/associations/{id}/teams?baseName=…` — every team of the
+association whose name starts with it, in all divisions, leagues and categories
+of the latest imported season, matching on whole words and ignoring case and
+accents (`GRIZZLY 1 STE-JULIE` matches "grizzly", not "grizzlys").
+
+"Follow all these teams" sends one `POST /api/users/me/president-team-subscriptions`
+(`{ associationId, baseName }`). Under the president scope the team cap and the
+15-day removal lock are lifted, so the batch can be pruned immediately: the
+followed list below stays the single place where a team is removed, and the
+teams covered by the typed base name are highlighted there. Duplicates and
+unknown ids are reported in the response, not refused (`403` when the caller
+has no PRESIDENT licence — the card is hidden in that case).
+
 ## Chat page
 
 The chat page (`/chat`) is the default route and fills the viewport below the
@@ -163,10 +183,35 @@ The team page (`/team`) shows two blocks over the teams the caller follows
 Every identifier is a **database id** (`organizations.id`, `divisions.id`,
 `leagues.id`, `teams.id`). The selected team loads `GET /api/teams/{teamId}`:
 the backend validates the follow and resolves the published Spordle schedule
-from the database, so the page never handles a Spordle id. A caller who follows
-nothing sees a hint with a link to the Configuration page instead of the two
-blocks. The selection is mirrored in the query string (`association`,
-`division`, `league`, `team`).
+from the database, so the page never handles a Spordle id. The response also
+carries `teamLinks`, the mapping from the Spordle team ids of the games to the
+database ids the page navigates with — the games themselves are the league's,
+keyed on Spordle ids. A caller who follows nothing sees a hint with a link to
+the Configuration page instead of the two blocks. The selection is mirrored in
+the query string (`association`, `division`, `league`, `team`); the page watches
+those parameters instead of reading them once, so an in-page link to another
+team re-applies the selection without a reload. A level of the URL that does not
+exist in the follows stops the restore at the deepest valid one
+(`team-route.ts`, unit tested).
+
+### Games of the team
+
+Below the key figures the page shows two blocks (`team-games.component.ts`):
+
+- **Last five games**, most recent first. "Show 5 more games" adds five each
+  time and disappears once the whole schedule is shown. Each played game has a
+  **Game detail** button that expands its box score in place — the same
+  `app-game-detail` card the chat renders for the `show_game_detail` tool, loaded
+  through `GET /api/games/{gameId}`.
+- **Next two games**, in playing order. The opponent of each is a link to that
+  opponent's team page, carrying the association/division/league of the current
+  team plus the opponent's `teams.id`; a team the league mapping does not know is
+  shown as plain text rather than a broken link.
+
+The chat card (`game-card.component.ts`) keeps only the tool-call plumbing: it
+loads the game and delegates rendering to `app-game-detail`, whose styles live in
+`global.scss` because the card is mounted both inside the transcript and on the
+page.
 
 ## Weekly report page
 
@@ -204,6 +249,11 @@ src/
     team-selection/team-selection.component.ts # first-run team picker (new coach accounts)
     chat/chat.component.ts     # agent chat page, composer pinned at the bottom
     team/team.component.ts     # association, division, league and team selection (followed only)
+    team/team-games.component.ts # last games (paged by five, box score in place) and next two games
+    team/team-summary.component.ts # team header, figures, players and standings (shared with the chat card)
+    team/team-route.ts         # pure query-string restore of the selection (unit tested)
+    team/team-results.ts       # pure game helpers: last/next games, opponent mapping (unit tested)
+    chat/game-detail.component.ts # box score card shared by the chat renderer and the team page
     report/report.component.ts # weekly report page (followed leagues, no hardcoded ids)
     config/config.component.ts # configuration page (colors + followed teams)
     config/subscription.models.ts # models of the follow-team selector and subscription list

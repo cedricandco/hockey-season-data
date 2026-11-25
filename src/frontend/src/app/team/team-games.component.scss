@@ -1,0 +1,51 @@
+:host { display: block; min-width: 0; margin-top: 1.5rem; }
+.team-games { display: grid; gap: 1.5rem; }
+.games-block { min-width: 0; }
+.block-header { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; }
+h3 { margin: 0 0 .75rem; color: #173c66; font-size: .91rem; line-height: 1.35; }
+.block-count { color: #74849a; font-size: .72rem; font-variant-numeric: tabular-nums; }
+.empty { color: #66798d; font-size: .75rem; }
+.games { list-style: none; margin: 0; padding: 0; }
+.game-row { border-bottom: 1px solid #edf1f5; }
+.game-line { display: flex; align-items: center; gap: .65rem; padding: .65rem 0; font-size: .78rem; }
+.game-date {
+  flex: 0 0 auto; display: grid; color: #748498; font-size: .72rem;
+  font-variant-numeric: tabular-nums; line-height: 1.3;
+}
+.game-time { color: #94a2b3; font-size: .68rem; }
+.game-score { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem; line-height: 1.4; overflow-wrap: anywhere; }
+.game-score strong { color: #173c66; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.game-team { min-width: 0; overflow-wrap: anywhere; }
+.game-team.own { color: #173c66; font-weight: 700; }
+.game-team.opponent { color: #1d4f86; font-weight: 700; text-decoration: none; }
+.game-team.opponent:hover { text-decoration: underline; }
+.versus { color: #8a99aa; font-size: .72rem; }
+.game-result {
+  flex: 0 0 auto; padding: .2rem .5rem; border-radius: 20px;
+  background: #edf2f7; color: #536b83; font-size: .68rem; font-weight: 700;
+}
+.game-result.win { background: #e8f6ec; color: #267744; }
+.game-result.loss { background: #fbeeee; color: #a63e3e; }
+.detail-button {
+  flex: 0 0 auto; min-height: 34px; padding: 0 .65rem; border: 1px solid #cfdbe7; border-radius: 8px;
+  background: #fff; color: #1d4f86; font-size: .72rem; font-weight: 700;
+}
+.detail-button:hover { background: #eef4fb; }
+.detail-button[aria-expanded="true"] { border-color: #1d4f86; background: #e9f1fa; }
+.game-detail { padding: 0 0 .9rem; }
+.game-detail app-game-detail { display: block; }
+.game-detail-message { margin: 0; padding: .8rem 0; color: #617185; font-size: .78rem; }
+.game-detail-message button {
+  border: 0; background: none; color: var(--color-primary); font: inherit; font-weight: 700; text-decoration: underline;
+}
+.more-button {
+  margin-top: .85rem; min-height: 40px; padding: 0 1rem; border: 1px solid #cfdbe7; border-radius: 9px;
+  background: #fff; color: #1d4f86; font-weight: 700; font-size: .78rem;
+}
+.more-button:hover { background: #eef4fb; }
+@media (max-width: 520px) {
+  .game-line { flex-wrap: wrap; }
+  .game-score { flex-basis: calc(100% - 8rem); }
+  .game-result { margin-left: auto; }
+  .detail-button, .more-button { min-height: 44px; display: inline-flex; align-items: center; }
+}

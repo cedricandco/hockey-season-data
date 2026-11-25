@@ -126,6 +126,7 @@ first visit.
 | `DELETE /api/users/me/league-subscriptions/{leagueId}` | Unfollow a league (guid route value) |
 | `POST /api/users/me/organization-subscriptions` | Follow a whole association — PRESIDENT scope (all leagues of the org) |
 | `DELETE /api/users/me/organization-subscriptions/{organizationId}` | Unfollow an association |
+| `POST /api/users/me/president-team-subscriptions` | Body `{ "associationId": 1, "baseName": "Grizzly" }` — follow **every** team of the association whose name starts with that base name, in all divisions, leagues and categories (PRESIDENT licence: no team cap, no 15-day lock; duplicates and unknown ids are reported, not refused — `403` when the caller has no PRESIDENT role) |
 
 Read-only navigation for the "follow a team" selector of the configuration
 page (association → division → league → team). Any authenticated caller may
@@ -136,6 +137,7 @@ user already sees — and each level returns the identifier the next one expects
 |---|---|
 | `GET /api/subscriptions/associations` | Associations that own at least one division (`organizations.id` + name) |
 | `GET /api/subscriptions/associations/{associationId}/divisions` | Divisions of an association; `id` is the Spordle office number (`divisions.external_id`, e.g. 6193) |
+| `GET /api/subscriptions/associations/{associationId}/teams?baseName=Grizzly` | Teams of the association whose name starts with the base name (case- and accent-insensitive, whole words), across every division/league/category of the latest imported season — the association-president preview |
 | `GET /api/subscriptions/divisions/{divisionId}/leagues[?seasonId=2026-27]` | Leagues of a division for a season (latest imported when omitted); `id` is the Spordle category guid |
 | `GET /api/subscriptions/leagues/{leagueId}/teams` | Teams of a league, by Spordle team id (the value `POST /api/users/me/team-subscriptions` expects) |
 
@@ -222,7 +224,7 @@ readable.
 | `GET /api/nav/associations/{associationId}/divisions` | Divisions of that association that own a followed team (`divisions.id`) |
 | `GET /api/nav/divisions/{divisionId}/leagues` | Leagues of that division that own a followed team (`leagues.id`) |
 | `GET /api/nav/leagues/{leagueId}/teams` | Every team of that league once one of its teams is followed (`teams.id`) — following a team opens its whole league |
-| `GET /api/teams/{teamId}` | Detail of a readable team — a followed one or any team of a league that contains one — keyed on `teams.id`; the schedule is resolved from the database — 403 outside the opened leagues |
+| `GET /api/teams/{teamId}` | Detail of a readable team — a followed one or any team of a league that contains one — keyed on `teams.id`; the schedule is resolved from the database — 403 outside the opened leagues. Also returns `teamLinks`, mapping the Spordle team ids of the games to the page's `teams.id`, so the page can open an opponent from a score line without handling a Spordle id |
 | `GET /api/leagues/{scheduleId}/teams` | Teams of a schedule, read from Spordle — 403 outside the follows |
 | `GET /api/leagues/{scheduleId}/teams/{teamId}` | Team detail keyed on Spordle ids (chat card / agent output) — 403 when the team is not readable |
 | `GET /api/games/{gameId}` | Box score — 403 when neither team is readable |
@@ -250,6 +252,29 @@ stays required. Close the phase with `Authorization:OpenAccess=false` (env var
 `Authorization__OpenAccess`) — the follow scope, licence and admin guards then
 apply again (`ICallerDataScopeService`, `UserService`,
 `AdminImportFunctions`).
+
+### Association president: follow a base name
+
+A caller holding the **PRESIDENT** licence (`roles.id = 3`) can follow a whole
+team family in one call: it picks an association and types a base name
+("Grizzly"), and every team of that association whose published name starts
+with it — across all divisions, leagues and categories of the latest imported
+season — is followed. The match is case- and accent-insensitive and works on
+whole words (`TeamNameMatcher`), so "grizzly" selects `GRIZZLY 1 STE-JULIE`
+and `GRIZZLY 2 ST-HYACINTHE` but never `GRIZZLYS 3 LONGUEUIL`.
+
+Two rules make the flow usable:
+
+- the team licence limit is lifted for the PRESIDENT role (the `team` limit is
+  reported with `max: null`, like open access), so a president is not bounded
+  by the COACH cap of 5;
+- the batch follows are stored with an already elapsed 15-day lock, so the
+  president can prune a team of the batch immediately with the regular
+  `DELETE /api/users/me/team-subscriptions/{teamId}`.
+
+The flow is exposed to the PRESIDENT licence only (`UserService` refuses the
+batch with `403` otherwise); the preview endpoint stays readable by any
+authenticated caller because it only exposes shared reference data.
 
 ## Authentication (HockeySeason.Auth)
 

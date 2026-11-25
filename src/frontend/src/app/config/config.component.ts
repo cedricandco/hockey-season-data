@@ -3,9 +3,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ApiService } from '../core/api.service';
+import { AccountService } from '../core/account.service';
 import { ThemeService } from '../core/theme.service';
 import {
   FollowedTeam,
+  PresidentTeam,
   SubscriptionAssociation,
   SubscriptionDivision,
   SubscriptionLeague,
@@ -14,14 +16,18 @@ import {
 } from './subscription.models';
 import {
   alreadyFollowed,
+  baseNameOf,
   canAddTeam,
+  canFollowBaseName,
   canFollowMoreTeams,
   canLoadDivisions,
   canLoadLeagues,
   canLoadTeams,
   formatUsage,
+  isAssociationPresident,
   isRemovable,
   limitOf,
+  matchesBaseName,
 } from './subscription-helpers';
 
 /**
@@ -34,6 +40,13 @@ import {
  * role (`roles.max_followed_entities` of the team kind): the page shows
  * "3 / 5" and disables the button when full. The followed teams can be pruned,
  * except during their 15-day removal lock.
+ *
+ * A caller holding the PRESIDENT licence also gets an "association president"
+ * block: it picks an association and types a team base name ("Grizzly"), then
+ * every team of the association whose name starts with it — in all divisions,
+ * leagues and categories — is followed in one call. That scope lifts the team
+ * cap and the removal lock, so the president prunes unwanted teams right away
+ * with the regular remove button.
  */
 @Component({
   selector: 'app-config',
@@ -59,8 +72,7 @@ import {
         }
       </div>
 
-      <section class="follow-section" aria-labelledby="follow-title">
-        <div class="section-heading">
+      <section class="follow-section" aria-labelledby="follow-title">        <div class="section-heading">
           <div>
             <h2 id="follow-title">{{ 'FOLLOW.TITLE' | translate }}</h2>
             <p class="section-subtitle">{{ 'FOLLOW.SUBTITLE' | translate }}</p>
@@ -80,6 +92,76 @@ import {
             <button type="button" class="link" (click)="loadSubscriptions()">{{ 'FOLLOW.RETRY' | translate }}</button>
           </p>
         } @else {
+          @if (isPresident()) {
+            <div class="selector-card president-card">
+              <h3 class="selector-title">{{ 'FOLLOW.PRESIDENT_TITLE' | translate }}</h3>
+              <p class="section-subtitle">{{ 'FOLLOW.PRESIDENT_SUBTITLE' | translate }}</p>
+              <div class="selector-grid president-grid">
+                <label class="field">
+                  <span>{{ 'FOLLOW.ASSOCIATION' | translate }}</span>
+                  <select [ngModel]="presidentAssociationId()" (ngModelChange)="selectPresidentAssociation($event)"
+                    [disabled]="catalogLoading() || presidentAdding()">
+                    <option [ngValue]="null">{{ 'FOLLOW.SELECT' | translate }}</option>
+                    @for (association of associations(); track association.id) {
+                      <option [ngValue]="association.id">{{ association.name }}</option>
+                    }
+                  </select>
+                </label>
+                <label class="field">
+                  <span>{{ 'FOLLOW.BASE_NAME' | translate }}</span>
+                  <input type="text" list="association-team-bases"
+                    [placeholder]="'FOLLOW.BASE_NAME_PLACEHOLDER' | translate"
+                    [ngModel]="presidentBaseName()" (ngModelChange)="setPresidentBaseName($event)"
+                    [disabled]="presidentMatchesLoading() || presidentAdding()"
+                    (keydown.enter)="previewPresidentTeams()" />
+                  <datalist id="association-team-bases">
+                    @for (suggestion of presidentBaseSuggestions(); track suggestion) {
+                      <option [value]="suggestion"></option>
+                    }
+                  </datalist>
+                </label>
+              </div>
+
+              <div class="selector-actions">
+                <button type="button" class="add-button"
+                  [disabled]="!canPreviewPresidentTeams() || presidentMatchesLoading()"
+                  (click)="previewPresidentTeams()">
+                  {{ (presidentMatchesLoading() ? 'FOLLOW.SEARCHING' : 'FOLLOW.PREVIEW') | translate }}
+                </button>
+                <button type="button" class="add-button"
+                  [disabled]="!presidentCanFollow()"
+                  (click)="followPresidentTeams()">
+                  {{ (presidentAdding() ? 'FOLLOW.ADDING' : 'FOLLOW.FOLLOW_ALL') | translate }}
+                </button>
+                @if (presidentAddedCount() > 0) {
+                  <span class="hint" role="status">
+                    {{ 'FOLLOW.FOLLOW_ALL_DONE' | translate: { count: presidentAddedCount() } }}
+                  </span>
+                }
+              </div>
+
+              @if (presidentMatches().length > 0) {
+                <ul class="match-list" [attr.aria-label]="'FOLLOW.MATCHES' | translate">
+                  @for (team of presidentMatches(); track team.id) {
+                    <li class="match-item" [class.match-followed]="presidentTeamFollowed(team.id)">
+                      <span class="match-name">{{ team.name }}</span>
+                      <span class="match-meta">{{ team.leagueName }} · {{ team.divisionName }}</span>
+                      @if (presidentTeamFollowed(team.id)) {
+                        <span class="match-badge">✓</span>
+                      }
+                    </li>
+                  }
+                </ul>
+              } @else if (presidentSearched()) {
+                <p class="hint">{{ 'FOLLOW.NO_MATCH' | translate }}</p>
+              }
+
+              @if (presidentError()) {
+                <p class="notice" role="alert">{{ presidentError()! | translate }}</p>
+              }
+            </div>
+          }
+
           @if (hasTeamLicence()) {
             <div class="selector-card">
               <h3 class="selector-title">{{ 'FOLLOW.ADD_TITLE' | translate }}</h3>
@@ -153,12 +235,17 @@ import {
           }
 
           <h3 class="list-title">{{ 'FOLLOW.MY_TEAMS' | translate }}</h3>
+          @if (isPresident() && presidentSearched() && presidentOutsideBaseName() > 0) {
+            <p class="hint prune-hint">
+              {{ 'FOLLOW.PRUNE_HINT' | translate: { count: presidentOutsideBaseName(), base: presidentBaseName().trim() } }}
+            </p>
+          }
           @if (followedTeams().length === 0) {
             <p class="empty">{{ 'FOLLOW.EMPTY' | translate }}</p>
           } @else {
             <ul class="followed-list">
               @for (team of followedTeams(); track team.teamId) {
-                <li class="followed-item">
+                <li class="followed-item" [class.followed-match]="followedMatchesBaseName(team)">
                   <div class="followed-text">
                     <span class="followed-name">{{ team.name ?? ('FOLLOW.TEAM_UNKNOWN' | translate: { id: team.teamId }) }}</span>
                     @if (!removable(team)) {
@@ -188,6 +275,7 @@ import {
 export class ConfigurationComponent implements OnInit {
   readonly theme = inject(ThemeService);
   private readonly api = inject(ApiService);
+  private readonly account = inject(AccountService);
   private readonly destroyRef = inject(DestroyRef);
 
   readonly subscriptions = signal<SubscriptionsResponse | null>(null);
@@ -210,12 +298,45 @@ export class ConfigurationComponent implements OnInit {
   readonly removingId = signal<number | null>(null);
   readonly removeError = signal<string | null>(null);
 
+  /** Role codes of the caller, which drive the association-president block. */
+  readonly roleCodes = signal<string[]>([]);
+  readonly presidentAssociationId = signal<number | null>(null);
+  readonly presidentBaseName = signal('');
+  readonly presidentMatches = signal<PresidentTeam[]>([]);
+  readonly presidentMatchesLoading = signal(false);
+  readonly presidentAdding = signal(false);
+  readonly presidentAddedCount = signal(0);
+  readonly presidentSearched = signal(false);
+  readonly presidentError = signal<string | null>(null);
+
   readonly followedTeams = computed<FollowedTeam[]>(() => this.subscriptions()?.teams ?? []);
   readonly teamLimit = computed(() => limitOf(this.subscriptions(), 'team'));
   readonly usage = computed(() => formatUsage(this.teamLimit()));
   readonly canFollowMore = computed(() => canFollowMoreTeams(this.subscriptions()));
   /** A caller without the COACH licence (max 0) cannot follow a team at all. */
   readonly hasTeamLicence = computed(() => this.teamLimit()?.max !== 0);
+  /** The president block is offered to the PRESIDENT licence only. */
+  readonly isPresident = computed(() => isAssociationPresident(this.roleCodes()));
+  /**
+   * Followed teams the typed base name does not cover: the president sees how
+   * many other teams remain and prunes them one by one with the remove button
+   * of the followed list below.
+   */  readonly presidentOutsideBaseName = computed(() => {
+    const baseName = this.presidentBaseName().trim();
+    if (baseName.length === 0) return 0;
+    return this.followedTeams().filter((team) => !matchesBaseName(team.name, baseName)).length;
+  });
+  /** The followed team carries the base name being typed. */
+  readonly followedMatchesBaseName = (team: { name: string | null }): boolean =>
+    matchesBaseName(team.name, this.presidentBaseName().trim());
+
+  /** Base names already followed, offered as suggestions in the input. */
+  readonly presidentBaseSuggestions = computed(() =>
+    [...new Set(
+      this.followedTeams()
+        .map((team) => baseNameOf(team.name))
+        .filter((name): name is string => name.length > 0),
+    )].sort((left, right) => left.localeCompare(right)));
 
   /** Read-only helpers exposed to the template. */
   readonly removable = (team: { lockedUntil: string | null }) => isRemovable(team);
@@ -226,10 +347,16 @@ export class ConfigurationComponent implements OnInit {
       next: ({ associations }) => {
         this.associations.set(associations);
         // A single association needs no picking: preselect it to save a step.
-        if (associations.length === 1) this.selectAssociation(associations[0].id);
+        if (associations.length === 1) {
+          this.selectAssociation(associations[0].id);
+          this.selectPresidentAssociation(associations[0].id);
+        }
       },
       // The follow list stays usable: only the selector is unavailable.
       error: () => this.catalogError.set(true),
+    });
+    void this.account.load().then((profile) => {
+      this.roleCodes.set(profile?.roles.map((role) => role.code) ?? []);
     });
   }
 
@@ -300,6 +427,87 @@ export class ConfigurationComponent implements OnInit {
     this.teamId.set(null);
     this.teams.set([]);
     if (id !== null) this.loadTeams(id);
+  }
+
+  // ─── Association president: follow a base name in one call ─────────────
+
+  selectPresidentAssociation(id: number | null): void {
+    this.presidentAssociationId.set(id);
+    this.presidentMatches.set([]);
+    this.presidentSearched.set(false);
+    this.presidentAddedCount.set(0);
+    this.presidentError.set(null);
+  }
+
+  setPresidentBaseName(value: string): void {
+    this.presidentBaseName.set(value);
+    // The previous preview no longer describes what will be followed.
+    this.presidentMatches.set([]);
+    this.presidentSearched.set(false);
+    this.presidentAddedCount.set(0);
+    this.presidentError.set(null);
+  }
+
+  canPreviewPresidentTeams(): boolean {
+    return this.presidentAssociationId() !== null && this.presidentBaseName().trim().length > 0;
+  }
+
+  presidentCanFollow(): boolean {
+    return canFollowBaseName(
+      this.presidentBaseName(), this.presidentMatches().length, this.presidentAdding());
+  }
+
+  presidentTeamFollowed(teamId: number): boolean {
+    return alreadyFollowed(this.followedTeams(), teamId);
+  }
+
+  /** Lists the teams the base name selects, so the president sees them first. */
+  previewPresidentTeams(): void {
+    const associationId = this.presidentAssociationId();
+    const baseName = this.presidentBaseName().trim();
+    if (associationId === null || baseName.length === 0 || this.presidentMatchesLoading()) return;
+
+    this.presidentMatchesLoading.set(true);
+    this.presidentError.set(null);
+    this.presidentAddedCount.set(0);
+    this.api.getPresidentTeams(associationId, baseName).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: ({ teams }) => {
+        this.presidentMatches.set(teams);
+        this.presidentSearched.set(true);
+        this.presidentMatchesLoading.set(false);
+      },
+      error: () => {
+        this.presidentMatchesLoading.set(false);
+        this.presidentSearched.set(true);
+        this.presidentError.set('FOLLOW.PRESIDENT_ERROR');
+      },
+    });
+  }
+
+  /** Follows every matched team, then refreshes the list. */
+  followPresidentTeams(): void {
+    const associationId = this.presidentAssociationId();
+    const baseName = this.presidentBaseName().trim();
+    if (associationId === null || !this.presidentCanFollow()) return;
+
+    this.presidentAdding.set(true);
+    this.presidentError.set(null);
+    this.api.addPresidentTeamSubscriptions(associationId, baseName)
+      .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (result) => {
+          this.presidentAdding.set(false);
+          this.presidentAddedCount.set(result.added.length);
+          if (result.added.length === 0) this.presidentError.set('FOLLOW.PRESIDENT_NOTHING_ADDED');
+          this.loadSubscriptions();
+        },
+        error: (error: { status?: number }) => {
+          this.presidentAdding.set(false);
+          this.presidentError.set(
+            error.status === 404 ? 'FOLLOW.PRESIDENT_NO_MATCH'
+              : error.status === 403 ? 'FOLLOW.PRESIDENT_FORBIDDEN'
+                : 'FOLLOW.PRESIDENT_ERROR');
+        },
+      });
   }
 
   addTeam(): void {

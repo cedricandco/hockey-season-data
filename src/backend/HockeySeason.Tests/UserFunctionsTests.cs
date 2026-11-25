@@ -295,8 +295,73 @@ public sealed class UserFunctionsTests
             Assert.IsType<ObjectResult>(await function.Associations(anonymousRequest, anonymousContext, CancellationToken.None)).StatusCode);
     }
 
-    // ─── Scope enforcement ─────────────────────────────────────────────────
+    [Fact]
+    public async Task PresidentSelector_ListsTeamsOfTheBaseNameAndFollowsThemInOneCall()
+    {
+        var provisioning = new FakeProvisioning();
+        var users = new FakeUsers();
+        var (function, _) = CreateUserFunctions(users, provisioning);
+        var (context, request) = CreateContext(provisioning);
 
+        request.QueryString = new QueryString("?baseName=grizzly");
+        var preview = Assert.IsType<OkObjectResult>(
+            await function.TeamCatalogByBaseName(request, 1, context, CancellationToken.None));
+        using (var body = JsonDocument.Parse(JsonSerializer.Serialize(preview.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web))))
+        {
+            var teams = body.RootElement.GetProperty("teams");
+            Assert.Equal(2, teams.GetArrayLength());
+            Assert.Equal("GRIZZLY 1 STE-JULIE", teams[0].GetProperty("name").GetString());
+            Assert.Equal("M13 B", teams[0].GetProperty("leagueName").GetString());
+        }
+
+        // A base name matching nothing is not an error, it is an empty list.
+        request.QueryString = new QueryString("?baseName=mousquetaires");
+        using (var empty = JsonDocument.Parse(JsonSerializer.Serialize(
+            Assert.IsType<OkObjectResult>(await function.TeamCatalogByBaseName(request, 1, context, CancellationToken.None)).Value,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))))
+        {
+            Assert.Equal(0, empty.RootElement.GetProperty("teams").GetArrayLength());
+        }
+        // Without a base name the request is rejected.
+        request.QueryString = new QueryString(string.Empty);
+        Assert.IsType<BadRequestObjectResult>(
+            await function.TeamCatalogByBaseName(request, 1, context, CancellationToken.None));
+
+        // Following the base name adds every match in one call.
+        request.Body = Json("""{"associationId":1,"baseName":"grizzly"}""");
+        var added = Assert.IsType<OkObjectResult>(
+            await function.AddPresidentTeams(request, context, CancellationToken.None));
+        using (var body = JsonDocument.Parse(JsonSerializer.Serialize(added.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web))))
+        {
+            Assert.Equal(2, body.RootElement.GetProperty("added").GetArrayLength());
+        }
+        Assert.Equal([101, 102], users.LastBatchTeamIds);
+
+        // A base name with no match is a 404, an invalid body a 400.
+        request.Body = Json("""{"associationId":1,"baseName":"mousquetaires"}""");
+        Assert.IsType<NotFoundObjectResult>(await function.AddPresidentTeams(request, context, CancellationToken.None));
+        request.Body = Json("""{"associationId":1}""");
+        Assert.IsType<BadRequestObjectResult>(await function.AddPresidentTeams(request, context, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task PresidentBatch_ForbiddenWithoutThePresidentLicence()
+    {
+        var provisioning = new FakeProvisioning();
+        var users = new FakeUsers
+        {
+            BatchResult = TeamBatchSubscriptionResult.NotPresident(),
+        };
+        var (function, _) = CreateUserFunctions(users, provisioning);
+        var (context, request) = CreateContext(provisioning);
+        request.Body = Json("""{"associationId":1,"baseName":"grizzly"}""");
+
+        var result = await function.AddPresidentTeams(request, context, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsAssignableFrom<IStatusCodeActionResult>(result).StatusCode);
+    }
+
+    // ─── Scope enforcement ─────────────────────────────────────────────────
     [Fact]
     public async Task TeamFunctions_RejectOutOfScopeLeaguesAndTeams()
     {
@@ -481,6 +546,15 @@ public sealed class UserFunctionsTests
 
         public Task<IReadOnlyList<SubscriptionTeam>> GetTeamsAsync(string leagueId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<SubscriptionTeam>>([new(101, "Alpha")]);
+
+        public Task<PresidentTeamOptions> GetTeamsByBaseNameAsync(
+            int associationId, string baseName, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PresidentTeamOptions(
+                associationId, "Hockey Richelieu", baseName,
+                TeamNameMatcher.Matches("GRIZZLY 1 STE-JULIE", baseName)
+                    ? [new PresidentTeam(101, "GRIZZLY 1 STE-JULIE", "M13 B", "Simple lettre"),
+                       new PresidentTeam(102, "GRIZZLY 2 ST-HYACINTHE", "M15 A", "Simple lettre")]
+                    : []));
     }
 
     private sealed class FakeProvisioning : IUserProvisioningService
@@ -597,6 +671,9 @@ public sealed class UserFunctionsTests
         public int? LastAddedEntityId { get; private set; }
         public bool LastRemoveWasAdmin { get; private set; }
         public UserSettingsUpdate? LastSettings { get; private set; }
+        public IReadOnlyList<int> LastBatchTeamIds { get; private set; } = [];
+        /// <summary>Outcome of the president batch add; defaults to adding every requested team.</summary>
+        public TeamBatchSubscriptionResult? BatchResult { get; init; }
 
         public Task<UserSubscriptions> GetSubscriptionsAsync(int userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new UserSubscriptions([], [], []));
@@ -640,5 +717,12 @@ public sealed class UserFunctionsTests
 
         public Task<SubscriptionError> RemoveOrganizationSubscriptionAsync(int userId, int organizationId, CancellationToken cancellationToken = default) =>
             Task.FromResult(SubscriptionError.None);
+
+        public Task<TeamBatchSubscriptionResult> AddPresidentTeamSubscriptionsAsync(
+            int userId, IReadOnlyList<int> teamIds, CancellationToken cancellationToken = default)
+        {
+            LastBatchTeamIds = [.. teamIds];
+            return Task.FromResult(BatchResult ?? new TeamBatchSubscriptionResult(SubscriptionError.None, [.. teamIds], [], []));
+        }
     }
 }

@@ -110,6 +110,31 @@ public sealed class TeamPageNavigationTests
         Assert.Equal([194908], details.RequestedSchedules);
     }
 
+    [Fact]
+    public async Task TeamDetail_MapsTheSpordleIdsOfTheGamesToThePageIds()
+    {
+        // The games carry Spordle team ids while the page navigates with
+        // database ids: the route returns the bridge for the whole league, so a
+        // next game can link its opponent's page.
+        var function = new TeamFunctions(
+            null!, new RecordingTeamDetails(), Options.Create(new LeagueApiOptions()),
+            new StubScope(FollowedTeams(), [
+                new SelectableTeam(500, 181303, "Grizzly 1", 100, "M11A", [new FollowedSchedule(194908, "M11A Saison")]),
+                new SelectableTeam(502, 181305, "Falcon", 100, "M11A", [new FollowedSchedule(194908, "M11A Saison")]),
+            ]),
+            new RequestUserResolver(new StubProvisioning()), FunctionsTests.WithTestDatabase());
+        var (context, request) = CreateContext();
+
+        using var json = await ReadJsonAsync(function.FollowedTeamDetail(request, 500, context, CancellationToken.None));
+        var links = json.RootElement.GetProperty("teamLinks").EnumerateArray()
+            .Select(link => (External: link.GetProperty("externalTeamId").GetInt32(), Page: link.GetProperty("pageTeamId").GetInt32()))
+            .ToArray();
+        Assert.Equal([(181303, 500), (181305, 502)], links);
+        // The detail itself keeps the shape the page already reads.
+        Assert.Equal("Grizzly 1", json.RootElement.GetProperty("team").GetProperty("teamName").GetString());
+        Assert.Equal(0, json.RootElement.GetProperty("totalGoals").GetInt32());
+    }
+
     private static SubscriptionNavigationFunctions CreateNavigation(IReadOnlyList<FollowedTeam> teams) =>
         new(new StubScope(teams), new RequestUserResolver(new StubProvisioning()), FunctionsTests.WithTestDatabase());
 

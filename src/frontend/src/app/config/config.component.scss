@@ -31,6 +31,27 @@
 .selector-grid select:disabled { background: #f4f7fa; color: #9babb9; }
 
 .selector-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+.president-card { border-color: #cddff0; background: #f7fbff; }
+.president-card .selector-title { color: #174e82; }
+.president-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.president-grid input {
+  width: 100%; min-height: 40px; padding: 9px 10px;
+  border: 1px solid #dce5ed; border-radius: 9px; background: #fff;
+  color: #263d55; font-size: .79rem;
+}
+.president-grid input:disabled { background: #f4f7fa; color: #9babb9; }
+.match-list {
+  display: grid; gap: 6px; margin: 14px 0 0; padding: 0; list-style: none;
+  max-height: 260px; overflow-y: auto;
+}
+.match-item {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  padding: 8px 11px; border: 1px solid #e6edf3; border-radius: 8px; background: #fff;
+}
+.match-item.match-followed { border-color: #c6e6cd; background: #f4fbf5; }
+.match-name { color: #263d55; font-size: .8rem; font-weight: 700; overflow-wrap: anywhere; }
+.match-meta { color: #7a8b9b; font-size: .72rem; }
+.match-badge { margin-left: auto; color: #1f7a3f; font-weight: 800; }
 .add-button {
   min-height: 40px; padding: 0 18px; border: 0; border-radius: 9px;
   background: var(--color-primary); color: #fff; font-size: .8rem; font-weight: 700;
@@ -39,6 +60,7 @@
 .add-button:disabled { background: #eef2f6; color: #9babb9; cursor: default; }
 .hint { color: #708499; font-size: .74rem; }
 .hint-full { color: #9c2c2c; font-weight: 700; }
+.prune-hint { margin: 0 0 10px; }
 
 .list-title { margin: 24px 0 10px; color: #1d3853; font-size: .88rem; }
 .followed-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -46,6 +68,7 @@
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 11px 13px; border: 1px solid #e6edf3; border-radius: 10px; background: #fff;
 }
+.followed-item.followed-match { border-color: #c6e6cd; background: #f7fdf8; }
 .followed-text { display: grid; gap: 3px; min-width: 0; }
 .followed-name { color: #263d55; font-size: .84rem; font-weight: 700; overflow-wrap: anywhere; }
 .lock { color: #86601c; font-size: .72rem; }
@@ -74,6 +97,7 @@
   .follow-section { padding: 18px; }
   .selector-grid { grid-template-columns: 1fr; }
   .selector-grid select { min-height: 44px; font-size: 1rem; }
+  .president-grid input { min-height: 44px; font-size: 1rem; }
   .add-button { width: 100%; min-height: 46px; }
   .followed-item { flex-wrap: wrap; }
   .remove-button { min-height: 40px; }

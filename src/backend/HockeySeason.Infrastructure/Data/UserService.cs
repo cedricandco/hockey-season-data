@@ -154,17 +154,30 @@ public sealed class UserService(
         var maxFollowed = await MaxFollowedByKindAsync(db, userId, cancellationToken).ConfigureAwait(false);
         // A PRESIDENT licence (whole association) has a stored limit of 0: the
         // role means "every league of the association", not a cap of zero, so
-        // it is reported as unlimited rather than 0.
+        // it is reported as unlimited rather than 0. The same holds for teams:
+        // a president follows every team of a base name at once, so the COACH
+        // cap of 5 does not apply to their team list.
+        var isPresident = maxFollowed.ContainsKey(PresidentRoleId);
         var organizationMax = maxFollowed.GetValueOrDefault(PresidentRoleId) > 0
             ? maxFollowed[PresidentRoleId]
             : (int?)null;
         return
         [
-            new(TeamKind, maxFollowed.GetValueOrDefault(CoachRoleId), used[TeamKind]),
+            new(TeamKind, isPresident ? null : maxFollowed.GetValueOrDefault(CoachRoleId), used[TeamKind]),
             new(LeagueKind, maxFollowed.GetValueOrDefault(DirectorRoleId), used[LeagueKind]),
             new(OrganizationKind, organizationMax, used[OrganizationKind]),
         ];
     }
+
+    /// <summary>
+    /// Whether the caller holds a role, checked once per batch add.
+    /// </summary>
+    private static async Task<bool> HasRoleAsync(
+        HockeySeasonDbContext db, int userId, int roleId, CancellationToken cancellationToken) =>
+        await db.UserRoles
+            .AsNoTracking()
+            .AnyAsync(userRole => userRole.UserId == userId && userRole.RoleId == roleId, cancellationToken)
+            .ConfigureAwait(false);
 
     /// <summary>
     /// Largest <c>roles.max_followed_entities</c> of the governing role of each
@@ -276,6 +289,90 @@ public sealed class UserService(
         {
             return new(SubscriptionError.Duplicate, null);
         }
+    }
+
+    /// <summary>
+    /// Follows every team of the batch under the PRESIDENT licence: the team
+    /// cap and the 15-day removal lock are lifted, so the president can add a
+    /// whole base name at once and prune it immediately. Duplicates and unknown
+    /// Spordle ids are reported rather than refused, and a caller without the
+    /// PRESIDENT role changes nothing.
+    /// </summary>
+    public async Task<TeamBatchSubscriptionResult> AddPresidentTeamSubscriptionsAsync(
+        int userId, IReadOnlyList<int> teamIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(teamIds);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        if (!OpenAccess && !await HasRoleAsync(db, userId, PresidentRoleId, cancellationToken).ConfigureAwait(false))
+        {
+            // The whole-association flow belongs to the PRESIDENT licence:
+            // another role keeps the single-team path and its cap.
+            return TeamBatchSubscriptionResult.NotPresident();
+        }
+
+        var requested = teamIds.Distinct().ToList();
+        if (requested.Count == 0)
+        {
+            return new(SubscriptionError.None, [], [], []);
+        }
+
+        var externalIds = requested
+            .Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            .ToList();
+        var teamsByExternalId = await db.Teams
+            .AsNoTracking()
+            .Where(team => externalIds.Contains(team.ExternalId))
+            .Select(team => new { team.Id, team.ExternalId })
+            .ToDictionaryAsync(team => team.ExternalId, team => team.Id, cancellationToken)
+            .ConfigureAwait(false);
+
+        var followedTeamIds = (await db.TeamSubscriptions
+            .AsNoTracking()
+            .Where(subscription => subscription.UserId == userId)
+            .Select(subscription => subscription.TeamId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false))
+            .ToHashSet();
+
+        var now = timeProvider.UtcNow;
+        var added = new List<int>();
+        var duplicates = new List<int>();
+        var unknown = new List<int>();
+        foreach (var id in requested)
+        {
+            if (!teamsByExternalId.TryGetValue(id.ToString(System.Globalization.CultureInfo.InvariantCulture), out var teamId))
+            {
+                unknown.Add(id);
+                continue;
+            }
+            if (followedTeamIds.Contains(teamId))
+            {
+                duplicates.Add(id);
+                continue;
+            }
+
+            db.TeamSubscriptions.Add(new TeamSubscription
+            {
+                UserId = userId,
+                TeamId = teamId,
+                CreatedAt = now,
+                UpdatedAt = now,
+                // No lock: `LockedUntil` equals `CreatedAt`, so the lock window
+                // is already elapsed and the president can prune the batch
+                // immediately (the lock check is a strict `>` on the current
+                // time, and the page uses `until <= now`).
+                LockedUntil = now,
+            });
+            added.Add(id);
+        }
+
+        if (added.Count > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return new(SubscriptionError.None, added, duplicates, unknown);
     }
 
     public async Task<SubscriptionError> RemoveTeamSubscriptionAsync(int userId, int teamId, bool isAdmin, CancellationToken cancellationToken = default)
@@ -447,7 +544,9 @@ public sealed class UserService(
     /// <summary>
     /// Checks the licence limit for the given role before adding a row and
     /// returns the headroom of that follow kind. The role lookup is soft: a
-    /// caller without the role has a maximum of 0 (no individual follow).
+    /// caller without the role has a maximum of 0 (no individual follow). A
+    /// PRESIDENT follows every team of a base name, so the team kind is
+    /// unlimited for them.
     /// </summary>
     private async Task<SubscriptionLimit> SlotAsync<TSubscription>(
         HockeySeasonDbContext db,
@@ -469,6 +568,12 @@ public sealed class UserService(
         }
 
         var maximums = await MaxFollowedByKindAsync(db, userId, cancellationToken).ConfigureAwait(false);
+        if (maximums.ContainsKey(PresidentRoleId) && kind == TeamKind)
+        {
+            // The president licence covers a whole association: no team cap,
+            // matching the batch add of a base name.
+            return new(kind, null, used);
+        }
         return new(kind, maximums.GetValueOrDefault(roleId), used);
     }
 }

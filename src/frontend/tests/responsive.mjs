@@ -2,16 +2,20 @@ import { chromium } from 'playwright-core';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
+import { createSign, generateKeyPairSync } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const viewports = [
+const allViewports = [
   { width: 320, height: 568 }, { width: 375, height: 667 },
   { width: 390, height: 844 }, { width: 430, height: 932 },
   { width: 568, height: 320 }, { width: 768, height: 1024 }, { width: 1280, height: 800 },
 ];
+/** `VIEWPORTS=320,1280 npm run test:responsive` runs only those widths. */
+const onlyWidths = (process.env['VIEWPORTS'] ?? '').split(',').map(value => Number(value.trim())).filter(Boolean);
+const viewports = onlyWidths.length ? allViewports.filter(item => onlyWidths.includes(item.width)) : allViewports;
 const failures = [];
 const teamName = 'Les Grizzlys de Sainte-Julie et de la Vallée du Richelieu';
 const opponentName = 'Les Canadiens de Saint-Jean-sur-Richelieu et de la Montérégie';
@@ -27,6 +31,74 @@ const chatStanding = {
 };
 const chatQuestion = 'Montre le classement';
 const gameQuestion = 'Montre le match 123';
+
+/**
+ * The app authenticates with Auth0 Universal Login, so the suite serves a fake
+ * tenant: `/authorize` bounces back with a code, `/oauth/token` mints tokens
+ * signed by a key this process generates, and `/.well-known/jwks.json` publishes
+ * the matching public key so the SDK's signature check passes.
+ */
+const auth0Host = 'dev-fwr0a0nxb1dt4f46.us.auth0.com';
+const auth0ClientId = 'IDv6Vf6vsZnh5A0VzGevrfX8YuC1uL3M';
+const auth0Scope = 'openid profile email read:reports read:teams use:agent';
+const { publicKey: auth0PublicKey, privateKey: auth0PrivateKey } =
+  generateKeyPairSync('rsa', { modulusLength: 2048 });
+const auth0KeyId = 'responsive-test-key';
+const auth0Jwk = { ...auth0PublicKey.export({ format: 'jwk' }), kid: auth0KeyId, use: 'sig', alg: 'RS256' };
+
+function signedToken(payload) {
+  const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: auth0KeyId })).toString('base64url');
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = createSign('RSA-SHA256').update(`${header}.${body}`).sign(auth0PrivateKey).toString('base64url');
+  return `${header}.${body}.${signature}`;
+}
+
+/** Routes the Auth0 calls of the SDK to the fake tenant above. */
+async function mockAuth0(route, url, baseUrl, state) {
+  const cors = {
+    'access-control-allow-origin': baseUrl,
+    'access-control-allow-credentials': 'true',
+    'access-control-allow-headers': '*',
+    'access-control-allow-methods': 'POST, GET, OPTIONS',
+  };
+  if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+  if (url.pathname === '/authorize') {
+    state.nonce = url.searchParams.get('nonce') ?? state.nonce;
+    const redirect = url.searchParams.get('redirect_uri');
+    const query = url.searchParams.get('state');
+    return route.fulfill({ status: 302, headers: { location: `${redirect}?code=test-code&state=${query}` } });
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (url.pathname === '/oauth/token') {
+    return route.fulfill({
+      status: 200, headers: cors, json: {
+        access_token: signedToken({
+          sub: 'auth0|test', aud: 'https://api.hockeyseason.dev', iss: `https://${auth0Host}/`,
+          azp: auth0ClientId, scope: auth0Scope, iat: now, exp: now + 3600,
+        }),
+        id_token: signedToken({
+          sub: 'auth0|test', aud: auth0ClientId, iss: `https://${auth0Host}/`, azp: auth0ClientId,
+          nonce: state.nonce, iat: now, exp: now + 3600,
+          email: 'test@example.com', name: 'Test Hockey',
+        }),
+        scope: auth0Scope, expires_in: 3600, token_type: 'Bearer',
+      },
+    });
+  }
+  if (url.pathname === '/.well-known/jwks.json') {
+    return route.fulfill({ status: 200, headers: cors, json: { keys: [auth0Jwk] } });
+  }
+  if (url.pathname === '/.well-known/openid-configuration') {
+    return route.fulfill({
+      status: 200, headers: cors, json: {
+        issuer: `https://${auth0Host}/`, jwks_uri: `https://${auth0Host}/.well-known/jwks.json`,
+        authorization_endpoint: `https://${auth0Host}/authorize`, token_endpoint: `https://${auth0Host}/oauth/token`,
+      },
+    });
+  }
+  return route.fulfill({ status: 200, headers: cors, json: {} });
+}
+
 const fixtures = {
   '/api/auth/login': { success: true, accessToken: 'local-test-token', expiresInSeconds: 3600, tokenType: 'Bearer' },
   // Local account of the caller: drives the admin navigation entry (non-admin here).
@@ -48,16 +120,50 @@ const fixtures = {
   '/api/nav/associations': [{ associationId: 1, name: 'Hockey Richelieu' }],
   '/api/nav/associations/1/divisions': [{ divisionId: 6193, name: 'Simple lettre' }],
   '/api/nav/divisions/6193/leagues': [{ leagueId: 1, name: 'Ligue Exemple' }],
-  '/api/nav/leagues/1/teams': [{ teamId: 1, name: teamName }],
-  // Detail of the selected followed team: keyed on teams.id only.
+  '/api/nav/leagues/1/teams': [{ teamId: 1, name: teamName }, { teamId: 2, name: opponentName }],
+  // Detail of the selected followed team: keyed on teams.id only. Seven played
+  // games page by five, three upcoming games show the next two, and teamLinks
+  // maps the Spordle ids of the score lines to the page ids.
   '/api/teams/1': {
-    leagueId: 1, team: standing, standings: [standing], games: [{ game: {
-      id: 1, date: '2026-01-03', time: '12:00', homeTeamId: 1, awayTeamId: 2,
-      homeTeamName: teamName, awayTeamName: opponentName, homeScore: 3, awayScore: 2,
-    } }], upcomingGames: [],
+    leagueId: 1, team: standing, standings: [standing],
+    games: [
+      { game: { id: 11, date: '2026-01-03', time: '12:00', homeTeamId: 1, awayTeamId: 2,
+        homeTeamName: teamName, awayTeamName: opponentName, homeScore: 3, awayScore: 2 } },
+      { game: { id: 12, date: '2026-01-10', time: '13:00', homeTeamId: 2, awayTeamId: 1,
+        homeTeamName: opponentName, awayTeamName: teamName, homeScore: 1, awayScore: 4 } },
+      { game: { id: 13, date: '2026-01-17', time: '18:00', homeTeamId: 1, awayTeamId: 2,
+        homeTeamName: teamName, awayTeamName: opponentName, homeScore: 0, awayScore: 0 } },
+      { game: { id: 14, date: '2026-01-24', time: '10:00', homeTeamId: 2, awayTeamId: 1,
+        homeTeamName: opponentName, awayTeamName: teamName, homeScore: 5, awayScore: 2 } },
+      { game: { id: 15, date: '2026-01-31', time: '19:30', homeTeamId: 1, awayTeamId: 2,
+        homeTeamName: teamName, awayTeamName: opponentName, homeScore: 4, awayScore: 1 } },
+      { game: { id: 16, date: '2026-02-03', time: '09:00', homeTeamId: 2, awayTeamId: 1,
+        homeTeamName: opponentName, awayTeamName: teamName, homeScore: 2, awayScore: 3 } },
+      { game: { id: 17, date: '2026-02-05', time: '20:00', homeTeamId: 1, awayTeamId: 2,
+        homeTeamName: teamName, awayTeamName: opponentName, homeScore: 1, awayScore: 6 } },
+  ],
+    upcomingGames: [
+      { id: 20, date: '2026-02-07', time: '12:00', homeTeamId: 1, awayTeamId: 2,
+        homeTeamName: teamName, awayTeamName: opponentName, homeScore: null, awayScore: null },
+      { id: 21, date: '2026-02-14', time: '12:00', homeTeamId: 2, awayTeamId: 1,
+        homeTeamName: opponentName, awayTeamName: teamName, homeScore: null, awayScore: null },
+      { id: 22, date: '2026-02-21', time: '12:00', homeTeamId: 1, awayTeamId: 2,
+        homeTeamName: teamName, awayTeamName: opponentName, homeScore: null, awayScore: null },
+    ],
     players: [{ participantId: 1, name: playerName, number: 9, goals: 3, assists: 2, points: 5 }],
     totalGoals: 3, totalAssists: 2, totalPoints: 5, powerPlayGoals: 1,
     shorthandedGoals: 0, penalties: 0, completeRosterAvailable: true,
+    teamLinks: [{ externalTeamId: 1, pageTeamId: 1 }, { externalTeamId: 2, pageTeamId: 2 }],
+  },
+  // The opponent's own page, opened from a next game or a score line.
+  '/api/teams/2': {
+    leagueId: 1,
+    team: { ...standing, teamId: 2, teamName: opponentName, ranking: 2, wins: 1, losses: 3 },
+    standings: [{ ...standing, teamId: 2, teamName: opponentName, ranking: 2, wins: 1, losses: 3 }],
+    games: [], upcomingGames: [],
+    players: [], totalGoals: 0, totalAssists: 0, totalPoints: 0, powerPlayGoals: 0,
+    shorthandedGoals: 0, penalties: 0, completeRosterAvailable: true,
+    teamLinks: [{ externalTeamId: 1, pageTeamId: 1 }, { externalTeamId: 2, pageTeamId: 2 }],
   },
   // Configuration page: followed teams + licence headroom, and the
   // association → division → league → team navigation of the selector.
@@ -124,6 +230,13 @@ const fixtures = {
     }],
   },
 };
+
+fixtures['/api/me'] = { sub: 'auth0|test', name: 'Test Hockey', email: 'test@example.com', pictureUrl: null };
+
+/** Every played game of the fixture shares one box score shape, re-keyed on its id. */
+for (const id of [11, 12, 13, 14, 15, 16, 17]) {
+  fixtures[`/api/games/${id}`] = { ...fixtures['/api/games/123'], id };
+}
 
 function browserPath() {
   const paths = [
@@ -195,6 +308,29 @@ async function check(label, action) {
 
 async function visible(locator) {
   await locator.waitFor({ state: 'visible', timeout: 10000 });
+}
+
+/**
+ * Presses the login button until the app leaves the gate. The SDK handles the
+ * redirect back with a one-shot authorization code kept in memory: if the
+ * browser reloads the callback URL before that page finished its exchange, the
+ * code is consumed and the gate shows an error, so a retry is the only way on.
+ */
+async function signIn(page) {
+  const input = page.locator('#chat-input');
+  const button = page.locator('.login-submit');
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (await input.isVisible()) return;
+    try {
+      // The gate renders nothing while the SDK initializes: wait for the button,
+      // not just for its visibility.
+      await button.waitFor({ state: 'visible', timeout: 15000 });
+      await button.click();
+      await input.waitFor({ state: 'visible', timeout: 20000 });
+      return;
+    } catch { /* The exchange failed: press the button again. */ }
+  }
+  await input.waitFor({ state: 'visible', timeout: 15000 });
 }
 
 async function inspectLayout(page, label, width) {
@@ -387,6 +523,67 @@ async function inspectGame(page, width, requestBodies) {
   });
 }
 
+async function inspectTeamGames(page, width) {
+  const block = page.locator('app-team-games');
+  await visible(block);
+  await check(`${width}px équipe: cinq derniers matchs puis pagination de cinq`, async () => {
+    const rows = block.locator('.games-block').first().locator('.game-row');
+    if (await rows.count() !== 5) throw new Error(`${await rows.count()} matchs affichés au lieu de 5`);
+    // Most recent first: the 2026-02-05 game is the last played one.
+    const dates = (await rows.locator('.game-date').allTextContents()).map(text => text.trim());
+    if (dates[0] !== '2026-02-0520:00') throw new Error(`ordre des matchs incorrect: ${JSON.stringify(dates)}`);
+    const more = block.locator('.more-button');
+    if ((await more.textContent()).trim() !== 'Voir 2 matchs de plus') {
+      throw new Error(`libellé de pagination inattendu: ${await more.textContent()}`);
+    }
+    await more.click();
+    await page.waitForFunction(() =>
+      document.querySelectorAll('app-team-games .games-block:first-of-type .game-row').length === 7,
+      null, { timeout: 5000 });
+    if (await more.count() !== 0) throw new Error('la pagination doit disparaître une fois tout affiché');
+  });
+  await check(`${width}px équipe: détail d’un match dans la page`, async () => {
+    const row = block.locator('.games-block').first().locator('.game-row').first();
+    const button = row.locator('.detail-button');
+    if ((await button.textContent()).trim() !== 'Détail du match') throw new Error('bouton de détail absent');
+    if (await row.locator('app-game-detail').count() !== 0) throw new Error('détail affiché avant le clic');
+    await button.click();
+    const card = row.locator('app-game-detail .game-card');
+    await visible(card);
+    await visible(card.getByText(playerName, { exact: false }));
+    if ((await button.textContent()).trim() !== 'Masquer le détail') throw new Error('libellé du bouton non inversé');
+    await inspectLayout(page, 'équipe détail ouvert', width);
+    await button.click();
+    await page.waitForFunction(() => !document.querySelector('app-team-games app-game-detail'),
+      null, { timeout: 5000 });
+  });
+  await check(`${width}px équipe: deux prochains matchs avec lien adverse`, async () => {
+    const next = block.locator('.games-block').nth(1);
+    const rows = next.locator('.game-row');
+    if (await rows.count() !== 2) throw new Error(`${await rows.count()} prochains matchs au lieu de 2`);
+    const links = next.locator('.game-team.opponent');
+    if (await links.count() !== 2) throw new Error('les deux adversaires doivent être liés');
+    for (const link of await links.all()) {
+      if ((await link.textContent()).trim() !== opponentName) throw new Error('nom de l’adversaire incorrect');
+      if (await link.getAttribute('href') !== '/team?association=1&division=6193&league=1&team=2') {
+        throw new Error(`lien adverse inattendu: ${await link.getAttribute('href')}`);
+      }
+    }
+    await links.first().click();
+    await page.waitForFunction(() => new URLSearchParams(location.search).get('team') === '2');
+    await visible(page.locator('.team-summary h2').getByText(opponentName, { exact: false }));
+    await check(`${width}px équipe: adversaire ouvert sans rechargement`, async () => {
+      // The page keeps its own component: the selection is re-applied in place.
+      if (await page.locator('.team-summary h2').getByText(teamName, { exact: true }).count() !== 0) {
+        throw new Error('l’ancienne équipe est encore affichée');
+      }
+    });
+    await page.goBack();
+    await page.waitForFunction(() => new URLSearchParams(location.search).get('team') === '1');
+    await visible(page.locator('.team-summary h2').getByText(teamName, { exact: false }));
+  });
+}
+
 async function inspectSubscriptionSelector(page, width) {
   await check(`${width}px configuration: chemin association → division → ligue → équipe`, async () => {
     const selects = page.locator('.selector-card select');
@@ -426,9 +623,11 @@ async function runViewport(browser, baseUrl, viewport) {
   const context = await browser.newContext({ viewport, isMobile: width <= 900, hasTouch: width <= 900 });
   const page = await context.newPage();
   const requestBodies = [];
+  const authState = { nonce: '' };
   try {
     await context.route('**/*', async route => {
       const url = new URL(route.request().url());
+      if (url.host === auth0Host) return mockAuth0(route, url, baseUrl, authState);
       if (url.origin !== baseUrl) return route.abort();
       if (!url.pathname.startsWith('/api/')) return route.continue();
       if (url.pathname === '/api/agui/hockey-season-data.agent') {
@@ -461,11 +660,12 @@ async function runViewport(browser, baseUrl, viewport) {
       return route.fulfill({ status: 200, json: body });
     });
     await page.goto(`${baseUrl}/chat`, { waitUntil: 'domcontentloaded' });
-    await visible(page.locator('#access-code'));
+    await visible(page.locator('.login-submit'));
     await inspectLayout(page, 'login', width);
-    await page.locator('#access-code').fill('123456');
+    // Auth0 Universal Login: the fake tenant redirects straight back and the
+    // SDK lands on the origin, i.e. the chat page.
     await page.locator('.login-submit').click();
-    await visible(page.locator('#chat-input'));
+    await signIn(page);
     await inspectLayout(page, 'chat', width);
     await inspectNavigation(page, width, '/chat');
     await inspectComposer(page, width, height, 'chat initial');
@@ -487,7 +687,7 @@ async function runViewport(browser, baseUrl, viewport) {
     await selects.nth(3).selectOption({ label: teamName });
     await visible(page.locator('.team-summary'));
     await visible(page.getByText(playerName));
-    await visible(page.locator('.team-summary .games').getByText(opponentName, { exact: false }));
+    await inspectTeamGames(page, width);
     await inspectLayout(page, 'team avec données', width);
     await inspectNavigation(page, width, '/team');
     await page.locator('.main-nav a[href="/teams-weekly-report"]').click();

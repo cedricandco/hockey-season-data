@@ -380,7 +380,8 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task SubscriptionCatalog_WalksAssociationDivisionLeagueTeam()    {
+    public async Task SubscriptionCatalog_WalksAssociationDivisionLeagueTeam()
+    {
         var factory = CreateFactory();
         await SeedTeamAsync(factory, "410", leagueExternalId: "13c38dd1-e464-4835-af5f-75be8561daf6", divisionExternalId: "6193");
         var catalog = new SubscriptionCatalogService(factory);
@@ -396,6 +397,103 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
 
         var team = Assert.Single(await catalog.GetTeamsAsync(league.Id));
         Assert.Equal(410, team.Id);
+    }
+
+    [Fact]
+    public async Task SubscriptionCatalog_FindsTeamsByBaseNameAcrossLeaguesAndDivisions()
+    {
+        var factory = CreateFactory();
+        // Two divisions of the same association; GRIZZLY plays in both, and a
+        // GRIZZLYS team of the same association must not be selected.
+        await SeedTeamAsync(factory, "410", leagueExternalId: "league-a", divisionExternalId: "6193", teamName: "GRIZZLY 1 STE-JULIE");
+        await SeedTeamAsync(factory, "411", leagueExternalId: "league-b", divisionExternalId: "6194", teamName: "GRIZZLY 2 ST-HYACINTHE");
+        await SeedTeamAsync(factory, "412", leagueExternalId: "league-a", divisionExternalId: "6193", teamName: "GRIZZLYS 3 LONGUEUIL");
+        await SeedTeamAsync(factory, "413", leagueExternalId: "league-a", divisionExternalId: "6193", teamName: "AIGLES ST-BRUNO");
+        var catalog = new SubscriptionCatalogService(factory);
+        var associationId = await AssociationIdAsync(factory);
+
+        var options = await catalog.GetTeamsByBaseNameAsync(associationId, "grizzly");
+
+        Assert.Equal(associationId, options.AssociationId);
+        Assert.Equal("grizzly", options.BaseName);
+        Assert.Equal([410, 411], options.Teams.Select(team => team.Id).OrderBy(id => id));
+        // Each entry names its league and division, so the page needs no call.
+        Assert.Contains(options.Teams, team => team.Id == 411 && team.DivisionName == "Div");
+
+        // A more precise base name narrows the batch, and an unknown name matches nothing.
+        Assert.Equal([410], (await catalog.GetTeamsByBaseNameAsync(associationId, "GRIZZLY 1")).Teams.Select(team => team.Id));
+        Assert.Empty((await catalog.GetTeamsByBaseNameAsync(associationId, "MOUSQUETAIRES")).Teams);
+        Assert.Empty((await catalog.GetTeamsByBaseNameAsync(4242, "grizzly")).Teams);
+    }
+
+    [Fact]
+    public async Task PresidentBatch_FollowsEveryMatchWithoutCapOrLock()
+    {
+        var factory = CreateFactory();
+        for (var i = 1; i <= 7; i++)
+        {
+            await SeedTeamAsync(factory, $"{500 + i}", leagueExternalId: "president-league",
+                divisionExternalId: "6193", teamName: $"GRIZZLY {i} STE-JULIE");
+        }
+        var userId = await SeedPresidentAsync(factory);
+        var users = CreateUserService(factory);
+
+        // Seven teams: above the COACH cap of 5, which the president licence lifts.
+        var result = await users.AddPresidentTeamSubscriptionsAsync(userId, [501, 502, 503, 504, 505, 506, 507]);
+
+        Assert.Equal(SubscriptionError.None, result.Error);
+        Assert.Equal([501, 502, 503, 504, 505, 506, 507], result.AddedTeamIds.OrderBy(id => id));
+        Assert.Empty(result.AlreadyFollowedTeamIds);
+        Assert.Empty(result.UnknownTeamIds);
+        var limits = (await users.GetLimitsAsync(userId)).ToDictionary(limit => limit.Kind);
+        Assert.Null(limits["team"].Max);
+        Assert.True(limits["team"].CanAddMore);
+
+        // No 15-day lock: the president prunes the batch immediately.
+        Assert.Equal(SubscriptionError.None, await users.RemoveTeamSubscriptionAsync(userId, 507, isAdmin: false));
+
+        // A second add reports the already-followed teams instead of failing.
+        var again = await users.AddPresidentTeamSubscriptionsAsync(userId, [501, 999999]);
+        Assert.Equal(SubscriptionError.None, again.Error);
+        Assert.Empty(again.AddedTeamIds);
+        Assert.Equal([501], again.AlreadyFollowedTeamIds);
+        Assert.Equal([999999], again.UnknownTeamIds);
+    }
+
+    [Fact]
+    public async Task PresidentBatch_ChangesNothingForACallerWithoutThePresidentRole()
+    {
+        var factory = CreateFactory();
+        await SeedTeamAsync(factory, "601", leagueExternalId: "president-league", divisionExternalId: "6193", teamName: "GRIZZLY 1");
+        var userId = await SeedCoachAsync(factory);
+        var users = CreateUserService(factory);
+
+        var result = await users.AddPresidentTeamSubscriptionsAsync(userId, [601]);
+
+        Assert.Equal(SubscriptionError.OutOfScope, result.Error);
+        Assert.Empty(result.AddedTeamIds);
+        await using var db = CreateContext();
+        Assert.False(await db.TeamSubscriptions.AnyAsync(subscription => subscription.UserId == userId));
+    }
+
+    private static async Task<int> AssociationIdAsync(IDbContextFactory<HockeySeasonDbContext> factory)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.Organizations.Select(organization => organization.Id).SingleAsync();
+    }
+
+    /// <summary>Provisions a caller and grants the PRESIDENT licence (whole association).</summary>
+    private static async Task<int> SeedPresidentAsync(IDbContextFactory<HockeySeasonDbContext> factory)
+    {
+        var provisioning = new UserProvisioningService(factory, NullLogger<UserProvisioningService>.Instance);
+        var userId = (await provisioning.ProvisionAsync(new($"auth0|president-{Guid.NewGuid():N}", null, null, null))).UserId;
+        await using var db = await factory.CreateDbContextAsync();
+        if (!await db.UserRoles.AnyAsync(userRole => userRole.UserId == userId && userRole.RoleId == 3))
+        {
+            db.UserRoles.Add(new UserRole { UserId = userId, RoleId = 3 });
+            await db.SaveChangesAsync();
+        }
+        return userId;
     }
 
     [Fact]
@@ -490,7 +588,7 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
         return (await provisioning.ProvisionAsync(new("auth0|coach", null, null, null))).UserId;
     }
 
-    private static async Task SeedTeamAsync(IDbContextFactory<HockeySeasonDbContext> factory, string teamExternalId, string leagueExternalId, string divisionExternalId)
+    private static async Task SeedTeamAsync(IDbContextFactory<HockeySeasonDbContext> factory, string teamExternalId, string leagueExternalId, string divisionExternalId, string? teamName = null)
     {
         await using var db = await factory.CreateDbContextAsync();
         var season = await db.Seasons.FirstOrDefaultAsync(s => s.ExternalId == "2026-27");
@@ -527,7 +625,7 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
 
         if (!await db.Teams.AnyAsync(t => t.ExternalId == teamExternalId))
         {
-            db.Teams.Add(new() { LeagueId = league.Id, Name = $"Team {teamExternalId}", ExternalId = teamExternalId });
+            db.Teams.Add(new() { LeagueId = league.Id, Name = teamName ?? $"Team {teamExternalId}", ExternalId = teamExternalId });
         }
         await db.SaveChangesAsync();
     }

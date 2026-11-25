@@ -15,13 +15,15 @@ import {
   ReferenceSeasonsResponse,
 } from '../admin/reference.models';
 import {
+  PresidentTeamsFollowResult,
+  PresidentTeamsResponse,
   SubscriptionAssociationsResponse,
   SubscriptionDivisionsResponse,
   SubscriptionLeaguesResponse,
   SubscriptionTeamsResponse,
   SubscriptionsResponse,
 } from '../config/subscription.models';
-import { NavChoice, NavDivision, NavLeague, NavTeam, FollowedTeam } from '../team/team.models';
+import { NavChoice, NavDivision, NavLeague, NavTeam, FollowedTeam, TeamPageDetail } from '../team/team.models';
 
 /**
  * Thin wrapper around HttpClient for the Hockey Season API.
@@ -79,10 +81,11 @@ export class ApiService {
   /**
    * Detail of a followed team, keyed on its `teams.id` alone: the backend
    * validates the follow and resolves the published Spordle schedule, so the
-   * page never handles one.
+   * page never handles one. The response also maps the Spordle team ids of the
+   * games to the database ids the page navigates with.
    */
-  getFollowedTeamDetail(teamId: number): Observable<TeamDetail> {
-    return this.http.get<TeamDetail>(`${this.baseUrl}/teams/${teamId}`);
+  getFollowedTeamDetail(teamId: number): Observable<TeamPageDetail> {
+    return this.http.get<TeamPageDetail>(`${this.baseUrl}/teams/${teamId}`);
   }
 
   /** Detail of a team, keyed on Spordle ids (chat card / agent tool output). */
@@ -170,6 +173,28 @@ export class ApiService {
   /** Follows a team (Spordle team id). */
   addTeamSubscription(teamId: number): Observable<unknown> {
     return this.http.post(`${this.baseUrl}/users/me/team-subscriptions`, { entityId: teamId });
+  }
+
+  /**
+   * Association-president selector: teams of one association whose name starts
+   * with the typed base name, across every division, league and category.
+   */
+  getPresidentTeams(associationId: number, baseName: string): Observable<PresidentTeamsResponse> {
+    const params = new HttpParams().set('baseName', baseName);
+    return this.http.get<PresidentTeamsResponse>(
+      `${this.baseUrl}/subscriptions/associations/${associationId}/teams`, { params });
+  }
+
+  /**
+   * Follows every team of an association whose name starts with the base name,
+   * in one call (PRESIDENT licence: no team cap, no 15-day lock).
+   */
+  addPresidentTeamSubscriptions(
+    associationId: number,
+    baseName: string,
+  ): Observable<PresidentTeamsFollowResult> {
+    return this.http.post<PresidentTeamsFollowResult>(
+      `${this.baseUrl}/users/me/president-team-subscriptions`, { associationId, baseName });
   }
 
   /** Unfollows a team; 423 when the 15-day lock is still active. */

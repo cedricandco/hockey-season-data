@@ -48,6 +48,39 @@ export interface SubscriptionTeamsResponse {
   teams: SubscriptionTeam[];
 }
 
+/**
+ * A team matched by the association-president selector: typing a base name
+ * ("grizzly") selects every team of the association whose name starts with it.
+ * `id` is the Spordle team id the team-subscription endpoints expect.
+ */
+export interface PresidentTeam {
+  id: number;
+  name: string;
+  leagueName: string;
+  divisionName: string;
+}
+
+/** `GET /api/subscriptions/associations/{id}/teams?baseName=…` */
+export interface PresidentTeamsResponse {
+  associationId: number;
+  associationName: string;
+  baseName: string;
+  teams: PresidentTeam[];
+}
+
+/** `POST /api/users/me/president-team-subscriptions` outcome. */
+export interface PresidentTeamsFollowResult {
+  associationId: number;
+  associationName: string;
+  baseName: string;
+  /** Spordle team ids followed by this call. */
+  added: number[];
+  /** Spordle team ids already followed (reported, not refused). */
+  alreadyFollowed: number[];
+  /** Spordle team ids that match no imported team. */
+  unknown: number[];
+}
+
 /** One followed team, with its 15-day removal lock window. */
 export interface FollowedTeam {
   teamId: number;

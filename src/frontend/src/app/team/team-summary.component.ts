@@ -28,18 +28,23 @@ import { recentGames, teamResult } from './team-results';
             <div><strong>{{ data.shorthandedGoals }}</strong><span>{{ 'TEAM.SHORTHANDED' | translate }}</span></div>
             <div><strong>{{ data.penalties }}</strong><span>{{ 'TEAM.PENALTIES' | translate }}</span></div>
           </div>
-          <section [attr.aria-label]="'TEAM.RECENT' | translate">
-            <h3>{{ 'TEAM.RECENT' | translate }}</h3>
-            @if (recent().length === 0) { <p class="empty">{{ 'TEAM.NO_GAMES' | translate }}</p> }
-            <ul class="games">
-              @for (game of recent(); track game.id) {
-                <li><span class="game-date">{{ game.date }}</span>
-                  <span class="game-score">{{ game.homeTeamName }} <strong>{{ game.homeScore }} – {{ game.awayScore }}</strong> {{ game.awayTeamName }}</span>
-                  <span class="game-result" [class.win]="result(game, data.team.teamId) === 'TEAM.WIN'"
-                    [class.loss]="result(game, data.team.teamId) === 'TEAM.LOSS'">{{ result(game, data.team.teamId) | translate }}</span></li>
-              }
-            </ul>
-          </section>
+          <!-- Games of the team page: projected right under the key figures,
+               before the player and standings tables. -->
+          <ng-content />
+          @if (showGames()) {
+            <section [attr.aria-label]="'TEAM.RECENT' | translate">
+              <h3>{{ 'TEAM.RECENT' | translate }}</h3>
+              @if (recent().length === 0) { <p class="empty">{{ 'TEAM.NO_GAMES' | translate }}</p> }
+              <ul class="games">
+                @for (game of recent(); track game.id) {
+                  <li><span class="game-date">{{ game.date }}</span>
+                    <span class="game-score">{{ game.homeTeamName }} <strong>{{ game.homeScore }} – {{ game.awayScore }}</strong> {{ game.awayTeamName }}</span>
+                    <span class="game-result" [class.win]="result(game, data.team.teamId) === 'TEAM.WIN'"
+                      [class.loss]="result(game, data.team.teamId) === 'TEAM.LOSS'">{{ result(game, data.team.teamId) | translate }}</span></li>
+                }
+              </ul>
+            </section>
+          }
           <section>
             <h3>{{ 'TEAM.PLAYERS' | translate }}</h3>
             @if (!data.completeRosterAvailable) { <p class="notice">{{ 'TEAM.ROSTER_LIMIT' | translate }}</p> }
@@ -68,6 +73,12 @@ import { recentGames, teamResult } from './team-results';
 })
 export class TeamSummaryComponent {
   readonly team = input.required<TeamDetail | null>();
+  /**
+   * Whether the summary renders the last games itself. The chat card shows
+   * them inline; the team page sets it to false because its own games block
+   * adds paging, the box score of a game and the next games.
+   */
+  readonly showGames = input(true);
   readonly recent = computed(() => recentGames(this.team()?.games ?? []));
   readonly result = teamResult;
 }

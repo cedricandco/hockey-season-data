@@ -126,4 +126,71 @@ public sealed class SubscriptionCatalogService(
                 : null)
             .OfType<SubscriptionTeam>()];
     }
+
+    /// <summary>
+    /// Teams of one association whose name starts with the base name, across
+    /// every league of its latest imported season. The name comparison happens
+    /// in memory (<see cref="TeamNameMatcher"/>) because it is accent- and
+    /// case-insensitive and word-aware, which a provider-side LIKE cannot
+    /// express; only the reference rows of the association are read.
+    /// </summary>
+    public async Task<PresidentTeamOptions> GetTeamsByBaseNameAsync(
+        int associationId, string baseName, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(baseName);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var association = await db.Organizations
+            .AsNoTracking()
+            .Where(organization => organization.Id == associationId)
+            .Select(organization => new { organization.Name })
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (association is null)
+        {
+            return new(associationId, string.Empty, baseName.Trim(), []);
+        }
+
+        // The latest season of the association: a team promoted between
+        // categories keeps one Spordle id, so each team appears once even when
+        // several divisions of the association publish the same base name.
+        var seasonExternalId = await db.Leagues
+            .AsNoTracking()
+            .Where(league => league.Division.OrganizationId == associationId)
+            .OrderByDescending(league => league.Season.ExternalId)
+            .Select(league => league.Season.ExternalId)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (seasonExternalId is null)
+        {
+            return new(associationId, association.Name, baseName.Trim(), []);
+        }
+
+        var candidates = await db.Teams
+            .AsNoTracking()
+            .Where(team => team.League.Division.OrganizationId == associationId
+                && team.League.Season.ExternalId == seasonExternalId)
+            .Select(team => new
+            {
+                team.Name,
+                team.ExternalId,
+                LeagueName = team.League.Name,
+                DivisionName = team.League.Division.Name,
+            })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var teams = candidates
+            .Where(team => TeamNameMatcher.Matches(team.Name, baseName))
+            .Select(team => (Team: team, ExternalId: int.TryParse(
+                team.ExternalId, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : 0))
+            .Where(item => item.ExternalId > 0)
+            .DistinctBy(item => item.ExternalId)
+            .OrderBy(item => item.Team.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.ExternalId)
+            .Select(item => new PresidentTeam(item.ExternalId, item.Team.Name, item.Team.LeagueName, item.Team.DivisionName))
+            .ToList();
+
+        return new(associationId, association.Name, baseName.Trim(), teams);
+    }
 }

@@ -144,6 +144,12 @@ public sealed class TeamFunctions(
     /// because a category is played in several ones ("Saison Rives", "Phase
     /// 2"…).
     /// </summary>
+    /// <remarks>
+    /// The response also carries <see cref="TeamPageDetailResponse.TeamLinks"/>,
+    /// the database id of every team of the league: the games of the detail are
+    /// keyed on Spordle team ids, so the page needs that mapping to open an
+    /// opponent's page from a score line without ever sending a Spordle id.
+    /// </remarks>
     [Function("FollowedTeamDetail")]
     public async Task<IActionResult> FollowedTeamDetail(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "teams/{teamId:int}")] HttpRequest request,
@@ -167,7 +173,11 @@ public sealed class TeamFunctions(
             return new NotFoundResult();
 
         var result = await teams.GetAsync(scheduleIds, selectable.ExternalId, cancellationToken);
-        return result is null ? new NotFoundResult() : new OkObjectResult(result);
+        if (result is null) return new NotFoundResult();
+
+        var leagueTeams = await dataScope.GetLeagueTeamsAsync(userId, selectable.LeagueId, cancellationToken);
+        return new OkObjectResult(TeamPageDetailResponse.From(result,
+            [.. leagueTeams.Select(team => new TeamPageLink(team.ExternalId, team.Id))]));
     }
 
     /// <summary>

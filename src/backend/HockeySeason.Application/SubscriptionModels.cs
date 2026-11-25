@@ -36,6 +36,22 @@ public sealed record SubscriptionResult(
     SubscriptionLimit? Limit = null);
 
 /// <summary>
+/// Outcome of following several teams at once (association president): the
+/// teams added, the ones already followed and the ids that match no imported
+/// team. Nothing is refused by a licence cap — the president scope is
+/// unlimited — so the caller only has to report what changed.
+/// </summary>
+public sealed record TeamBatchSubscriptionResult(
+    SubscriptionError Error,
+    IReadOnlyList<int> AddedTeamIds,
+    IReadOnlyList<int> AlreadyFollowedTeamIds,
+    IReadOnlyList<int> UnknownTeamIds)
+{
+    /// <summary>Nothing was added because the caller is not the association president.</summary>
+    public static TeamBatchSubscriptionResult NotPresident() => new(SubscriptionError.OutOfScope, [], [], []);
+}
+
+/// <summary>
 /// Licence headroom of one follow kind (team, league or organization), built
 /// from the caller's role limits: <see cref="Max"/> is the largest
 /// <c>roles.max_followed_entities</c> of the role that governs the kind (0 when

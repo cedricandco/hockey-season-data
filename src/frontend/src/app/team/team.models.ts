@@ -52,6 +52,20 @@ export interface TeamPlayer {
   participantId: number; name: string; number: number | null; goals: number; assists: number; points: number;
 }
 
+/**
+ * Bridge between the Spordle team id used by the games and the database id the
+ * team page navigates with. The page only ever sends `pageTeamId`.
+ */
+export interface TeamPageLink { externalTeamId: number; pageTeamId: number }
+
+/** Association → division → league → team, as carried by the query string. */
+export interface RouteSelection {
+  association: number; division: number; league: number; team: number;
+}
+
+/** Association/division/league of the selected team, restored by each opponent link. */
+export type TeamPagePath = Omit<RouteSelection, 'team'>;
+
 export interface TeamDetail {
   leagueId: number; team: TeamStanding; standings: TeamStanding[];
   games: { game: TeamGame }[]; upcomingGames: TeamGame[]; players: TeamPlayer[];
@@ -59,3 +73,10 @@ export interface TeamDetail {
   powerPlayGoals: number; shorthandedGoals: number; penalties: number;
   completeRosterAvailable: boolean;
 }
+
+/**
+ * Team detail as read by the team page (`GET /api/teams/{teamId}`): the same
+ * figures as {@link TeamDetail}, plus the Spordle ↔ database team mapping used
+ * to open an opponent's page from a score line.
+ */
+export interface TeamPageDetail extends TeamDetail { teamLinks: TeamPageLink[] }
