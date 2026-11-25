@@ -23,6 +23,11 @@ import {
  * so an opponent is linked with the `teams.id` that
  * {@link TeamPageDetail.teamLinks} maps: a team the mapping does not know stays
  * plain text rather than a broken link.
+ *
+ * In {@link guest} mode (the anonymous landing-page preview) the block renders
+ * the exact same figures but keeps the opponents as plain text and hides the
+ * box-score button: the opponent pages and the game detail route belong to a
+ * signed-in account.
  */
 @Component({
   selector: 'app-team-games',
@@ -55,12 +60,14 @@ import {
                   </span>
                   <span class="game-result" [class.win]="result(game, data.team.teamId) === 'TEAM.WIN'"
                     [class.loss]="result(game, data.team.teamId) === 'TEAM.LOSS'">{{ result(game, data.team.teamId) | translate }}</span>
-                  <button type="button" class="detail-button" [attr.aria-expanded]="openGameId() === game.id"
-                    [attr.aria-controls]="'game-detail-' + game.id" (click)="toggleDetail(game.id)">
-                    {{ (openGameId() === game.id ? 'TEAM.HIDE_DETAIL' : 'TEAM.SHOW_DETAIL') | translate }}
-                  </button>
+                  @if (!guest()) {
+                    <button type="button" class="detail-button" [attr.aria-expanded]="openGameId() === game.id"
+                      [attr.aria-controls]="'game-detail-' + game.id" (click)="toggleDetail(game.id)">
+                      {{ (openGameId() === game.id ? 'TEAM.HIDE_DETAIL' : 'TEAM.SHOW_DETAIL') | translate }}
+                    </button>
+                  }
                 </div>
-                @if (openGameId() === game.id) {
+                @if (!guest() && openGameId() === game.id) {
                   <div class="game-detail" [id]="'game-detail-' + game.id">
                     @if (detailLoading()) {
                       <p class="game-detail-message" role="status">{{ 'GAMECARD.LOADING' | translate }}</p>
@@ -96,7 +103,7 @@ import {
                   <span class="game-date">{{ game.date }}<span class="game-time">{{ game.time }}</span></span>
                   <span class="game-score">
                     @for (side of sides(game); track $index) {
-                      @if (side.own || !side.pageTeamId) {
+                      @if (guest() || side.own || !side.pageTeamId) {
                         <span class="game-team" [class.own]="side.own">{{ side.name }}</span>
                       } @else {
                         <a class="game-team opponent" [routerLink]="['/team']"
@@ -123,6 +130,11 @@ export class TeamGamesComponent {
   readonly team = input.required<TeamPageDetail | null>();
   /** Association/division/league of the selected team, restored by each opponent link. */
   readonly path = input<TeamPagePath | null>(null);
+  /**
+   * Anonymous preview: same figures, but the opponents are plain text and the
+   * box score is not offered (both routes need a signed-in account).
+   */
+  readonly guest = input(false);
 
   readonly result = teamResult;
   readonly played = computed(() => playedGames(this.team()?.games ?? []));

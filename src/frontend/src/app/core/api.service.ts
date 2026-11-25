@@ -26,6 +26,16 @@ import {
 import { NavChoice, NavDivision, NavLeague, NavTeam, FollowedTeam, TeamPageDetail } from '../team/team.models';
 
 /**
+ * Anonymous preview of the landing page: the reference data a visitor may
+ * browse before creating an account, keyed on database ids like the team page.
+ */
+export interface PreviewAssociation { id: number; name: string }
+export interface PreviewDivision { id: number; name: string }
+export interface PreviewLeague { id: string; name: string }
+export interface PreviewTeam { id: number; name: string }
+export interface PreviewLeaguesResponse { seasonId: string | null; leagues: PreviewLeague[] }
+
+/**
  * Thin wrapper around HttpClient for the Hockey Season API.
  * Kept as a single injectable so components stay dumb (SRP).
  */
@@ -200,5 +210,35 @@ export class ApiService {
   /** Unfollows a team; 423 when the 15-day lock is still active. */
   removeTeamSubscription(teamId: number): Observable<unknown> {
     return this.http.delete(`${this.baseUrl}/users/me/team-subscriptions/${teamId}`);
+  }
+
+  /**
+   * Anonymous preview of the landing page (no account needed): association →
+   * division → league → team, then the detail of a picked team, which has the
+   * exact shape of the team page (`GET /api/teams/{teamId}`). Nothing here is
+   * tied to a caller, so the browser is what limits a visitor to their free
+   * previews.
+   */
+  getPreviewAssociations(): Observable<{ associations: PreviewAssociation[] }> {
+    return this.http.get<{ associations: PreviewAssociation[] }>(`${this.baseUrl}/preview/associations`);
+  }
+
+  getPreviewDivisions(associationId: number): Observable<{ divisions: PreviewDivision[] }> {
+    return this.http.get<{ divisions: PreviewDivision[] }>(
+      `${this.baseUrl}/preview/associations/${associationId}/divisions`);
+  }
+
+  getPreviewLeagues(divisionId: number): Observable<PreviewLeaguesResponse> {
+    return this.http.get<PreviewLeaguesResponse>(`${this.baseUrl}/preview/divisions/${divisionId}/leagues`);
+  }
+
+  getPreviewTeams(leagueId: string): Observable<{ teams: PreviewTeam[] }> {
+    return this.http.get<{ teams: PreviewTeam[] }>(
+      `${this.baseUrl}/preview/leagues/${encodeURIComponent(leagueId)}/teams`);
+  }
+
+  /** Detail of a previewed team: the same JSON as the team page, guest mode. */
+  getPreviewTeamDetail(teamId: number): Observable<TeamPageDetail> {
+    return this.http.get<TeamPageDetail>(`${this.baseUrl}/preview/teams/${teamId}`);
   }
 }

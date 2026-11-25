@@ -4,7 +4,8 @@ Angular 22 (standalone, zoneless) responsive frontend with French/English
 translation via `@ngx-translate/core` 18. The app has five routed pages:
 chat, team details, weekly report, configuration (colors + followed teams), and
 administration (administrators only), plus the first-run team selection shown
-to a brand-new coach account.
+to a brand-new coach account. A visitor who is not signed in sees the public
+landing page instead.
 
 ## Prerequisites
 
@@ -45,8 +46,10 @@ authenticates through Auth0 Universal Login, so the suite serves a fake tenant
 (`mockAuth0` in `tests/responsive.mjs`): `/authorize` redirects straight back,
 `/oauth/token` mints RS256 tokens signed by a key generated at startup, and
 `/.well-known/jwks.json` publishes the matching public key so the SDK's signature
-check passes. Each width runs the login, chat, game card, team page (including
-the games block), weekly report and configuration page assertions.
+check passes. Each width runs the public landing page (preview selectors, the
+`localStorage` preview counter, the account benefits), then the login, chat,
+game card, team page (including the games block), weekly report and
+configuration page assertions.
 
 Run the unit tests with:
 
@@ -62,19 +65,52 @@ automatically, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its executable.
 Browser emulation does not replace checking the virtual keyboard and safe areas
 on real iOS and Android devices.
 
-## Authentication gate
+## Authentication gate and public landing page
 
-Every screen requires an Auth0 session: visitors are handed over to Auth0
-Universal Login (Authorization Code + PKCE through `@auth0/auth0-angular` —
-`core/login.component.ts`, `app.config.ts`) and the SPA calls the API with the
-access token issued for the `https://api.hockeyseason.dev` audience. The HTTP
-interceptor (`authHttpInterceptorFn`) adds
+The application root (`app.component.ts`) is a public/private switch: until
+Auth0 reports a session, it renders the **landing page**
+(`landing/landing.component.ts`); afterwards it renders the full shell with the
+tab pages. Every routed page requires the session, and the SPA calls the API
+with the access token issued for the `https://api.hockeyseason.dev` audience.
+The HTTP interceptor (`authHttpInterceptorFn`) adds
 `Authorization: Bearer <token>` to each `/api/` request (mirrored on
 `X-Authorization` by `core/auth-header.interceptor.ts`) and the AG-UI
 agent adds both headers in `agent/hockey-assistant-http-agent.ts`.
 The agent waits for Auth0 to supply or renew the token on each request; a token
 acquisition failure stops the request instead of sending it anonymously. The
 backend rejects invalid tokens with `401 { "error": "invalid_token", ... }`.
+
+### What the landing page offers
+
+The landing page explains the site and lets a visitor try it before creating an
+account:
+
+- **Free preview** — association → division → league → team, then the team's
+  statistics. The preview reads the anonymous `/api/preview/*` routes (the only
+  unauthenticated API surface, see the backend README) and renders the result
+  with `team/team-stats.component.ts`, the *same* component as the signed-in
+  team page, so the figures are identical. In guest mode the opponent links and
+  the box-score button are hidden — those routes need an account.
+- **Three free attempts** — `landing/preview-trials.ts` (unit tested) counts
+  them in `localStorage` under `hockey-season-preview-trials`. Re-viewing the
+  team already on screen costs no attempt; the fourth view replaces the preview
+  button with the free-account call to action. The counter is a product rule,
+  not a security boundary: it is per device and can be cleared.
+- **Why create a free account** — the benefits section states that an account
+  keeps your teams within reach, that an **association president** can sign up
+  and receive a weekly recap of every team of their league, and that a
+  **category director** receives a weekly recap of every team of their
+  category.
+
+"Create a free account" opens Auth0 Universal Login with
+`screen_hint=signup`; "Sign in" opens the regular login. Both land back on the
+chat page (`appState.target = '/chat'`).
+
+The anonymous preview must not go through the authenticated interceptor: the
+`uriMatcher` of `httpInterceptor.allowedList` in `app.config.ts` excludes
+`/api/preview/`, so a visitor without a session reads the preview without the
+SDK attempting a silent authentication first (adding the route with
+`allowAnonymous` still triggers that attempt).
 
 ## Azure Static Web Apps deployment
 
@@ -121,10 +157,30 @@ has two sections.
 ### Appearance and colors
 
 Each user chooses primary and secondary colors. The choices are saved in the
-browser's local storage and can be reset to the defaults, `#0e3a70` and
-`#3eb838`. Default CSS variables are defined in `src/global.scss`; keep the
+browser's local storage and can be reset to the defaults, `#00124A` and
+`#22C5FD`. Default CSS variables are defined in `src/global.scss`; keep the
 defaults in `core/theme.service.ts` in sync if changing them. The chat displays
 connection errors and offers a retry.
+
+The header chrome is not driven by the theme variables: both the signed-in
+`.site-header` and the mobile bottom navigation use the fixed brand gradient
+`#000B3A → #00124A → #001B66`.
+
+### Brand assets
+
+The `Game Tracker` logo lives in `src/assets/logo/`:
+
+- `game-tracker.png` — the original square artwork, kept as the source of truth.
+- `game-tracker-mark.png` — the transparent `G` emblem, used by the signed-in
+  header over its navy gradient.
+- `game-tracker-badge.png` — the emblem on a navy badge, used by the public
+  landing header where the page itself is light.
+- `favicon.ico`, `favicon-32x32.png`, `apple-touch-icon.png` — browser icons,
+  generated from the same emblem and referenced from `src/index.html`.
+
+The generated files are derivatives: crop and rescale the emblem out of
+`game-tracker.png` rather than hand-editing them, so the mark, badge and icons
+stay consistent.
 
 ### Followed teams
 
@@ -194,6 +250,12 @@ team re-applies the selection without a reload. A level of the URL that does not
 exist in the follows stops the restore at the deepest valid one
 (`team-route.ts`, unit tested).
 
+The statistics themselves are rendered by `team/team-stats.component.ts`, which
+wraps the summary, the games block and their layout. The landing page's free
+preview uses the same component in **guest mode** (`[guest]="true"`): identical
+figures, but the opponent links and the box-score buttons are hidden because
+`/team` and `/api/games/*` require an account.
+
 ### Games of the team
 
 Below the key figures the page shows two blocks (`team-games.component.ts`):
@@ -244,11 +306,14 @@ src/
   main.ts                # bootstrapApplication entry
   app/
     app.config.ts        # zoneless, routed, HttpClient(fetch)+interceptors, translation and agent providers
-    app.component.ts     # login gate ↔ header + router outlet based on auth state
+    app.component.ts     # public landing page ↔ header + router outlet based on auth state
     app.routes.ts        # /chat, /team-selection, /team, /teams-weekly-report, /configuration, /admin, /admin/reference
+    landing/landing.component.ts # public landing page (hero, free preview, account benefits)
+    landing/preview-trials.ts    # localStorage preview counter (unit tested)
     team-selection/team-selection.component.ts # first-run team picker (new coach accounts)
     chat/chat.component.ts     # agent chat page, composer pinned at the bottom
     team/team.component.ts     # association, division, league and team selection (followed only)
+    team/team-stats.component.ts # team statistics block shared by the team page and the landing preview
     team/team-games.component.ts # last games (paged by five, box score in place) and next two games
     team/team-summary.component.ts # team header, figures, players and standings (shared with the chat card)
     team/team-route.ts         # pure query-string restore of the selection (unit tested)
@@ -266,7 +331,6 @@ src/
     core/team-onboarding.ts    # first-run helpers (unit tested): needsTeamSelection, "later" choice
     core/team-onboarding.guard.ts # route guard: sends a new coach account to /team-selection
     core/theme.service.ts   # primary/secondary colors, localStorage persistence
-    core/login.component.ts # Auth0 Universal Login gate
     core/auth.service.ts    # logout (provider session + local fallback)
     core/auth-logout.ts     # pure logout strategy helpers (unit tested)
     core/api.service.ts     # HttpClient wrapper for the API endpoints

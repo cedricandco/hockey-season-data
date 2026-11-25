@@ -9,7 +9,7 @@ protected by an OIDC-style JWT security layer (`HockeySeason.Auth`).
 | Project | Responsibility |
 |---|---|
 | `HockeySeason.Domain` | Entities (`ServerTime`), `ITimeProvider` abstraction, `TimeService` |
-| `HockeySeason.Application` | Use cases: `IHealthService`/`HealthService`, `IUserProvisioningService`, `ICallerDataScopeService`, `IScopeService`, `IUserService`, `HealthReport` |
+| `HockeySeason.Application` | Use cases: `IHealthService`/`HealthService`, `IUserProvisioningService`, `ICallerDataScopeService`, `IScopeService`, `IUserService`, `ISubscriptionCatalogService`, `IPreviewService`, `HealthReport` |
 | `HockeySeason.Infrastructure` | `UtcTimeProvider` + PostgreSQL persistence: `HockeySeasonDbContext` (EF Core + Npgsql, snake_case), migrations, use-case implementations |
 | `HockeySeason.Auth` | OIDC-style JWT security backed by Auth0 (see below) |
 | `HockeySeason.LeagueApi` | HTTP client for the public Spordle league API (`pub-api.play.spordle.com`) |
@@ -60,6 +60,29 @@ example request.
 - `GET /api/health` — health report consumed by the frontend
 - `POST /api/mcp` — MCP Streamable HTTP endpoint (stateless)
 - `POST /api/agui/hockey-season-data.agent` — AG-UI league data agent
+
+### Anonymous landing-page preview
+
+`HockeySeason.Functions/PreviewFunctions.cs` exposes the only **unauthenticated**
+surface of the API, used by the public landing page before sign-in. It never
+calls `FunctionsAuthorization` and never resolves a caller:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/preview/associations` | Associations that own imported data |
+| `GET /api/preview/associations/{id}/divisions` | Divisions (Spordle offices) of one association |
+| `GET /api/preview/divisions/{id}/leagues` | Leagues of a division for the latest imported season |
+| `GET /api/preview/leagues/{leagueId}/teams` | Teams of one league, keyed on database ids |
+| `GET /api/preview/teams/{teamId}` | Team detail — the exact JSON of `GET /api/teams/{teamId}`, `teamLinks` included |
+
+The preview reads only the reference data imported from Spordle plus the public
+schedule of a team (`IPreviewService` in Infrastructure, which deliberately does
+not enforce follows). The published schedule ids are resolved from the database,
+never taken from the query string. A host without persistence lists nothing
+rather than failing. The visitor's three free attempts are counted in the
+browser (`localStorage`, see the frontend README), not by these endpoints: the
+gate is a product rule, and creating the free account is what keeps the data
+available.
 
 ## PostgreSQL persistence (HockeySeason.Infrastructure)
 

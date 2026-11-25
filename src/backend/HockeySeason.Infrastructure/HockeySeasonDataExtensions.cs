@@ -44,6 +44,9 @@ public static class HockeySeasonDataExtensions
         services.AddScoped<IScopeService, ScopeService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<ISubscriptionCatalogService, SubscriptionCatalogService>();
+        // Anonymous landing-page preview: not tied to a caller, so it enforces
+        // no follows — only imported reference data is read.
+        services.AddScoped<IPreviewService, PreviewService>();
         // Singleton and stateless: it opens its own DbContext per call and
         // takes the caller id as a parameter, so the singleton MCP tools and
         // the agent can resolve it from the root provider.

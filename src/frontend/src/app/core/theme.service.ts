@@ -3,8 +3,8 @@ import { Injectable, signal } from '@angular/core';
 type ThemeColor = 'primary' | 'secondary';
 
 const DEFAULT_COLORS: Record<ThemeColor, string> = {
-  primary: '#0e3a70',
-  secondary: '#3eb838',
+  primary: '#00124A',
+  secondary: '#22C5FD',
 };
 const THEME_STORAGE_KEY = 'hockey-season-theme';
 

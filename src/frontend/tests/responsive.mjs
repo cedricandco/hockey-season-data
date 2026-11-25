@@ -178,7 +178,34 @@ const fixtures = {
     ],
   },
   '/api/subscriptions/associations': { associations: [{ id: 1, name: 'Hockey Richelieu' }] },
+  // Anonymous landing-page preview: association → division → league → team.
+  '/api/preview/associations': { associations: [{ id: 1, name: 'Hockey Richelieu' }] },
+  '/api/preview/associations/1/divisions': { divisions: [{ id: 6193, name: 'Simple lettre' }] },
+  '/api/preview/divisions/6193/leagues': {
+    seasonId: '2026-27',
+    leagues: [{ id: '13c38dd1-e464-4835-af5f-75be8561daf6', name: 'M13 B' }],
+  },
+  '/api/preview/leagues/13c38dd1-e464-4835-af5f-75be8561daf6/teams': {
+    teams: [{ id: 1, name: teamName }, { id: 2, name: opponentName }],
+  },
   '/api/subscriptions/associations/1/divisions': { divisions: [{ id: 6193, name: 'Simple lettre' }] },
+  // Anonymous preview detail: same shape as /api/teams/1 (the landing page
+  // renders it with the shared app-team-stats component).
+  '/api/preview/teams/1': {
+    leagueId: 1, team: standing, standings: [standing],
+    games: [
+      { game: { id: 11, date: '2026-01-03', time: '12:00', homeTeamId: 1, awayTeamId: 2,
+        homeTeamName: teamName, awayTeamName: opponentName, homeScore: 3, awayScore: 2 } },
+    ],
+    upcomingGames: [
+      { id: 20, date: '2026-02-07', time: '12:00', homeTeamId: 1, awayTeamId: 2,
+        homeTeamName: teamName, awayTeamName: opponentName, homeScore: null, awayScore: null },
+    ],
+    players: [{ participantId: 1, name: playerName, number: 9, goals: 3, assists: 2, points: 5 }],
+    totalGoals: 3, totalAssists: 2, totalPoints: 5, powerPlayGoals: 1,
+    shorthandedGoals: 0, penalties: 0, completeRosterAvailable: true,
+    teamLinks: [{ externalTeamId: 1, pageTeamId: 1 }, { externalTeamId: 2, pageTeamId: 2 }],
+  },
   '/api/subscriptions/divisions/6193/leagues': {
     seasonId: '2026-27',
     leagues: [{ id: '13c38dd1-e464-4835-af5f-75be8561daf6', name: 'M13 B' }],
@@ -311,19 +338,20 @@ async function visible(locator) {
 }
 
 /**
- * Presses the login button until the app leaves the gate. The SDK handles the
- * redirect back with a one-shot authorization code kept in memory: if the
- * browser reloads the callback URL before that page finished its exchange, the
- * code is consumed and the gate shows an error, so a retry is the only way on.
+ * Presses the sign-in button until the app leaves the public landing page. The
+ * SDK handles the redirect back with a one-shot authorization code kept in
+ * memory: if the browser reloads the callback URL before that page finished its
+ * exchange, the code is consumed and the landing page shows an error, so a
+ * retry is the only way on.
  */
 async function signIn(page) {
   const input = page.locator('#chat-input');
-  const button = page.locator('.login-submit');
+  const button = page.locator('.hero-actions .login-submit');
   for (let attempt = 0; attempt < 4; attempt++) {
     if (await input.isVisible()) return;
     try {
-      // The gate renders nothing while the SDK initializes: wait for the button,
-      // not just for its visibility.
+      // The landing page renders nothing while the SDK initializes: wait for
+      // the button, not just for its visibility.
       await button.waitFor({ state: 'visible', timeout: 15000 });
       await button.click();
       await input.waitFor({ state: 'visible', timeout: 20000 });
@@ -331,6 +359,95 @@ async function signIn(page) {
     } catch { /* The exchange failed: press the button again. */ }
   }
   await input.waitFor({ state: 'visible', timeout: 15000 });
+}
+
+/**
+ * Public landing page: hero, the three-free-preview gate over the anonymous
+ * preview API, its counter in local storage, and the account benefits.
+ */
+async function inspectLanding(page, width) {
+  await visible(page.locator('#landing-title'));
+  await visible(page.getByText('président d’association', { exact: false }));
+
+  await check(`${width}px accueil: sélection association → division → ligue → équipe`, async () => {
+    const selects = page.locator('.preview .selector select');
+    const count = await selects.count();
+    if (count !== 4) {
+      throw new Error(`quatre listes attendues (association, division, ligue, équipe), ${count} trouvée(s) — ${await page.locator('.preview .state').allTextContents()}`);
+    }
+    // A single association / division / league is preselected, cascading down
+    // to the team list; the preview stays disabled until a team is chosen.
+    await selects.nth(3).locator('option', { hasText: teamName }).waitFor({ state: 'attached', timeout: 10000 });
+    const button = page.locator('.preview-actions .preview-button');
+    if (!await button.isDisabled()) throw new Error('aperçu actif avant le choix d’une équipe');
+    await selects.nth(3).selectOption({ label: teamName });
+    await page.waitForFunction(() => {
+      const action = document.querySelector('.preview-actions .preview-button');
+      return action !== null && !action.disabled;
+    }, null, { timeout: 5000 });
+    await inspectLayout(page, 'accueil sélection', width);
+  });
+
+  await check(`${width}px accueil: aperçu gratuit compté dans le stockage local`, async () => {
+    const badge = page.locator('.trial-badge');
+    if (!/3/.test(await badge.textContent())) throw new Error(`compteur initial inattendu: ${await badge.textContent()}`);
+    const button = page.locator('.preview-actions .preview-button');
+    await button.click();
+    // The shared statistics component renders the same figures as the team page.
+    await visible(page.locator('app-team-stats app-team-summary'));
+    await visible(page.locator('app-team-stats').getByText(playerName));
+    const used = await page.evaluate(() => localStorage.getItem('hockey-season-preview-trials'));
+    if (used !== '1') throw new Error(`compteur local inattendu: ${used}`);
+    if (!/2/.test(await badge.textContent())) throw new Error(`compteur non décrémenté: ${await badge.textContent()}`);
+    await inspectLayout(page, 'accueil aperçu', width);
+  });
+
+  await check(`${width}px accueil: revoir la même équipe ne consomme pas d’essai`, async () => {
+    // Re-viewing the team already on screen costs no attempt.
+    const button = page.locator('.preview-actions .preview-button');
+    await button.waitFor({ state: 'visible' });
+    if (await button.isDisabled()) {
+      const state = await page.evaluate(() => ({
+        values: Array.from(document.querySelectorAll('.preview .selector select')).map(select => select.value),
+        text: document.querySelector('.preview-actions')?.textContent,
+      }));
+      throw new Error(`bouton d’aperçu désactivé après un aperçu: ${JSON.stringify(state)}`);
+    }
+    await button.click();
+    const used = await page.evaluate(() => localStorage.getItem('hockey-season-preview-trials'));
+    if (used !== '1') throw new Error(`compteur modifié sans nouvelle équipe: ${used}`);
+  });
+
+  await check(`${width}px accueil: l’aperçu masque les liens membres`, async () => {
+    // Guest mode: opponents stay plain text and no box-score button is offered.
+    if (await page.locator('app-team-stats .game-team.opponent').count() !== 0) {
+      throw new Error('les liens adverses doivent être masqués sans compte');
+    }
+    if (await page.locator('app-team-stats .detail-button').count() !== 0) {
+      throw new Error('le détail des matchs doit être masqué sans compte');
+    }
+  });
+
+  await check(`${width}px accueil: essais épuisés → création de compte`, async () => {
+    // Once the counter is exhausted the preview gives way to the free account;
+    // reload so the page reads the stored counter.
+    await page.evaluate(() => localStorage.setItem('hockey-season-preview-trials', '3'));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await visible(page.locator('#landing-title'));
+    const badge = page.locator('.trial-badge');
+    if (!/épuisés|used up/.test(await badge.textContent())) {
+      throw new Error(`compteur épuisé non signalé: ${await badge.textContent()}`);
+    }
+    if (await page.locator('.preview-actions .preview-button').count() !== 0) {
+      throw new Error('l’aperçu doit disparaître une fois les essais épuisés');
+    }
+    await visible(page.locator('.limit-card .signup-button'));
+    await visible(page.locator('.benefits .signup-button'));
+    await visible(page.locator('.benefits h3', { hasText: 'Directeur de catégorie' }));
+    await visible(page.locator('.benefits h3', { hasText: 'Président d’association' }));
+    await inspectLayout(page, 'accueil essais épuisés', width);
+  });
+  console.log(`  ✓ ${width}px accueil public: aperçu, compteur et avantages`);
 }
 
 async function inspectLayout(page, label, width) {
@@ -617,6 +734,27 @@ async function inspectSubscriptionSelector(page, width) {
   });
 }
 
+/**
+ * Header user menu: the avatar trigger and its dropdown holding the logout
+ * entry. Regression guard — a failed `GET /api/me` used to make the whole
+ * dropdown (the only logout entry) disappear.
+ */
+async function inspectUserMenu(page, width) {
+  await check(`${width}px menu utilisateur: avatar et déconnexion accessibles`, async () => {
+    const trigger = page.locator('.user-menu-trigger');
+    await visible(trigger);
+    if (await trigger.getAttribute('aria-expanded') !== 'false') {
+      throw new Error('menu utilisateur déjà ouvert');
+    }
+    await trigger.click();
+    const logout = page.locator('.user-menu-item-danger');
+    await visible(logout);
+    if ((await logout.textContent()).trim().length === 0) throw new Error('action de déconnexion vide');
+    await page.keyboard.press('Escape');
+    await logout.waitFor({ state: 'hidden', timeout: 5000 });
+  });
+}
+
 async function runViewport(browser, baseUrl, viewport) {
   const { width, height } = viewport;
   console.log(`\nViewport ${width}×${height}px`);
@@ -660,14 +798,16 @@ async function runViewport(browser, baseUrl, viewport) {
       return route.fulfill({ status: 200, json: body });
     });
     await page.goto(`${baseUrl}/chat`, { waitUntil: 'domcontentloaded' });
-    await visible(page.locator('.login-submit'));
-    await inspectLayout(page, 'login', width);
-    // Auth0 Universal Login: the fake tenant redirects straight back and the
-    // SDK lands on the origin, i.e. the chat page.
-    await page.locator('.login-submit').click();
+    // The public landing page is what a visitor sees first: the routing itself
+    // happens once the SDK reports a session.
+    await inspectLanding(page, width);
+    // Auth0 Universal Login: the fake tenant redirects straight back; the
+    // login was requested with appState.target '/chat', so the SDK lands there.
+    await page.locator('.hero-actions .login-submit').click();
     await signIn(page);
     await inspectLayout(page, 'chat', width);
     await inspectNavigation(page, width, '/chat');
+    await inspectUserMenu(page, width);
     await inspectComposer(page, width, height, 'chat initial');
     await inspectChat(page, width, height, requestBodies);
     await inspectGame(page, width, requestBodies);

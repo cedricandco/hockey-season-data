@@ -7,8 +7,7 @@ import { ApiService } from '../core/api.service';
 import {
   FollowedTeam, NavChoice, NavDivision, NavLeague, NavTeam, RouteSelection, TeamPageDetail, TeamPagePath,
 } from './team.models';
-import { TeamSummaryComponent } from './team-summary.component';
-import { TeamGamesComponent } from './team-games.component';
+import { TeamStatsComponent } from './team-stats.component';
 import { nextSelectionStep, sameSelection } from './team-route';
 
 function positiveInt(value: string | null): number {
@@ -51,7 +50,7 @@ const NO_SELECTION: RouteSelection = { association: 0, division: 0, league: 0, t
 @Component({
   selector: 'app-team',
   standalone: true,
-  imports: [FormsModule, RouterLink, TranslatePipe, TeamSummaryComponent, TeamGamesComponent],
+  imports: [FormsModule, RouterLink, TranslatePipe, TeamStatsComponent],
   styleUrl: './team.component.scss',
   template: `
     <section class="team-page">
@@ -122,9 +121,7 @@ const NO_SELECTION: RouteSelection = { association: 0, division: 0, league: 0, t
         @if (loading()) { <p role="status">{{ 'TEAM.LOADING' | translate }}</p> }
         @if (error()) { <p class="error" role="alert">{{ 'TEAM.ERROR' | translate }} <button type="button" (click)="retry()">{{ 'TEAM.RETRY' | translate }}</button></p> }
       }
-      <app-team-summary [team]="detail()" [showGames]="false">
-        <app-team-games [team]="detail()" [path]="path()" />
-      </app-team-summary>
+      <app-team-stats [team]="detail()" [path]="path()" />
     </section>
   `,
 })

@@ -58,8 +58,15 @@ export const appConfig: ApplicationConfig = {
       },
       httpInterceptor: {
         // Only API calls get the Authorization header (never the i18n assets
-        // or the AG-UI agent, which manages its own token).
-        allowedList: [{ uriMatcher: (uri) => uri.startsWith('/api/') && !uri.startsWith('/api/agui/') }],
+        // or the AG-UI agent, which manages its own token). The anonymous
+        // landing-page preview is excluded: adding it to the list would make
+        // the SDK attempt a silent authentication for a visitor who has no
+        // session, and its routes are anonymous by design.
+        allowedList: [{
+          uriMatcher: (uri) => uri.startsWith('/api/')
+            && !uri.startsWith('/api/agui/')
+            && !uri.startsWith('/api/preview/'),
+        }],
       },
     }),
     {

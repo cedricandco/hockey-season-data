@@ -3,21 +3,26 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { AuthService as Auth0AuthService } from '@auth0/auth0-angular';
-import { LoginComponent } from './core/login.component';
+import { LandingComponent } from './landing/landing.component';
 import { UserMenuComponent } from './core/user-menu.component';
 import { AccountService } from './core/account.service';
 import { clearOnboardingSkip } from './core/team-onboarding';
 
 /**
- * Application root: shows a login gate until the visitor authenticates with
- * Auth0 Universal Login, then the full-height shell with the tab pages
- * (Chat / Team / Weekly report / Settings). Login state stays reactive via
- * the SDK's observables converted to signals for zoneless change detection.
+ * Application root: shows the public landing page until the visitor
+ * authenticates with Auth0 Universal Login, then the full-height shell with
+ * the tab pages (Chat / Team / Weekly report / Settings). Login state stays
+ * reactive via the SDK's observables converted to signals for zoneless change
+ * detection.
+ *
+ * The landing page is public on purpose: it explains the site, lets a visitor
+ * preview a team's statistics (three free attempts, counted in `localStorage`)
+ * and only then asks for the free account.
  */
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, TranslatePipe, LoginComponent, UserMenuComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, TranslatePipe, LandingComponent, UserMenuComponent],
   template: `
     @if (isLoading()) {
       <!-- Universal Login redirect in progress -->
@@ -26,13 +31,7 @@ import { clearOnboardingSkip } from './core/team-onboarding';
         <header class="site-header">
           <div class="header-inner">
             <a class="brand" href="/chat" [attr.aria-label]="'APP.TITLE' | translate">
-              <span class="brand-mark" aria-hidden="true">
-                <svg viewBox="0 0 32 32" fill="none">
-                  <path d="M7 6l12 15m6-15L13 21M9 24h14M11 27h10" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-                  <circle cx="16" cy="21" r="3" fill="currentColor"/>
-                </svg>
-              </span>
-              <span class="brand-name">HOCKEY <span>SEASON DATA</span></span>
+              <img class="brand-mark" src="assets/logo/game-tracker-mark.png" alt="" />
             </a>
             <div class="header-actions">
               <nav class="main-nav" [attr.aria-label]="'NAV.LABEL' | translate">
@@ -67,7 +66,7 @@ import { clearOnboardingSkip } from './core/team-onboarding';
         </main>
       </div>
     } @else {
-      <app-login />
+      <app-landing />
     }
   `,
 })

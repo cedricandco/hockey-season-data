@@ -1,6 +1,6 @@
 :root {
-  --color-primary: #0e3a70;
-  --color-secondary: #3eb838;
+  --color-primary: #00124A;
+  --color-secondary: #22C5FD;
   font-family: Inter, "Segoe UI", Arial, sans-serif;
   color: #17283e;
   background: #f5f7fa;
@@ -16,7 +16,12 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 }
 
 .site-header {
-  background: var(--color-primary);
+  background: linear-gradient(
+    90deg,
+    #000B3A 0%,
+    #00124A 50%,
+    #001B66 100%
+  );
   color: #fff;
   box-shadow: 0 3px 14px #102f4c20;
 }
@@ -31,13 +36,7 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
   gap: 20px;
 }
 .brand { display: flex; align-items: center; gap: 12px; color: #fff; text-decoration: none; }
-.brand-mark {
-  width: 42px; height: 42px; display: grid; place-items: center;
-  border: 1px solid #ffffff50; border-radius: 12px; background: #ffffff14;
-}
-.brand-mark svg { width: 31px; height: 31px; }
-.brand-name { font-size: .94rem; font-weight: 800; letter-spacing: .08em; white-space: nowrap; }
-.brand-name span { display: block; color: #d7e5f3; font-size: .59rem; letter-spacing: .19em; margin-top: 3px; }
+.brand-mark { display: block; height: 46px; width: auto; }
 .header-actions { position: relative; display: flex; align-items: center; gap: 9px; }
 .header-button {
   min-height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 13px;
@@ -76,6 +75,29 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 .user-menu-item:hover { background: #ffffff1f; }
 .user-menu-item-danger:hover { background: #d84b4b2e; color: #ffc9c9; }
 .user-menu-item > span:first-child { font-size: 1.05rem; }
+
+/* Public landing header: the same brand over a light page, where the
+   transparent white mark needs the navy badge to stay legible. */
+.landing-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  max-width: 1250px; min-height: 78px; margin: auto; padding: 0 32px;
+}
+.landing-brand { display: flex; align-items: center; gap: 12px; color: var(--color-primary); text-decoration: none;
+  flex: 1 1 auto; min-width: 0; }
+.landing-brand .brand-mark {
+  width: 46px; height: 46px; flex: 0 0 auto;
+  border: 1px solid #00124a26; border-radius: 11px; background: #fff;
+}
+.landing-header-actions { display: flex; align-items: center; gap: 9px; }
+.landing-header-actions .header-button {
+  background: #fff; border-color: #cfdae7; color: #26405c;
+}
+.landing-header-actions .header-button:hover { background: #f1f6fb; }
+.signin-button {
+  min-height: 40px; padding: 0 16px; border: 1px solid #cfdae7; border-radius: 9px;
+  background: #fff; color: var(--color-primary); font-size: .8rem; font-weight: 700;
+}
+.signin-button:hover { background: #eef4fb; }
 /* App shell: fixed header, full-height routed pages. */
 .app-shell {
   min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; box-sizing: border-box;
@@ -126,7 +148,7 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
 .agent-details { flex: 1; min-width: 0; }
 .agent-details h2 { margin: 0 0 4px; font-size: .94rem; }
 .agent-details p { margin: 0; color: #778698; font-size: .76rem; }
-.agent-badge { display: flex; align-items: center; gap: 7px; color: #496258; background: #f0f7f1; padding: 7px 10px; border-radius: 20px; font-size: .68rem; font-weight: 700; white-space: nowrap; }
+.agent-badge { display: flex; align-items: center; gap: 7px; color: #33506e; background: #eef4fb; padding: 7px 10px; border-radius: 20px; font-size: .68rem; font-weight: 700; white-space: nowrap; }
 .agent-badge span { width: 7px; height: 7px; border-radius: 50%; background: var(--color-secondary); }
 .conversation { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px; background: #fbfcfe; }
 .welcome-message, .message-row { display: flex; align-items: flex-start; gap: 11px; margin-bottom: 22px; }
@@ -166,7 +188,7 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
 .composer textarea { width: 100%; min-height: 44px; max-height: 150px; resize: none; padding: 5px; border: 0; outline: 0; color: #17283e; background: transparent; font-size: .88rem; line-height: 1.5; }
 .composer textarea::placeholder { color: #94a1af; }
 .send-button { flex: 0 0 auto; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 9px; background: var(--color-primary); color: #fff; }
-.send-button:hover:not(:disabled) { filter: brightness(1.2); }
+.send-button:hover:not(:disabled) { background: color-mix(in srgb, var(--color-primary) 78%, white); }
 .send-button:disabled { opacity: .5; cursor: not-allowed; }
 .send-button svg { width: 20px; height: 20px; }
 .composer-hint { margin-top: 10px; color: #91a0ad; text-align: center; font-size: .69rem; }
@@ -180,7 +202,7 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
 }
 .standing-card-header {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  padding: 14px 18px; background: linear-gradient(135deg, var(--color-primary), #0b2c56); color: #fff;
+  padding: 14px 18px; background: linear-gradient(135deg, var(--color-primary) 0%, #001B66 100%); color: #fff;
 }
 .standing-heading { min-width: 0; }
 .standing-eyebrow { display: block; margin-bottom: 4px; color: #d7e5f3; font-size: .66rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
@@ -212,36 +234,8 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
 .standing-empty { margin: 0; padding: 18px; color: #718196; }
 .standing-mobile-details { display: none; }
 
-/* Login gate */
-.login-shell {
-  min-height: 100vh; display: grid; place-items: center; padding: 24px;
-  background: linear-gradient(160deg, var(--color-primary) 0%, #0b2c56 55%, #0f2f52 100%);
-}
-.login-card {
-  width: min(400px, 100%); padding: 40px 34px 34px; border-radius: 18px;
-  background: #fff; box-shadow: 0 24px 60px #081f3a45; text-align: center;
-}
-.login-brand {
-  margin: 0 auto 18px; width: 56px; height: 56px; border-radius: 16px;
-  display: grid; place-items: center; color: #fff; background: var(--color-primary);
-  border: 0;
-}
-.login-brand svg { width: 34px; height: 34px; }
-.login-card h1 { margin: 0 0 6px; font-size: 1.35rem; letter-spacing: -.02em; color: var(--color-primary); }
-.login-subtitle { margin: 0 0 26px; color: #617185; font-size: .86rem; line-height: 1.55; }
-.login-label { display: block; margin-bottom: 8px; color: #405267; font-size: .8rem; font-weight: 700; text-align: left; }
-.login-input {
-  width: 100%; padding: 13px 15px; border: 1px solid #d5dee8; border-radius: 11px;
-  font-size: 1.45rem; letter-spacing: .5em; text-align: center; color: #17283e;
-  background: #fbfcfe; outline: none; transition: border-color .15s ease;
-}
-.login-input:focus { border-color: var(--color-primary); background: #fff; }
-.login-input[aria-invalid="true"] { border-color: #c43d3d; background: #fff7f6; }
-.login-input::placeholder { color: #b8c2cd; letter-spacing: .5em; }
-.login-error { margin: 12px 0 0; color: #a32d2d; font-size: .8rem; text-align: left; line-height: 1.4; }
+/* Sign-in call to action of the public landing page. */
 .login-submit {
-  margin-top: 22px; width: 100%; min-height: 46px; border: 0; border-radius: 11px;
-  background: var(--color-primary); color: #fff; font-size: .92rem; font-weight: 700;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   transition: filter .15s ease;
 }
@@ -250,10 +244,13 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
 
 @media (max-width: 600px) {
   .header-inner { min-height: 68px; padding: 0 16px; }
+  .landing-header { min-height: 68px; padding: 0 12px; gap: 8px; }
+  .landing-header-actions { gap: 6px; }
+  .landing-header-actions .header-button { padding: 0 9px; }
+  .signin-button { padding: 0 12px; }
+  .landing-brand .brand-mark { width: 40px; height: 40px; }
   .brand { gap: 8px; }
-  .brand-mark { width: 37px; height: 37px; }
-  .brand-name { font-size: .8rem; }
-  .brand-name span { font-size: .52rem; }
+  .brand-mark { height: 40px; width: auto; }
   .header-actions { gap: 6px; }
   .header-button { padding: 0 9px; }
   .settings-label { display: none; }
@@ -280,7 +277,7 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
 }
 .game-card-header {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 12px 18px; background: linear-gradient(135deg, var(--color-primary) 0%, #0b2c56 100%);
+  padding: 12px 18px; background: linear-gradient(135deg, var(--color-primary) 0%, #001B66 100%);
   color: #fff;
 }
 .game-card-meta { display: flex; align-items: center; gap: 9px; min-width: 0; flex-wrap: wrap; }
@@ -427,8 +424,6 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
   .composer textarea { font-size: 1rem; }
   .send-button { width: 44px; height: 44px; }
   .composer-hint { display: none; }
-  .login-shell { min-height: 100vh; min-height: 100dvh; padding: 16px; }
-  .login-card { padding: 28px 22px; }
   .config-card .reset-button { min-height: 44px; }
 }
 
@@ -486,8 +481,7 @@ app-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
 @media (max-width: 900px) and (max-height: 450px) {
   .app-shell { --mobile-nav-height: calc(52px + env(safe-area-inset-bottom, 0px)); }
   .header-inner { min-height: 48px; }
-  .brand-mark { width: 32px; height: 32px; }
-  .brand-mark svg { width: 25px; height: 25px; }
+  .brand-mark { height: 34px; width: auto; }
   .app-outlet { padding-top: 4px; }
   .chat-header { padding: 6px 10px; }
   .chat-header .agent-avatar, .agent-details p, .agent-badge { display: none; }
