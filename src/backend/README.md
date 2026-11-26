@@ -170,7 +170,7 @@ followed per user:
 | Table | Columns | Role |
 |---|---|---|
 | `agent` | `id`, `agent_name` (UNIQUE) | The agents whose usage is accounted. The chat agent `hockey-season-data.agent` is seeded by the migration. |
-| `message` | `id`, `agent_id` FK, `text` | The **question** a user asked (answers are never stored). |
+| `message` | `id`, `agent_id` FK, `external_id` (AG-UI message id), `text` | The **question** a user asked (answers are never stored). |
 | `token_usage` | `id`, `agent_id` FK, `input_token_count`, `output_token_count`, `total_token_count`, `reasoning_tokens`, `user_id` FK (nullable), `message_id` FK (nullable) | One row per agent call. |
 
 The counts follow the `UsageDetails` accounting of the Agent Framework /
@@ -180,6 +180,16 @@ not report stays `NULL`, and `total_token_count` falls back to
 `input + output` when the provider omits it. `user_id`/`message_id` are
 nullable and `ON DELETE SET NULL`, so deleting a user or a message never erases
 the accounting.
+
+A question is stored **once**: `message.external_id` holds the AG-UI id of the
+user message, unique per agent (`UNIQUE (agent_id, external_id)`). A turn that
+calls a client-side tool (the `show_*` component tools registered by
+`registerHockeySeasonComponents`) is run twice by CopilotKit — the first run
+emits the tool call, the component executes it, and the follow-up run replays
+the same history — so the same question arrives twice with the same id. The
+second run reuses the existing `message` row and adds **its own**
+`token_usage` row: the tokens were really spent twice, but the question was
+asked once.
 
 Recording is a pair of two small pieces, one per side of the call:
 

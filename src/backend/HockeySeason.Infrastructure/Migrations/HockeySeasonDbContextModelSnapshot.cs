@@ -66,6 +66,10 @@ namespace HockeySeason.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("agent_id");
 
+                    b.Property<string>("ExternalId")
+                        .HasColumnType("text")
+                        .HasColumnName("external_id");
+
                     b.Property<string>("Text")
                         .IsRequired()
                         .HasColumnType("text")
@@ -76,6 +80,10 @@ namespace HockeySeason.Infrastructure.Migrations
 
                     b.HasIndex("AgentId")
                         .HasDatabaseName("ix_message_agent_id");
+
+                    b.HasIndex("AgentId", "ExternalId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_message_agent_id_external_id");
 
                     b.ToTable("message", (string)null);
                 });

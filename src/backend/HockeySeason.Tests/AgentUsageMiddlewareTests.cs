@@ -37,6 +37,7 @@ public sealed class AgentUsageMiddlewareTests
         {
             var session = Assert.IsType<AgentUsageSession>(accessor.Current);
             session.UserMessage = "Quel est le classement ?";
+            session.UserMessageId = "agui-question-1";
             session.Record(new AgentTokenUsage(100, 20, 120, 5));
             return Task.CompletedTask;
         });
@@ -44,6 +45,7 @@ public sealed class AgentUsageMiddlewareTests
         var record = Assert.Single(recorded.Records);
         Assert.Equal(AgentNames.HockeySeasonData, record.AgentName);
         Assert.Equal("Quel est le classement ?", record.UserMessage);
+        Assert.Equal("agui-question-1", record.UserMessageId);
         Assert.Equal(7, record.UserId);
         Assert.Equal(100, record.Usage.InputTokenCount);
         Assert.Equal(20, record.Usage.OutputTokenCount);
@@ -137,6 +139,7 @@ public sealed class AgentUsageMiddlewareTests
         }
 
         Assert.Equal("Nouvelle question", session.UserMessage);
+        Assert.Equal("m3", session.UserMessageId);
         Assert.True(session.HasUsage);
         Assert.Equal(42, session.Aggregate().TotalTokenCount);
     }

@@ -67,6 +67,46 @@ public sealed class AgentUsageServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Record_SameQuestionId_ReusesTheMessageButKeepsEveryUsage()
+    {
+        var service = CreateService();
+        // A turn that calls a client-side tool runs twice with the same history:
+        // the question arrives twice with the same AG-UI id, and the model is
+        // really called twice (those tokens were spent).
+        var followUp = new AgentUsageRecord(
+            AgentNames.HockeySeasonData, "parle moi des matchs des grizzlys", UserId: null,
+            new AgentTokenUsage(100, 20, 120, null), UserMessageId: "agui-message-1");
+
+        await service.RecordAsync(followUp);
+        await service.RecordAsync(followUp with { Usage = new AgentTokenUsage(140, 40, 180, null) });
+
+        await using var db = new HockeySeasonDbContext(_options);
+        Assert.Equal(1, await db.Messages.CountAsync());
+        var message = await db.Messages.SingleAsync();
+        Assert.Equal("agui-message-1", message.ExternalId);
+
+        var usages = await db.TokenUsages.OrderBy(u => u.Id).ToListAsync();
+        Assert.Equal(2, usages.Count);
+        Assert.All(usages, usage => Assert.Equal(message.Id, usage.MessageId));
+        Assert.Equal([120L, 180L], usages.Select(usage => usage.TotalTokenCount));
+    }
+
+    [Fact]
+    public async Task Record_DistinctQuestionIds_StoreDistinctMessages()
+    {
+        var service = CreateService();
+
+        await service.RecordAsync(new AgentUsageRecord(
+            AgentNames.HockeySeasonData, "Première", null, new AgentTokenUsage(1, 1, 2, null), "id-1"));
+        await service.RecordAsync(new AgentUsageRecord(
+            AgentNames.HockeySeasonData, "Seconde", null, new AgentTokenUsage(1, 1, 2, null), "id-2"));
+
+        await using var db = new HockeySeasonDbContext(_options);
+        Assert.Equal(2, await db.Messages.CountAsync());
+        Assert.Equal(2, await db.TokenUsages.Select(u => u.MessageId).Distinct().CountAsync());
+    }
+
+    [Fact]
     public async Task Record_WithoutQuestion_LeavesTheMessageUnset()
     {
         var service = CreateService();

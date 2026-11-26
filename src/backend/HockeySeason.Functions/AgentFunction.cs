@@ -55,7 +55,7 @@ public sealed class AgentFunction(
         // middleware writes it, with the token usage, once the call ends.
         if (sessions?.Current is { } usageSession)
         {
-            usageSession.UserMessage = LastUserMessage(input);
+            (usageSession.UserMessage, usageSession.UserMessageId) = LastUserMessage(input);
         }
         var chatContext = input.ToChatRequestContext(options);
 #pragma warning disable MAAI001
@@ -74,20 +74,22 @@ public sealed class AgentFunction(
     }
 
     /// <summary>
-    /// Text of the last user entry of the run, i.e. the question being asked
-    /// now (earlier turns replay the whole conversation). Null when the run
+    /// Question being asked now: the last user entry of the run (earlier turns
+    /// replay the whole conversation) and its AG-UI id. Empty when the run
     /// carries no user message.
     /// </summary>
-    private static string? LastUserMessage(RunAgentInput input)
+    private static (string? Text, string? Id) LastUserMessage(RunAgentInput input)
     {
         for (var index = input.Messages.Count - 1; index >= 0; index--)
         {
             if (input.Messages[index] is AGUI.Abstractions.AGUIUserMessage user)
             {
                 var text = user.Content.ToString();
-                return string.IsNullOrWhiteSpace(text) ? null : text;
+                return string.IsNullOrWhiteSpace(text)
+                    ? (null, null)
+                    : (text, string.IsNullOrWhiteSpace(user.Id) ? null : user.Id);
             }
         }
-        return null;
+        return (null, null);
     }
 }

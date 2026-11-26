@@ -33,25 +33,41 @@ public sealed class AgentUsageService(
         var agentId = await GetOrCreateAgentIdAsync(db, record.AgentName, cancellationToken).ConfigureAwait(false);
 
         AgentMessage? message = null;
+        var isNewMessage = false;
         if (question is not null)
         {
-            message = new AgentMessage { AgentId = agentId, Text = question };
-            db.Messages.Add(message);
+            (message, isNewMessage) = await FindOrAddMessageAsync(
+                db, agentId, question, record.UserMessageId, cancellationToken).ConfigureAwait(false);
         }
 
         if (HasAnyCount(record.Usage))
         {
             var usage = record.Usage;
-            db.TokenUsages.Add(new TokenUsage
+            var row = new TokenUsage
             {
                 AgentId = agentId,
                 UserId = record.UserId,
-                Message = message,
                 InputTokenCount = usage.InputTokenCount,
                 OutputTokenCount = usage.OutputTokenCount,
                 TotalTokenCount = usage.TotalTokenCount,
                 ReasoningTokens = usage.ReasoningTokens,
-            });
+            };
+            if (message is null)
+            {
+                // Nothing asked: the usage stands alone.
+            }
+            else if (isNewMessage)
+            {
+                // New row: the navigation lets EF insert it in the same save.
+                row.Message = message;
+            }
+            else
+            {
+                // Existing row (the follow-up run of a client-tool turn): only
+                // the id, so the tracked parent is never inserted twice.
+                row.MessageId = message.Id;
+            }
+            db.TokenUsages.Add(row);
         }
 
         // A single SaveChanges keeps the message and its usage atomic: an
@@ -68,6 +84,30 @@ public sealed class AgentUsageService(
         || usage.OutputTokenCount is not null
         || usage.TotalTokenCount is not null
         || usage.ReasoningTokens is not null;
+
+    /// <summary>
+    /// Message row of the question: the existing one when the AG-UI id was
+    /// already stored (a second run of the same turn), a new row otherwise.
+    /// </summary>
+    /// <returns>The row and whether it still has to be inserted.</returns>
+    private static async Task<(AgentMessage Message, bool IsNew)> FindOrAddMessageAsync(
+        HockeySeasonDbContext db, int agentId, string question, string? externalId, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(externalId))
+        {
+            var existing = await db.Messages
+                .FirstOrDefaultAsync(m => m.AgentId == agentId && m.ExternalId == externalId, cancellationToken)
+                .ConfigureAwait(false);
+            if (existing is not null)
+            {
+                return (existing, false);
+            }
+        }
+
+        var message = new AgentMessage { AgentId = agentId, Text = question, ExternalId = externalId };
+        db.Messages.Add(message);
+        return (message, true);
+    }
 
     private static async Task<int> GetOrCreateAgentIdAsync(
         HockeySeasonDbContext db, string agentName, CancellationToken cancellationToken)

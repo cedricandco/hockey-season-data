@@ -31,11 +31,18 @@ public sealed record AgentTokenUsage(
 /// <param name="UserMessage">The user's question; null when the run carried none.</param>
 /// <param name="UserId">Local <c>users</c> id of the caller; null when unresolved.</param>
 /// <param name="Usage">Token counts of the call.</param>
+/// <param name="UserMessageId">
+/// Identifier of the question in the AG-UI run. A run that calls a client-side
+/// tool is followed by a second run replaying the same history, so the question
+/// arrives twice with the same id: the message row is reused instead of
+/// duplicated (the usage rows stay distinct, those tokens were really spent).
+/// </param>
 public sealed record AgentUsageRecord(
     string AgentName,
     string? UserMessage,
     int? UserId,
-    AgentTokenUsage Usage);
+    AgentTokenUsage Usage,
+    string? UserMessageId = null);
 
 /// <summary>
 /// Use case: persist the token usage of an agent call, with the question it

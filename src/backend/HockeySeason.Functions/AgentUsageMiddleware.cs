@@ -113,7 +113,9 @@ public sealed class AgentUsageMiddleware(
         try
         {
             await usageService.RecordAsync(
-                new AgentUsageRecord(session.AgentName, session.UserMessage, session.UserId, session.Aggregate()),
+                new AgentUsageRecord(
+                    session.AgentName, session.UserMessage, session.UserId,
+                    session.Aggregate(), session.UserMessageId),
                 CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception exception)

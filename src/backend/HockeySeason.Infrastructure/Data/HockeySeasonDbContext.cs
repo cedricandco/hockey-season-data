@@ -290,6 +290,10 @@ public sealed class HockeySeasonDbContext(DbContextOptions<HockeySeasonDbContext
             entity.Property(x => x.Id).UseIdentityByDefaultColumn().ValueGeneratedOnAdd();
             entity.Property(x => x.Text).IsRequired();
             entity.HasIndex(x => x.AgentId);
+            // One row per question: a run followed by a client-tool run replays
+            // the same user message (same AG-UI id), and only the usage rows are
+            // duplicated — which is correct, the tokens were spent twice.
+            entity.HasIndex(x => new { x.AgentId, x.ExternalId }).IsUnique();
         });
 
         modelBuilder.Entity<TokenUsage>(entity =>

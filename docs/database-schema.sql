@@ -656,5 +656,27 @@ BEGIN
     VALUES ('20261126203323_AddAgentTokenUsage', '9.0.0');
     END IF;
 END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20261126225717_AddAgentMessageExternalId') THEN
+    ALTER TABLE message ADD external_id text;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20261126225717_AddAgentMessageExternalId') THEN
+    CREATE UNIQUE INDEX ix_message_agent_id_external_id ON message (agent_id, external_id);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20261126225717_AddAgentMessageExternalId') THEN
+    INSERT INTO "__EFMigrationsHistory" (migration_id, product_version)
+    VALUES ('20261126225717_AddAgentMessageExternalId', '9.0.0');
+    END IF;
+END $EF$;
 COMMIT;
 

@@ -251,6 +251,14 @@ public sealed class AgentMessage
     public int AgentId { get; set; }
     /// <summary>Text of the user's question.</summary>
     public required string Text { get; set; }
+    /// <summary>
+    /// Identifier of the user message in the AG-UI run (<c>messages[].id</c>),
+    /// unique per agent. A run that calls a client-side tool is followed by a
+    /// second run replaying the same history, so the same question arrives
+    /// twice with the same id: the column is what keeps one <c>message</c> row
+    /// per question while every model call still gets its own usage row.
+    /// </summary>
+    public string? ExternalId { get; set; }
 
     public Agent Agent { get; set; } = null!;
 }

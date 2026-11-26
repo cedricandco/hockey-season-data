@@ -18,6 +18,14 @@ public sealed class AgentUsageSession(string agentName)
     /// <summary>The user's question: set by the caller once the request is parsed, never the answer.</summary>
     public string? UserMessage { get; set; }
 
+    /// <summary>
+    /// AG-UI id of the message carrying the question. Two runs of one turn (the
+    /// first one calling a client-side tool, the second replaying the history)
+    /// carry the same id, which is what makes the accounting idempotent on the
+    /// message while keeping one usage row per model call.
+    /// </summary>
+    public string? UserMessageId { get; set; }
+
     /// <summary>Local <c>users</c> id of the caller, when it could be resolved.</summary>
     public int? UserId { get; set; }
 
