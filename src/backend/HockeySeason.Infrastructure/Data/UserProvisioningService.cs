@@ -9,10 +9,11 @@ namespace HockeySeason.Infrastructure.Data;
 /// <summary>
 /// Application use case implementation over the PostgreSQL persistence model:
 /// creates the <c>users</c> row for a caller on first authenticated request,
-/// grants the default COACH licence and fills the profile claims (email, first
-/// and last name) published by the identity provider. Idempotent: a SELECT runs
-/// first, a value already stored is never overwritten, and the COACH role is
-/// granted at most once.
+/// grants the default COACH licence and keeps the profile (email, first and
+/// last name) in sync with the identity provider on every call. Idempotent: a
+/// SELECT runs first, the COACH role is granted at most once, and a claim the
+/// provider does not publish leaves the stored value untouched (so a profile
+/// collected from userinfo is never wiped by a token without the claims).
 /// </summary>
 public sealed class UserProvisioningService(
     IDbContextFactory<HockeySeasonDbContext> dbContextFactory,
@@ -34,10 +35,10 @@ public sealed class UserProvisioningService(
 
         if (user is not null)
         {
-            // Idempotent refresh: only fields the identity provider now knows
-            // and the row is still missing are filled. Stored values win, so an
-            // email or name is never overwritten.
-            var changed = FillMissingProfile(user, claims);
+            // Every authenticated request refreshes the profile from the
+            // identity provider, which is the source of truth: a name or an
+            // email changed in Auth0 lands in the local row on the next call.
+            var changed = ApplyProfile(user, claims);
             if (changed)
             {
                 user.UpdatedAt = DateTimeOffset.UtcNow;
@@ -85,24 +86,26 @@ public sealed class UserProvisioningService(
     }
 
     /// <summary>
-    /// Copies the profile claims the row is still missing; returns whether
-    /// anything changed. Existing values are never replaced.
+    /// Copies the profile onto the row, replacing what is stored; returns
+    /// whether anything changed. A claim the identity provider does not publish
+    /// (null) leaves the stored value alone, so a token without the custom
+    /// claims never wipes a profile already collected from userinfo.
     /// </summary>
-    private static bool FillMissingProfile(User user, ApplicationUserClaims claims)
+    private static bool ApplyProfile(User user, ApplicationUserClaims claims)
     {
         var changed = false;
 
-        if (string.IsNullOrWhiteSpace(user.Email) && EmptyToNull(claims.Email) is { } email)
+        if (EmptyToNull(claims.Email) is { } email && user.Email != email)
         {
             user.Email = email;
             changed = true;
         }
-        if (string.IsNullOrWhiteSpace(user.FirstName) && EmptyToNull(claims.FirstName) is { } firstName)
+        if (EmptyToNull(claims.FirstName) is { } firstName && user.FirstName != firstName)
         {
             user.FirstName = firstName;
             changed = true;
         }
-        if (string.IsNullOrWhiteSpace(user.LastName) && EmptyToNull(claims.LastName) is { } lastName)
+        if (EmptyToNull(claims.LastName) is { } lastName && user.LastName != lastName)
         {
             user.LastName = lastName;
             changed = true;

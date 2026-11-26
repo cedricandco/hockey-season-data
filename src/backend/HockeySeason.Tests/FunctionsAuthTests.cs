@@ -20,6 +20,51 @@ public sealed class FunctionsAuthTests : IAsyncLifetime
 {
     private readonly OidcTestServer _identityProvider = new();
 
+    [Theory]
+    [InlineData("https://api.hockeyseason.dev/", "https://api.hockeyseason.dev/email", "cedric@example.com")]
+    [InlineData("https://api.hockeyseason.dev", "https://api.hockeyseason.dev/email", "cedric@example.com")]
+    [InlineData(null, "email", "cedric@example.com")]
+    public void ProfileClaims_ReadsTheNamespacedOrStandardClaim(string? configured, string claimName, string expected)
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(claimName, expected)], authenticationType: "Bearer"));
+
+        var (email, _, _) = ProfileClaims.Read(principal, configured);
+
+        Assert.Equal(expected, email);
+    }
+
+    [Fact]
+    public void ProfileClaims_FallsBackToTheClaimNameMappedByTheJwtHandler()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Email, "mapped@example.com")], authenticationType: "Bearer"));
+
+        var (email, givenName, familyName) = ProfileClaims.Read(principal, "https://api.hockeyseason.dev/");
+
+        Assert.Equal("mapped@example.com", email);
+        Assert.Null(givenName);
+        Assert.Null(familyName);
+    }
+
+    [Fact]
+    public void ProfileClaims_ReadsAllThreeFieldsFromTheNamespacedClaims()
+    {
+        const string ns = "https://api.hockeyseason.dev/";
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ns + ProfileClaims.EmailKey, "cedric@example.com"),
+            new Claim(ns + ProfileClaims.GivenNameKey, "Cedric"),
+            new Claim(ns + ProfileClaims.FamilyNameKey, "Gervasoni"),
+        ], authenticationType: "Bearer"));
+
+        var (email, givenName, familyName) = ProfileClaims.Read(principal, "https://api.hockeyseason.dev");
+
+        Assert.Equal("cedric@example.com", email);
+        Assert.Equal("Cedric", givenName);
+        Assert.Equal("Gervasoni", familyName);
+    }
+
     public Task InitializeAsync() => Task.CompletedTask;
 
     public async Task DisposeAsync() => await _identityProvider.DisposeAsync();

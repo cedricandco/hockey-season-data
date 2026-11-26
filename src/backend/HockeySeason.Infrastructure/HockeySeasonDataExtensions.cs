@@ -44,6 +44,9 @@ public static class HockeySeasonDataExtensions
         services.AddScoped<IScopeService, ScopeService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<ISubscriptionCatalogService, SubscriptionCatalogService>();
+        // Agent token accounting: one row per call, written at its end by the
+        // agent usage middleware.
+        services.AddScoped<IAgentUsageService, AgentUsageService>();
         // Anonymous landing-page preview: not tied to a caller, so it enforces
         // no follows — only imported reference data is read.
         services.AddScoped<IPreviewService, PreviewService>();

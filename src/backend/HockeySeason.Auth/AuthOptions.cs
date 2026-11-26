@@ -39,4 +39,15 @@ public sealed class AuthOptions
     /// metadata). Never enable in production.
     /// </summary>
     public bool AllowHttpAuthority { get; set; }
+
+    /// <summary>
+    /// Namespace prefixed to the custom profile claims (<c>email</c>,
+    /// <c>given_name</c>, <c>family_name</c>) that an Auth0 Action copies onto
+    /// the access token, e.g. <c>https://api.hockeyseason.dev/</c>. Auth0
+    /// requires a non-namespaced custom claim on a token issued for a custom
+    /// API to be namespaced, so this keeps the reading side in sync with the
+    /// Action that writes them. Leave empty when the Action uses the standard
+    /// OIDC claim names.
+    /// </summary>
+    public string? ProfileClaimsNamespace { get; set; }
 }

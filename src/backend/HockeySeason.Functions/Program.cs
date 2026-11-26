@@ -51,6 +51,9 @@ builder.Services.AddHockeySeasonData(builder.Configuration);
 builder.Services.AddScoped<RequestUserResolver>();
 builder.Services.AddScoped<CallerScope>();
 builder.UseMiddleware<UserProvisioningMiddleware>();
+// Token accounting of the agent calls: opens the usage session of the
+// invocation and persists the counts (with the user's question) at its end.
+builder.UseMiddleware<AgentUsageMiddleware>();
 // LeagueTools must be registered explicitly: the MCP endpoint instantiates it
 // on demand, but the agent resolves its AIFunctions from this registration.
 // Singleton (the agent resolves it from the root provider); the caller's

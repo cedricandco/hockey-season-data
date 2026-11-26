@@ -20,28 +20,35 @@ public sealed class PreviewService(
     IDbContextFactory<HockeySeasonDbContext> dbContextFactory) : IPreviewService
 {
     public async Task<IReadOnlyList<PreviewTeam>> GetTeamsAsync(
-        string leagueId, CancellationToken cancellationToken = default)
+        string leagueId, int? divisionId = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(leagueId);
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
-        // A category guid is shared by every season: the teams of the latest
-        // one are the current roster of the league.
-        var latestSeason = await db.Leagues
-            .AsNoTracking()
-            .Where(league => league.ExternalId == leagueId)
+        // A category guid is shared by every season *and* by every division that
+        // plays it: the selected division pins the row, otherwise the latest
+        // season wins (ties resolved by the smallest row id).
+        var leagues = db.Leagues.AsNoTracking().Where(league => league.ExternalId == leagueId);
+        if (divisionId is > 0)
+        {
+            var divisionExternalId = divisionId.Value.ToString(CultureInfo.InvariantCulture);
+            leagues = leagues.Where(league => league.Division.ExternalId == divisionExternalId);
+        }
+
+        var leagueRowId = await leagues
             .OrderByDescending(league => league.Season.ExternalId)
+            .ThenBy(league => league.Id)
             .Select(league => (int?)league.Id)
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
-        if (latestSeason is null)
+        if (leagueRowId is null)
         {
             return [];
         }
 
         return await db.Teams
             .AsNoTracking()
-            .Where(team => team.LeagueId == latestSeason.Value)
+            .Where(team => team.LeagueId == leagueRowId.Value)
             .OrderBy(team => team.Name)
             .Select(team => new PreviewTeam(team.Id, team.Name))
             .ToListAsync(cancellationToken)

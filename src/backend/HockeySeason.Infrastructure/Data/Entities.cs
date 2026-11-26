@@ -224,3 +224,58 @@ public sealed class OrganizationSubscription
     public User User { get; set; } = null!;
     public Organization Organization { get; set; } = null!;
 }
+
+/// <summary>
+/// An AI agent whose token usage is accounted, one row per published agent
+/// (<c>agent</c> table). The Hockey Assistant is seeded by the model; a row is
+/// also created on demand when a call records a name the table does not know.
+/// </summary>
+public sealed class Agent
+{
+    public int Id { get; set; }
+    /// <summary>Logical agent name, e.g. "hockey-season-data.agent", unique.</summary>
+    public required string AgentName { get; set; }
+
+    public List<AgentMessage> Messages { get; set; } = [];
+    public List<TokenUsage> TokenUsages { get; set; } = [];
+}
+
+/// <summary>
+/// The question a user asked an agent (<c>message</c> table). Answers are
+/// deliberately not stored: the row is what a <see cref="TokenUsage"/> is
+/// attributed to.
+/// </summary>
+public sealed class AgentMessage
+{
+    public int Id { get; set; }
+    public int AgentId { get; set; }
+    /// <summary>Text of the user's question.</summary>
+    public required string Text { get; set; }
+
+    public Agent Agent { get; set; } = null!;
+}
+
+/// <summary>
+/// Token usage of one agent call (<c>token_usage</c> table), in the
+/// Microsoft.Extensions.AI accounting: <see cref="ReasoningTokens"/> is part of
+/// the output tokens, never an addition to them.
+/// </summary>
+public sealed class TokenUsage
+{
+    public int Id { get; set; }
+    public int AgentId { get; set; }
+    public long? InputTokenCount { get; set; }
+    public long? OutputTokenCount { get; set; }
+    /// <summary>Provider total when reported, otherwise input + output.</summary>
+    public long? TotalTokenCount { get; set; }
+    /// <summary>Output tokens spent on reasoning, when the provider distinguishes them.</summary>
+    public long? ReasoningTokens { get; set; }
+    /// <summary>Local <c>users</c> id of the caller; null when the caller could not be resolved.</summary>
+    public int? UserId { get; set; }
+    /// <summary>The question this usage answers, when one was captured.</summary>
+    public int? MessageId { get; set; }
+
+    public Agent Agent { get; set; } = null!;
+    public User? User { get; set; }
+    public AgentMessage? Message { get; set; }
+}

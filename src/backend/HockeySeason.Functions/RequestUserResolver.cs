@@ -3,6 +3,7 @@ using System.Security.Claims;
 using HockeySeason.Application;
 using HockeySeason.Auth;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Options;
 
 namespace HockeySeason.Functions;
 
@@ -12,15 +13,19 @@ namespace HockeySeason.Functions;
 /// row) and the local id is returned. One instance per invocation (scoped), so
 /// the id is cached for the duration of the request.
 ///
-/// The OIDC profile is completed from the provider's <c>/userinfo</c> endpoint
-/// when the access token carries no email or name: Auth0 access tokens only
-/// publish those claims when they were added to the API, so the userinfo
-/// profile is what actually stores "nom, prénom" in the database.
+/// The profile (email, first and last name) is read from the access token
+/// itself: an Auth0 Action copies those claims onto the token, which needs no
+/// extra HTTP round trip inside the trigger and works on the Static Web Apps
+/// managed host where the request headers are not always visible through
+/// <c>IHttpContextAccessor</c>. The userinfo call stays as a fallback for
+/// tenants where the Action is not configured.
 /// </summary>
 public sealed class RequestUserResolver(
     IUserProvisioningService provisioning,
-    IUserContext? userContext = null)
+    IUserContext? userContext = null,
+    IOptions<AuthOptions>? authOptions = null)
 {
+    private readonly AuthOptions _authOptions = authOptions?.Value ?? new AuthOptions();
     private int? _userId;
 
     /// <summary>
@@ -45,15 +50,17 @@ public sealed class RequestUserResolver(
 
         var principal = FunctionsAuthorization.GetPrincipal(context)
             ?? throw new InvalidOperationException("The invocation carries no authenticated principal.");
-        var claims = ReadClaims(principal);
+        var claims = ReadClaims(principal, _authOptions.ProfileClaimsNamespace);
         var result = await provisioning.ProvisionAsync(claims, cancellationToken);
 
-        // The stored profile still misses a name or the email: complete the
-        // claims from the provider profile and store them. Once the row is
-        // complete this never calls userinfo again.
+        // The token carried no usable profile (the Auth0 Action that copies
+        // email / given_name / family_name onto the access token is not
+        // configured, or the row is still missing a field): fall back to the
+        // provider's userinfo profile and store what it publishes. Once the
+        // row is complete and the token carries the claims, this never runs.
         if (result.ProfileIncomplete && userContext is not null)
         {
-            var completed = await CompleteFromUserInfoAsync(claims, cancellationToken);
+            var completed = await CompleteFromUserInfoAsync(claims, context, cancellationToken);
             if (completed is not null)
             {
                 await provisioning.ProvisionAsync(completed, cancellationToken);
@@ -70,12 +77,15 @@ public sealed class RequestUserResolver(
     /// account keeps what the token said and the next request retries.
     /// </summary>
     private async Task<ApplicationUserClaims?> CompleteFromUserInfoAsync(
-        ApplicationUserClaims claims, CancellationToken cancellationToken)
+        ApplicationUserClaims claims, FunctionContext context, CancellationToken cancellationToken)
     {
         UserInfo? profile;
         try
         {
-            profile = await userContext!.GetCurrentUserAsync(cancellationToken);
+            // The token is read from the invocation's HttpContext: the isolated
+            // worker registers no IHttpContextAccessor, so the ambient accessor
+            // inside IUserContext resolves nothing there.
+            profile = await userContext!.GetUserAsync(ReadBearerToken(context), cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -126,15 +136,32 @@ public sealed class RequestUserResolver(
     private static string? EmptyToNull(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static ApplicationUserClaims ReadClaims(ClaimsPrincipal user)
+    /// <summary>
+    /// Bearer token of the invocation: the standard header first, then the
+    /// mirror the SPA sets for proxies that strip it. Read from the invocation's
+    /// HttpContext, the source that works on every host.
+    /// </summary>
+    private static string? ReadBearerToken(FunctionContext context)
+    {
+        var httpContext = context.GetHttpContext();
+        if (httpContext is null)
+        {
+            return null;
+        }
+        var headers = httpContext.Request.Headers;
+        return BearerTokenParser.TryExtractBearerToken(headers.Authorization.ToString(), out var token)
+            || BearerTokenParser.TryExtractBearerToken(
+                headers[UserContextExtensions.MirroredAuthorizationHeader].ToString(), out token)
+            ? token
+            : null;
+    }
+
+    private static ApplicationUserClaims ReadClaims(ClaimsPrincipal user, string? claimNamespace)
     {
         var subject = user.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? user.FindFirstValue(JwtRegisteredClaimNames.Sub)
             ?? throw new InvalidOperationException("The authenticated principal carries no 'sub' claim.");
-        return new ApplicationUserClaims(
-            subject,
-            user.FindFirstValue(JwtRegisteredClaimNames.Email) ?? user.FindFirstValue(ClaimTypes.Email),
-            user.FindFirstValue(JwtRegisteredClaimNames.GivenName) ?? user.FindFirstValue(ClaimTypes.GivenName),
-            user.FindFirstValue(JwtRegisteredClaimNames.FamilyName) ?? user.FindFirstValue(ClaimTypes.Surname));
+        var (email, givenName, familyName) = ProfileClaims.Read(user, claimNamespace);
+        return new ApplicationUserClaims(subject, email, givenName, familyName);
     }
 }

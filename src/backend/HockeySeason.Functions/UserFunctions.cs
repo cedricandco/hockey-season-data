@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using HockeySeason.Application;
 using Microsoft.AspNetCore.Http;
@@ -163,7 +164,11 @@ public sealed class UserFunctions(
         });
     }
 
-    /// <summary>Teams of one league (Spordle category guid), by Spordle team id.</summary>
+    /// <summary>
+    /// Teams of one league (Spordle category guid), by Spordle team id. A
+    /// category is played by several divisions, so the optional
+    /// <c>divisionId</c> query value pins the league the selector walked to.
+    /// </summary>
     [Function("SubscriptionTeams")]
     public async Task<IActionResult> TeamCatalog(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "subscriptions/leagues/{leagueId}/teams")] HttpRequest request,
@@ -172,7 +177,7 @@ public sealed class UserFunctions(
         if (Unauthorized(context) is { } denied) return denied;
         if (string.IsNullOrWhiteSpace(leagueId)) return InvalidBody();
 
-        var teams = await catalog.GetTeamsAsync(leagueId, cancellationToken);
+        var teams = await catalog.GetTeamsAsync(leagueId, DivisionIdQuery(request), cancellationToken);
         return new OkObjectResult(new
         {
             teams = teams.Select(item => new { item.Id, item.Name }),
@@ -466,6 +471,17 @@ public sealed class UserFunctions(
 
     private static BadRequestObjectResult InvalidBody() => new(new ValidationProblemDetails(
         new Dictionary<string, string[]> { ["body"] = ["A valid JSON request body is required."] }));
+
+    /// <summary>
+    /// Optional <c>divisionId</c> query value (a Spordle office number): a
+    /// Spordle category guid is shared by every division that plays it, so the
+    /// selector's division is what tells the leagues apart.
+    /// </summary>
+    private static int? DivisionIdQuery(HttpRequest request) =>
+        int.TryParse(request.Query["divisionId"].ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+            && id > 0
+            ? id
+            : null;
 
     private static IActionResult Map(SubscriptionError error) => error switch
     {

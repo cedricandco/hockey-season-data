@@ -22,6 +22,64 @@ namespace HockeySeason.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("HockeySeason.Infrastructure.Data.Agent", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AgentName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("agent_name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_agent");
+
+                    b.HasIndex("AgentName")
+                        .IsUnique()
+                        .HasDatabaseName("ix_agent_agent_name");
+
+                    b.ToTable("agent", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            AgentName = "hockey-season-data.agent"
+                        });
+                });
+
+            modelBuilder.Entity("HockeySeason.Infrastructure.Data.AgentMessage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AgentId")
+                        .HasColumnType("integer")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id")
+                        .HasName("pk_message");
+
+                    b.HasIndex("AgentId")
+                        .HasDatabaseName("ix_message_agent_id");
+
+                    b.ToTable("message", (string)null);
+                });
+
             modelBuilder.Entity("HockeySeason.Infrastructure.Data.Division", b =>
                 {
                     b.Property<int>("Id")
@@ -104,12 +162,12 @@ namespace HockeySeason.Infrastructure.Migrations
                     b.HasKey("Id")
                         .HasName("pk_leagues");
 
-                    b.HasIndex("DivisionId")
-                        .HasDatabaseName("ix_leagues_division_id");
+                    b.HasIndex("SeasonId")
+                        .HasDatabaseName("ix_leagues_season_id");
 
-                    b.HasIndex("SeasonId", "ExternalId")
+                    b.HasIndex("DivisionId", "SeasonId", "ExternalId")
                         .IsUnique()
-                        .HasDatabaseName("ix_leagues_season_id_external_id");
+                        .HasDatabaseName("ix_leagues_division_id_season_id_external_id");
 
                     b.ToTable("leagues", (string)null);
                 });
@@ -149,11 +207,11 @@ namespace HockeySeason.Infrastructure.Migrations
                         .HasName("pk_league_schedules");
 
                     b.HasIndex("ExternalId")
-                        .IsUnique()
                         .HasDatabaseName("ix_league_schedules_external_id");
 
-                    b.HasIndex("LeagueId")
-                        .HasDatabaseName("ix_league_schedules_league_id");
+                    b.HasIndex("LeagueId", "ExternalId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_league_schedules_league_id_external_id");
 
                     b.ToTable("league_schedules", (string)null);
                 });
@@ -403,11 +461,11 @@ namespace HockeySeason.Infrastructure.Migrations
                         .HasName("pk_teams");
 
                     b.HasIndex("ExternalId")
-                        .IsUnique()
                         .HasDatabaseName("ix_teams_external_id");
 
-                    b.HasIndex("LeagueId")
-                        .HasDatabaseName("ix_teams_league_id");
+                    b.HasIndex("LeagueId", "ExternalId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_teams_league_id_external_id");
 
                     b.ToTable("teams", (string)null);
                 });
@@ -459,6 +517,58 @@ namespace HockeySeason.Infrastructure.Migrations
                         .HasDatabaseName("ix_team_subscriptions_user_id_team_id");
 
                     b.ToTable("team_subscriptions", (string)null);
+                });
+
+            modelBuilder.Entity("HockeySeason.Infrastructure.Data.TokenUsage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AgentId")
+                        .HasColumnType("integer")
+                        .HasColumnName("agent_id");
+
+                    b.Property<long?>("InputTokenCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("input_token_count");
+
+                    b.Property<int?>("MessageId")
+                        .HasColumnType("integer")
+                        .HasColumnName("message_id");
+
+                    b.Property<long?>("OutputTokenCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("output_token_count");
+
+                    b.Property<long?>("ReasoningTokens")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reasoning_tokens");
+
+                    b.Property<long?>("TotalTokenCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("total_token_count");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_token_usage");
+
+                    b.HasIndex("AgentId")
+                        .HasDatabaseName("ix_token_usage_agent_id");
+
+                    b.HasIndex("MessageId")
+                        .HasDatabaseName("ix_token_usage_message_id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_token_usage_user_id");
+
+                    b.ToTable("token_usage", (string)null);
                 });
 
             modelBuilder.Entity("HockeySeason.Infrastructure.Data.User", b =>
@@ -594,6 +704,18 @@ namespace HockeySeason.Infrastructure.Migrations
                     b.ToTable("user_settings", (string)null);
                 });
 
+            modelBuilder.Entity("HockeySeason.Infrastructure.Data.AgentMessage", b =>
+                {
+                    b.HasOne("HockeySeason.Infrastructure.Data.Agent", "Agent")
+                        .WithMany("Messages")
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_message_agent_agent_id");
+
+                    b.Navigation("Agent");
+                });
+
             modelBuilder.Entity("HockeySeason.Infrastructure.Data.Division", b =>
                 {
                     b.HasOne("HockeySeason.Infrastructure.Data.Organization", "Organization")
@@ -714,6 +836,34 @@ namespace HockeySeason.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("HockeySeason.Infrastructure.Data.TokenUsage", b =>
+                {
+                    b.HasOne("HockeySeason.Infrastructure.Data.Agent", "Agent")
+                        .WithMany("TokenUsages")
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_token_usage_agent_agent_id");
+
+                    b.HasOne("HockeySeason.Infrastructure.Data.AgentMessage", "Message")
+                        .WithMany()
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_token_usage_message_message_id");
+
+                    b.HasOne("HockeySeason.Infrastructure.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_token_usage_users_user_id");
+
+                    b.Navigation("Agent");
+
+                    b.Navigation("Message");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("HockeySeason.Infrastructure.Data.UserRole", b =>
                 {
                     b.HasOne("HockeySeason.Infrastructure.Data.Role", "Role")
@@ -745,6 +895,13 @@ namespace HockeySeason.Infrastructure.Migrations
                         .HasConstraintName("fk_user_settings_users_user_id");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("HockeySeason.Infrastructure.Data.Agent", b =>
+                {
+                    b.Navigation("Messages");
+
+                    b.Navigation("TokenUsages");
                 });
 
             modelBuilder.Entity("HockeySeason.Infrastructure.Data.Division", b =>

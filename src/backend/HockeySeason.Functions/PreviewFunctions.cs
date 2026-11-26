@@ -79,7 +79,11 @@ public sealed class PreviewFunctions(
         });
     }
 
-    /// <summary>Teams of one league (Spordle category guid), keyed on database ids.</summary>
+    /// <summary>
+    /// Teams of one league (Spordle category guid), keyed on database ids. A
+    /// category is played by several divisions, so the optional
+    /// <c>divisionId</c> query value pins the league the visitor walked to.
+    /// </summary>
     [Function("PreviewTeams")]
     public async Task<IActionResult> Teams(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "preview/leagues/{leagueId}/teams")]
@@ -88,7 +92,7 @@ public sealed class PreviewFunctions(
         if (string.IsNullOrWhiteSpace(leagueId)) return InvalidId("leagueId");
         if (!DatabaseOptions.IsPersistenceConfigured(configuration)) return new OkObjectResult(new { teams = Array.Empty<object>() });
 
-        var teamsOfLeague = await preview.GetTeamsAsync(leagueId, cancellationToken);
+        var teamsOfLeague = await preview.GetTeamsAsync(leagueId, DivisionIdQuery(request), cancellationToken);
         return new OkObjectResult(new
         {
             teams = teamsOfLeague.Select(team => new { team.Id, team.Name }),
@@ -122,4 +126,15 @@ public sealed class PreviewFunctions(
 
     private static BadRequestObjectResult InvalidId(string name) => new(new ValidationProblemDetails(
         new Dictionary<string, string[]> { [name] = ["The identifier must be positive."] }));
+
+    /// <summary>
+    /// Optional <c>divisionId</c> query value (a Spordle office number): a
+    /// Spordle category guid is shared by every division that plays it, so the
+    /// selector's division is what tells the leagues apart.
+    /// </summary>
+    private static int? DivisionIdQuery(HttpRequest request) =>
+        int.TryParse(request.Query["divisionId"].ToString(), System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out var id) && id > 0
+            ? id
+            : null;
 }

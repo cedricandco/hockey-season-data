@@ -20,6 +20,9 @@ public static class HockeySeasonAgentsServiceCollectionExtensions
     {
         services.AddHttpContextAccessor();
         services.AddSingleton<AgentCallerContext>();
+        // Usage accounting: one session per invocation (opened by the Functions
+        // middleware), reached by the host-wide recording chat client.
+        services.AddSingleton<AgentUsageSessionAccessor>();
         services
             .AddOptions<HockeySeasonDataAgentOptions>()
             .Bind(configuration.GetSection(HockeySeasonDataAgentOptions.SectionName))
@@ -46,7 +49,8 @@ public static class HockeySeasonAgentsServiceCollectionExtensions
         }
 
         var instructions = File.ReadAllText(instructionsPath);
-        var chatClient = HockeyAssistantChatClientFactory.Create(options);
+        var chatClient = HockeyAssistantChatClientFactory.Create(
+            options, serviceProvider.GetService<AgentUsageSessionAccessor>());
         var tools = ResolveAgentTools(serviceProvider);
         return HockeySeasonDataAgentFactory.Create(chatClient, instructions, name, tools);
     }

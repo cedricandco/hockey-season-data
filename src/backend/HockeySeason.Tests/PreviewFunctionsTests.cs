@@ -122,7 +122,7 @@ public sealed class PreviewFunctionsTests
         public Task<SubscriptionLeagueOptions> GetLeaguesAsync(int divisionId, string? seasonId = null, CancellationToken cancellationToken = default) =>
             Task.FromResult(new SubscriptionLeagueOptions("2026-27", [new("category-guid", "M11A", "2026-27")]));
 
-        public Task<IReadOnlyList<SubscriptionTeam>> GetTeamsAsync(string leagueId, CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyList<SubscriptionTeam>> GetTeamsAsync(string leagueId, int? divisionId = null, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<SubscriptionTeam>>([]);
 
         public Task<PresidentTeamOptions> GetTeamsByBaseNameAsync(int associationId, string baseName, CancellationToken cancellationToken = default) =>
@@ -137,7 +137,7 @@ public sealed class PreviewFunctionsTests
 
     private sealed class FakePreview : IPreviewService
     {
-        public Task<IReadOnlyList<PreviewTeam>> GetTeamsAsync(string leagueId, CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyList<PreviewTeam>> GetTeamsAsync(string leagueId, int? divisionId = null, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<PreviewTeam>>([new(500, "Grizzly 1")]);
 
         public Task<SelectableTeam?> GetTeamAsync(int teamId, CancellationToken cancellationToken = default) =>

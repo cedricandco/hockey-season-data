@@ -72,7 +72,7 @@ calls `FunctionsAuthorization` and never resolves a caller:
 | `GET /api/preview/associations` | Associations that own imported data |
 | `GET /api/preview/associations/{id}/divisions` | Divisions (Spordle offices) of one association |
 | `GET /api/preview/divisions/{id}/leagues` | Leagues of a division for the latest imported season |
-| `GET /api/preview/leagues/{leagueId}/teams` | Teams of one league, keyed on database ids |
+| `GET /api/preview/leagues/{leagueId}/teams[?divisionId=6193]` | Teams of one league, keyed on database ids; `divisionId` pins the league when the category guid is played by several divisions |
 | `GET /api/preview/teams/{teamId}` | Team detail — the exact JSON of `GET /api/teams/{teamId}`, `teamLinks` included |
 
 The preview reads only the reference data imported from Spordle plus the public
@@ -118,22 +118,90 @@ Every authenticated invocation passes through `UserProvisioningMiddleware` (a
 Functions worker middleware): the first request of a newly
 connected caller — whatever the endpoint — upserts their `users` row and
 grants the default **COACH** licence (`user_roles` → `roles.id = 1`, 5 teams).
-Idempotent by design (SELECT before INSERT, existing rows never mutated, emails
-never overwritten), so subsequent requests are pure lookups. When persistence is
+Idempotent by design (SELECT before INSERT, the licence granted once), and the
+email / first / last name are refreshed from the token claims on every
+authenticated request. When persistence is
 not configured the middleware is a no-op. A provisioning failure never blocks
 the invocation.
 
-The profile — email, **first name and last name** — comes from the JWT claims
-when the access token carries them. Auth0 access tokens only publish `email`,
-`given_name` and `family_name` when those claims were added to the API, so the
-resolver completes them from the provider's `/userinfo` profile: this happens
-only while the stored row still misses one of the three fields (never on every
-request), and the display name of a database (email/password) signup is split
-into first/last name. A value already stored is never overwritten.
+The profile — email, **first name and last name** — is read from the claims of
+the access token. That is deliberately the primary source: it needs no extra
+HTTP round trip inside the trigger, and it works on the Static Web Apps managed
+host where the request headers are not always visible through
+`IHttpContextAccessor` (the same reason `FunctionsAuthorization` validates the
+raw header instead of trusting the middleware).
+
+Auth0 access tokens do not carry `email` / `given_name` / `family_name` by
+default; an **Auth0 Action** has to copy them onto the token. The Action writes
+them under a namespace (`Auth:ProfileClaimsNamespace`) because Auth0 rejects a
+non-namespaced custom claim on a token issued for a custom API:
+
+```js
+// Auth0 → Actions → post-login (Login flow)
+exports.onExecutePostLogin = async (event, api) => {
+  const ns = 'https://api.hockeyseason.dev/';   // must match Auth:ProfileClaimsNamespace
+  api.accessToken.setCustomClaim(ns + 'email', event.user.email);
+  api.accessToken.setCustomClaim(ns + 'given_name', event.user.given_name);
+  api.accessToken.setCustomClaim(ns + 'family_name', event.user.family_name);
+};
+```
+
+The reader accepts, per field, the namespaced claim, then the plain OIDC claim,
+then the name the JWT handler maps it to — so a tenant that publishes the
+standard `email` / `given_name` / `family_name` claims works too.
+
+Provisioning refreshes the profile on **every** authenticated request: a name
+or an email changed in Auth0 replaces the stored value on the next call. A
+claim the token does not carry leaves the stored value alone, so a profile
+collected earlier is never wiped. As a safety net for a tenant without the
+Action, the resolver still falls back to `/userinfo` while the stored row
+misses one of the three fields.
 
 `GET /api/users/me` also returns `teamCount`: a freshly provisioned account
 follows no team, which is what sends the SPA to the team-selection page on
 first visit.
+
+### Agent token usage
+
+Every AI agent call is accounted in the `token_usage` table (with its question
+in `message` and its agent in `agent`), so the cost of the assistant can be
+followed per user:
+
+| Table | Columns | Role |
+|---|---|---|
+| `agent` | `id`, `agent_name` (UNIQUE) | The agents whose usage is accounted. The chat agent `hockey-season-data.agent` is seeded by the migration. |
+| `message` | `id`, `agent_id` FK, `text` | The **question** a user asked (answers are never stored). |
+| `token_usage` | `id`, `agent_id` FK, `input_token_count`, `output_token_count`, `total_token_count`, `reasoning_tokens`, `user_id` FK (nullable), `message_id` FK (nullable) | One row per agent call. |
+
+The counts follow the `UsageDetails` accounting of the Agent Framework /
+`Microsoft.Extensions.AI`: input and output are totals and `reasoning_tokens`
+is **part of** the output tokens, never an addition. A count the provider does
+not report stays `NULL`, and `total_token_count` falls back to
+`input + output` when the provider omits it. `user_id`/`message_id` are
+nullable and `ON DELETE SET NULL`, so deleting a user or a message never erases
+the accounting.
+
+Recording is a pair of two small pieces, one per side of the call:
+
+1. `TokenUsageRecordingChatClient` (in `HockeySeason.Agents`) decorates the
+   Ollama client returned by `HockeyAssistantChatClientFactory`: it reads the
+   `UsageContent` of a streamed response (or `ChatResponse.Usage` for a
+   non-streamed one) and appends it to the current
+   `AgentUsageSession`. A run that calls the model several times (tool-calling
+   rounds) accumulates one entry per call; `AgentUsageSession.Aggregate()` sums
+   them into the single row written.
+2. `AgentUsageMiddleware` (in `HockeySeason.Functions`) opens that session for
+   the invocation — it is the ambient, `AsyncLocal`-based accessor the
+   singleton chat client resolves at call time — and, when the trigger
+   returns, writes the aggregated counts and the user's question through
+   `IAgentUsageService`. `AgentFunction` puts the last `user` message of the
+   AG-UI input on the session, so what is stored is the question being asked
+   now, not the replayed history.
+
+The middleware only acts on agent invocations (the request path ends with
+`Agents:HockeySeasonData:AgentName`) and only when a database is configured; a
+recording failure is logged and never fails the call. A renamed agent does not
+lose its accounting: `AgentUsageService` creates the `agent` row on demand.
 
 ### User account endpoints (all require a valid bearer token)
 
@@ -165,7 +233,7 @@ user already sees — and each level returns the identifier the next one expects
 | `GET /api/subscriptions/associations/{associationId}/categories` | Category levels the association publishes in its latest imported season (`M11`, `M13`, `M15`, `M17`, `M19`, `Junior`), with the number of teams of each — the category-director selector (the letters A/B/AA are folded into one level) |
 | `GET /api/subscriptions/associations/{associationId}/categories/teams?category=M13&baseName=Grizzly` | Every team of that name inside one category level, whatever the letter refining it, across every division and league — the category-director preview (`baseName` omitted lists the whole level) |
 | `GET /api/subscriptions/divisions/{divisionId}/leagues[?seasonId=2026-27]` | Leagues of a division for a season (latest imported when omitted); `id` is the Spordle category guid |
-| `GET /api/subscriptions/leagues/{leagueId}/teams` | Teams of a league, by Spordle team id (the value `POST /api/users/me/team-subscriptions` expects) |
+| `GET /api/subscriptions/leagues/{leagueId}/teams[?divisionId=6193]` | Teams of a league, by Spordle team id (the value `POST /api/users/me/team-subscriptions` expects); `divisionId` pins the league when the category guid is played by several divisions |
 
 Admin-only user directory and licence assignment (`is_admin` column **or**
 `roles=admin` claim; the frontend admin page is hidden and guarded for the rest):
@@ -199,17 +267,25 @@ what disappeared from Spordle:
 page) and `divisionId` is the division number typed by the administrator, i.e.
 `divisions.external_id`.
 
-Reconciliation rules: a league is the `(season, Spordle category id)` pair, a
-team is its Spordle team id and a schedule is its Spordle schedule id, so none
-of them is duplicated across divisions or seasons and a team or schedule moved
-between categories is re-parented. Deletions are
-strictly scoped: only leagues, schedules and teams of **the division being
-updated** (and of the imported season) are pruned when Spordle no longer
-publishes them — a sibling division, another association or a past season is
-never touched. Their `team_subscriptions` / `league_subscriptions` go with them
-(ON DELETE CASCADE). Categories without a published team are skipped. The
-import is administrator only and stays closed even while
-`Authorization:OpenAccess` is on.
+Reconciliation rules: a league is the `(division, season, Spordle category id)`
+triple, a team is its Spordle team id **inside its league** and a schedule is
+its Spordle schedule id **inside its league**. The division is part of every
+key on purpose: Spordle publishes the same category guid for every office that
+plays it (13 of the 17 categories of office 5956 are also published by 6193),
+and a region office republishes its child offices' schedules, so a
+`(season, category)` lookup would find — and steal — the row another division
+imported. Nothing of another division is ever re-parented or pruned.
+
+Deletions are therefore strictly scoped to **the division being updated** (and
+of the imported season): only its leagues, schedules and teams are pruned when
+Spordle no longer publishes them, and their `team_subscriptions` /
+`league_subscriptions` go with them (ON DELETE CASCADE). A sibling division,
+another association or a past season is never touched. Two safety rules
+complete it: categories without a published team are skipped, and a run that
+could not read everything (a category or a schedule Spordle failed to answer
+for, or an empty category list) **deletes nothing** — the missing rows are
+unknown, not vanished. The import is administrator only and stays closed even
+while `Authorization:OpenAccess` is on.
 
 Schedules differ in what they publish, so the standings reader tolerates the
 variations instead of failing the whole import: a team may have
@@ -357,6 +433,13 @@ API with the access token issued for the registered API audience.
 
 `HockeySeason.Auth` also resolves the caller's identity-provider profile on demand: `IUserContext` reads the bearer token (standard header first, then `X-Authorization` via `IBearerTokenAccessor`) and calls the provider's `/userinfo` endpoint. The exposed data maps the OIDC claims — `sub` (stable user id), `nickname`, `name`, `picture`, `updated_at`, `email`, `email_verified`.
 
+`updated_at` is the one claim whose JSON type differs between the two
+surfaces: Auth0 publishes it as an **integer** (Unix seconds) on `/userinfo`
+but as an RFC 3339 **string** in a token. `OidcTimestampConverter` accepts both
+and normalizes to ISO-8601 — declaring it as a plain string made the whole
+payload unreadable, which surfaced as `502 userinfo_unavailable` on
+`GET /api/me`.
+
 - The tenant host comes from `Auth:Authority`; `UserInfo:BaseAddress` and `UserInfo:Path` override it for non-standard deployments.
 - The Functions host exposes it at `GET /api/me` through `MeFunction` (trigger-validated like the other triggers).
 - Registration: `AddHockeySeasonUserContext()` in each composition root.
@@ -372,6 +455,7 @@ expired, forged or issued for another audience/issuer.
 | `Auth:Issuer` | Expected `iss` claim (defaults to the authority) | `appsettings.json` |
 | `Auth:Audience` | Registered API identifier (`aud`) | `appsettings.json` (`https://api.hockeyseason.dev`) |
 | `Auth:AllowHttpAuthority` | Dev-only escape hatch for http:// authorities (tests) | `appsettings.json` (default `false`) |
+| `Auth:ProfileClaimsNamespace` | Prefix of the profile claims an Auth0 Action copies onto the access token (`https://api.hockeyseason.dev/`); empty when the Action uses the plain OIDC claim names | `appsettings.json` |
 | `UserInfo:BaseAddress` | Overrides the /userinfo host (defaults to `Auth:Authority`) | `appsettings.json` |
 | `UserInfo:Path` | Relative userinfo path (default `userinfo`) | `appsettings.json` |
 

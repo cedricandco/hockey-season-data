@@ -289,6 +289,100 @@ public sealed class ReferenceDataTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Import_NeverTouchesTheLeagueOfAnotherDivisionPlayingTheSameCategory()
+    {
+        // Spordle publishes one category guid for every office that plays it
+        // (13 of the 17 categories of office 5956 are also published by 6193).
+        // Importing 6193 used to find the league of 5956 by (season, category),
+        // re-parent it here and then prune the teams it had just emptied: the
+        // reported "importing a division wiped my other leagues" bug.
+        var handler = new SpordleHandler { WithSecondOffice = true };
+        var service = CreateService(handler);
+
+        // Office 5956 imports M13 B first, with its own two teams.
+        var first = await service.ImportAsync(new(OrganizationId, "5956", "2026-27"));
+        Assert.Equal(["M13 B"], first.CreatedLeagues);
+        Assert.Equal(2, first.CreatedTeams);
+
+        int secondOfficeLeagueId;
+        await using (var db = new HockeySeasonDbContext(_options))
+        {
+            var secondOffice = await db.Divisions.SingleAsync(division => division.ExternalId == "5956");
+            secondOfficeLeagueId = await db.Leagues
+                .Where(league => league.DivisionId == secondOffice.Id
+                    && league.ExternalId == "13c38dd1-e464-4835-af5f-75be8561daf6")
+                .Select(league => league.Id)
+                .SingleAsync();
+        }
+
+        // Office 6193 imports the same category guid: it gets its own league
+        // row, and the league of 5956 keeps its division and its teams.
+        var second = await service.ImportAsync(new(OrganizationId, "6193", "2026-27"));
+        Assert.Equal(["M13 B", "M15 A"], second.CreatedLeagues);
+        Assert.Empty(second.DeletedLeagues);
+        Assert.Equal(0, second.DeletedTeams);
+
+        await using var check = new HockeySeasonDbContext(_options);
+        var kept = await check.Leagues
+            .Include(league => league.Teams)
+            .Include(league => league.Division)
+            .SingleAsync(league => league.Id == secondOfficeLeagueId);
+        Assert.Equal("5956", kept.Division.ExternalId);
+        Assert.Equal(["Gladiators", "Warriors"], kept.Teams.Select(team => team.Name).OrderBy(name => name));
+
+        // Two leagues for the same (season, category), one per division.
+        Assert.Equal(2, await check.Leagues.CountAsync(league =>
+            league.Season.ExternalId == "2026-27"
+            && league.ExternalId == "13c38dd1-e464-4835-af5f-75be8561daf6"));
+        Assert.Equal(5, await check.Teams.CountAsync()); // 2 of 5956 + 3 of 6193
+    }
+
+    [Fact]
+    public async Task Import_ReimportingOneDivisionLeavesTheOtherUntouched()
+    {
+        var handler = new SpordleHandler { WithSecondOffice = true };
+        var service = CreateService(handler);
+        await service.ImportAsync(new(OrganizationId, "5956", "2026-27"));
+        await service.ImportAsync(new(OrganizationId, "6193", "2026-27"));
+
+        // Re-running either import is a no-op for both divisions.
+        var again = await service.ImportAsync(new(OrganizationId, "6193", "2026-27"));
+        Assert.Empty(again.DeletedLeagues);
+        Assert.Equal(0, again.DeletedTeams);
+
+        var fifth = await service.ImportAsync(new(OrganizationId, "5956", "2026-27"));
+        Assert.Empty(fifth.DeletedLeagues);
+        Assert.Equal(0, fifth.DeletedTeams);
+        Assert.Equal(["M13 B"], fifth.UnchangedLeagues);
+
+        await using var db = new HockeySeasonDbContext(_options);
+        Assert.Equal(3, await db.Leagues.CountAsync());
+        Assert.Equal(5, await db.Teams.CountAsync());
+        Assert.Equal(2, await db.Divisions.CountAsync());
+    }
+
+    [Fact]
+    public async Task Import_DeletesNothingWhenSpordlePartiallyFails()
+    {
+        // A category whose schedules cannot be read is skipped: its leagues and
+        // teams must stay, because they did not vanish — Spordle did not answer.
+        var handler = new SpordleHandler();
+        var service = CreateService(handler);
+        await service.ImportAsync(new(OrganizationId, "6193", "2026-27"));
+
+        handler.SchedulesWithUnreadableStandings.Add(194931);
+        var result = await service.ImportAsync(new(OrganizationId, "6193", "2026-27"));
+
+        Assert.Empty(result.DeletedLeagues);
+        Assert.Equal(0, result.DeletedTeams);
+        Assert.Contains(result.Warnings, warning => warning.Contains("partiel", StringComparison.OrdinalIgnoreCase));
+
+        await using var db = new HockeySeasonDbContext(_options);
+        Assert.Equal(2, await db.Leagues.CountAsync());
+        Assert.Equal(3, await db.Teams.CountAsync());
+    }
+
+    [Fact]
     public async Task Import_RejectsAnUnknownOffice()
     {
         var service = CreateService(new SpordleHandler { OfficeExists = false });
@@ -394,6 +488,13 @@ public sealed class ReferenceDataTests : IAsyncLifetime
 
         public string TeamName { get; set; } = "Alpha";
 
+        /// <summary>
+        /// Data of a second office of the same association (5956), used to
+        /// reproduce a category played by two divisions: Spordle publishes the
+        /// same category guid for both.
+        /// </summary>
+        public bool WithSecondOffice { get; init; }
+
         public List<Category> Categories { get; } =
         [
             new("13c38dd1-e464-4835-af5f-75be8561daf6", "U13 B", "M13 B"),
@@ -408,11 +509,18 @@ public sealed class ReferenceDataTests : IAsyncLifetime
             [194931] = "21c7f8f9-e0a4-416d-902a-50a6e68bf834",
         };
 
+        /// <summary>Schedules of office 5956, which shares the M13 B category guid.</summary>
+        public Dictionary<int, string> SecondOfficeSchedules { get; } = new()
+        {
+            [198571] = "13c38dd1-e464-4835-af5f-75be8561daf6",
+        };
+
         private readonly Dictionary<int, List<(int Id, string Name)>> _teams = new()
         {
             [194909] = [(101, "Alpha")],
             [194910] = [(101, "Alpha"), (102, "Beta")],
             [194931] = [(201, "Gamma")],
+            [198571] = [(901, "Gladiators"), (902, "Warriors")],
         };
 
         /// <summary>
@@ -446,13 +554,17 @@ public sealed class ReferenceDataTests : IAsyncLifetime
                 }
 
                 var isAssociation = query["filter"]?.Contains("6157") == true;
+                var wantsSecondOffice = query["filter"]?.Contains("5956") == true && WithSecondOffice;
                 return Json(System.Text.Json.JsonSerializer.Serialize(new[]
                 {
                     isAssociation
                         ? new { id = 6157, name = "HOCKEY RICHELIEU", type = "Region", parentId = 2377 }
-                        : new { id = 6193, name = "LIGUE DE HOCKEY RÉCRÉATIVE DU RICHELIEU", type = "League", parentId = 6157 },
+                        : wantsSecondOffice
+                            ? new { id = 5956, name = "LIGUE RÉGIONALE LAC ST-LOUIS", type = "League", parentId = 6157 }
+                            : new { id = 6193, name = "LIGUE DE HOCKEY RÉCRÉATIVE DU RICHELIEU", type = "League", parentId = 6157 },
                 }));
             }
+            var officeId = int.TryParse(query["officeId"], out var parsedOffice) ? parsedOffice : 6193;
             if (path.EndsWith("/seasons", StringComparison.Ordinal))
                 return Json("""[{"seasonId":"2026-27","name":"2026-27","isCurrent":true},{"seasonId":"2025-26","name":"2025-26","isCurrent":false}]""");
             if (path.EndsWith("/categories", StringComparison.Ordinal))
@@ -464,16 +576,20 @@ public sealed class ReferenceDataTests : IAsyncLifetime
                 })));
             if (path.EndsWith("/schedules", StringComparison.Ordinal))
             {
+                // Office 5956 publishes the M13 B category too, under the same
+                // guid: that is what used to make the import steal the league of
+                // the other division.
+                var schedules = officeId == 5956 ? SecondOfficeSchedules : Schedules;
                 var categoryId = query["categoryId"];
                 if (!string.IsNullOrEmpty(categoryId))
                 {
                     return Json(System.Text.Json.JsonSerializer.Serialize(
-                        Schedules.Where(schedule => schedule.Value == categoryId)
+                        schedules.Where(schedule => schedule.Value == categoryId)
                             .Select(schedule => new { id = schedule.Key, name = $"Schedule {schedule.Key}" })));
                 }
 
                 return Json(System.Text.Json.JsonSerializer.Serialize(
-                    Schedules.Select(schedule => new { id = schedule.Key, name = $"Schedule {schedule.Key}" })));
+                    schedules.Select(schedule => new { id = schedule.Key, name = $"Schedule {schedule.Key}" })));
             }
 
             if (path.EndsWith("/teamStats", StringComparison.Ordinal))

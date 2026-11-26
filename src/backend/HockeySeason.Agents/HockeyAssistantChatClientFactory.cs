@@ -10,8 +10,19 @@ namespace HockeySeason.Agents;
 /// </summary>
 public static class HockeyAssistantChatClientFactory
 {
-    public static IChatClient Create(HockeySeasonDataAgentOptions options)
+    public static IChatClient Create(HockeySeasonDataAgentOptions options) =>
+        Create(options, sessions: null);
+
+    /// <summary>
+    /// Creates the client, wrapped so every model call reports its token usage
+    /// to the session of the current invocation (see
+    /// <see cref="TokenUsageRecordingChatClient"/>). Without an accessor the
+    /// client is returned unwrapped.
+    /// </summary>
+    public static IChatClient Create(HockeySeasonDataAgentOptions options, AgentUsageSessionAccessor? sessions)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
         var http = new HttpClient { BaseAddress = new Uri(options.OllamaUrl) };
         if (!string.IsNullOrWhiteSpace(options.OllamaApiKey))
         {
@@ -20,6 +31,7 @@ public static class HockeyAssistantChatClientFactory
         }
 
         // OllamaApiClient implements Microsoft.Extensions.AI.IChatClient.
-        return new OllamaApiClient(http, options.OllamaModel);
+        IChatClient client = new OllamaApiClient(http, options.OllamaModel);
+        return sessions is null ? client : new TokenUsageRecordingChatClient(client, sessions);
     }
 }

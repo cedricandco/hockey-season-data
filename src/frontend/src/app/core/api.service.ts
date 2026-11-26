@@ -177,10 +177,11 @@ export class ApiService {
     return this.http.get<SubscriptionLeaguesResponse>(`${this.baseUrl}/subscriptions/divisions/${divisionId}/leagues`);
   }
 
-  /** Teams of one league (Spordle category guid). */
-  getSubscriptionTeams(leagueId: string): Observable<SubscriptionTeamsResponse> {
+  /** Teams of one league (Spordle category guid), pinned to the division it was reached from. */
+  getSubscriptionTeams(leagueId: string, divisionId?: number): Observable<SubscriptionTeamsResponse> {
+    const params = divisionId ? new HttpParams().set('divisionId', divisionId) : undefined;
     return this.http.get<SubscriptionTeamsResponse>(
-      `${this.baseUrl}/subscriptions/leagues/${encodeURIComponent(leagueId)}/teams`);
+      `${this.baseUrl}/subscriptions/leagues/${encodeURIComponent(leagueId)}/teams`, { params });
   }
 
   /** Follows a team (Spordle team id). */
@@ -269,9 +270,10 @@ export class ApiService {
     return this.http.get<PreviewLeaguesResponse>(`${this.baseUrl}/preview/divisions/${divisionId}/leagues`);
   }
 
-  getPreviewTeams(leagueId: string): Observable<{ teams: PreviewTeam[] }> {
+  getPreviewTeams(leagueId: string, divisionId?: number): Observable<{ teams: PreviewTeam[] }> {
+    const params = divisionId ? new HttpParams().set('divisionId', divisionId) : undefined;
     return this.http.get<{ teams: PreviewTeam[] }>(
-      `${this.baseUrl}/preview/leagues/${encodeURIComponent(leagueId)}/teams`);
+      `${this.baseUrl}/preview/leagues/${encodeURIComponent(leagueId)}/teams`, { params });
   }
 
   /** Detail of a previewed team: the same JSON as the team page, guest mode. */

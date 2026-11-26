@@ -47,18 +47,27 @@ users ─┬─< user_roles >─┬─ roles            (licence : COACH / DIREC
 | `divisions` | `id`, `organization_id` FK, `name`, `external_id` UNIQUE, `created_at`, `updated_at` | Offices Spordle (6193, 6194) |
 | `seasons` | `id`, `name`, `external_id` TEXT UNIQUE, `created_at`, `updated_at` | Saisons Spordle (2026-27, …) |
 | `leagues` | `id`, `division_id` FK, `season_id` FK, `name`, `external_id`, `created_at`, `updated_at` | Catégories Spordle (« M13 B », nom français), une par (saison, catégorie) |
-| `league_schedules` | `id`, `league_id` FK, `external_id` UNIQUE, `name`, `created_at`, `updated_at` | Horaires Spordle d'une ligue : ids utilisés par les appels classement / matchs / suspensions |
-| `teams` | `id`, `league_id` FK, `name`, `external_id` UNIQUE, `created_at`, `updated_at` | Équipes Spordle |
+| `league_schedules` | `id`, `league_id` FK, `external_id`, `name`, `created_at`, `updated_at` | Horaires Spordle d'une ligue : ids utilisés par les appels classement / matchs / suspensions |
+| `teams` | `id`, `league_id` FK, `name`, `external_id`, `created_at`, `updated_at` | Équipes Spordle |
 | `users` | `id`, `auth0_user_id` UNIQUE string, `email`, `name`, `first_name`, `last_name`, `stripe_customer_id` (nullable), `is_admin`, `created_at`, `updated_at` | Utilisateurs Auth0 + facturation future |
 | `roles` | `id`, `code` UNIQUE (coach/director/president), `name`, `max_followed_entities` | Licence : limite logicielle |
 | `user_roles` | `id`, `user_id` FK, `role_id` FK, `created_at` | Attribution des licences (UNIQUE user+role) |
 | `team_subscriptions` | `id`, `user_id` FK, `team_id` FK, `created_at`, `updated_at`, `locked_until`, `unlock_requested_at` | Suivi d'équipe (+ verrou 15 j) |
 | `league_subscriptions` | `id`, `user_id` FK, `league_id` FK, `created_at`, `updated_at` | Suivi de ligue (rôle DIRECTOR) |
 | `user_settings` | `id`, `user_id` UNIQUE FK, `primary_color`, `secondary_color`, `extra` (jsonb), `created_at`, `updated_at` | Préférences visuelles |
+| `agent` | `id`, `agent_name` (TEXT UNIQUE) | Agents IA dont l'usage est comptabilisé (l'assistant `hockey-season-data.agent` est inséré par la migration) |
+| `message` | `id`, `agent_id` FK, `text` | **Questions** posées par les utilisateurs (les réponses ne sont pas stockées) |
+| `token_usage` | `id`, `agent_id` FK, `input_token_count`, `output_token_count`, `total_token_count`, `reasoning_tokens`, `user_id` FK (nullable), `message_id` FK (nullable) | Une ligne par appel d'agent ; `reasoning_tokens` est **inclus** dans l'output |
 
 Règles clés :
-- **Unique (season_id, external_id)** sur `leagues` : l'id Spordle d'une catégorie est partagé par toutes les saisons, une ligue est donc le couple (saison, catégorie).
+- **Unique (division_id, season_id, external_id)** sur `leagues` : l'id Spordle d'une catégorie est partagé par toutes les saisons **et par toutes les divisions qui la jouent**, une ligue est donc le triplet (division, saison, catégorie). Importer une division ne touche jamais la ligue d'une autre.
+- **Unique (league_id, external_id)** sur `teams` et sur `league_schedules` : l'id Spordle est unique *dans la ligue*. Une même équipe ou un même horaire peut être publié par deux divisions (un office régional republie les horaires de ses offices enfants), et importer l'une ne déplace jamais la ligne de l'autre.
 - **Unique (user_id, team_id)** sur `team_subscriptions` ; **unique (user_id, league_id)** sur `league_subscriptions`.
+- **Unique (agent_name)** sur `agent` ; `token_usage.user_id` / `token_usage.message_id` sont
+  nullable et `ON DELETE SET NULL` : supprimer un utilisateur ou une question ne doit
+  jamais effacer la comptabilité. `reasoning_tokens` fait **partie** de
+  `output_token_count` (comptabilité `UsageDetails`), et un compteur non publié par
+  le fournisseur reste `NULL`.
 - `locked_until` = `created_at + 15 jours` par défaut (colonne calculée par l'app, pas par la BD) ;
   `unlock_requested_at` sert de trace d'audit pour l'interface admin.
 - Le périmètre visible d'un utilisateur = **union** de :
@@ -68,6 +77,21 @@ Règles clés :
 - Un utilisateur **PRESIDENT** détient une `league_subscription` sur chaque ligue de son
   association, ou mieux : un abonnement direct à l'**organization** — à décider
   (voir ⚠ Question ouverte A).
+
+### Import de référence — portée des suppressions
+
+Un import ne supprime **que** dans la division qu'il met à jour, et pour la
+saison importée : les ligues, horaires et équipes d'une autre division, d'une
+autre association ou d'une saison passée ne sont jamais touchés. C'est la
+contrainte qui a dicté les clés ci-dessus — sans la division dans la clé, un
+import retrouvait la ligue d'une autre division (même guid de catégorie),
+la reparentait, puis supprimait ses équipes devenues orphelines.
+
+Deux garde-fous complètent la règle :
+- une catégorie sans équipe publiée est ignorée ;
+- un import **incomplet** (Spordle n'a pas répondu pour une catégorie ou pour un
+  horaire, ou n'a publié aucune catégorie) **ne supprime rien** : les lignes
+  manquantes sont inconnues, pas disparues.
 
 ### ⚠ Question ouverte A — l'abonnement PRESIDENT
 
@@ -109,7 +133,8 @@ Deux options :
 ### Phase 2 — Provisionnement utilisateurs (0,5 j)
 - [x] Service `IUserProvisioningService.ProvisionAsync(ApplicationUserClaims)` : extrait
   `sub`/`email`/`given_name`/`family_name` du JWT, upsert idempotent (aucune ligne
-  créée si déjà présent, aucun email écrasé).
+  créée si déjà présent ; le profil est rafraîchi à chaque requête, Auth0 étant
+  la source de vérité — voir 2026-11-26).
 - [x] **À la connexion** : middleware global `UserProvisioningMiddleware`
   (après `UseAuthentication`) — le premier appel authentifié d'un utilisateur
   enregistre sa ligne `users`, quel que soit l'endpoint contacté.
@@ -162,6 +187,10 @@ erDiagram
     USERS     ||--o{ TEAM_SUBSCRIPTIONS }o--|| TEAMS
     USERS     ||--o{ LEAGUE_SUBSCRIPTIONS }o--|| LEAGUES
     USERS     ||--o{ ORGANIZATION_SUBSCRIPTIONS }o--|| ORGANIZATIONS
+    AGENT     ||--o{ MESSAGE : receives
+    AGENT     ||--o{ TOKEN_USAGE : accounted_for
+    MESSAGE   ||--o| TOKEN_USAGE : answers
+    USERS     ||--o{ TOKEN_USAGE : consumes
 ```
 
 ## 4. Ordre de livraison
@@ -201,5 +230,8 @@ erDiagram
 | 2026-11-18 | Déploiement de `league_schedules` : migrations `LeagueIsSeasonCategory` et `AddLeagueSchedules` appliquées à la BD hôte, puis **backfill** des horaires par un nouvel import idempotent (les 21 ligues existantes n'avaient pas d'horaires : 40 lignes créées). `/readyz` signale désormais les migrations en attente (503 + `pendingMigrations`) au lieu de répondre « ready » sur une BD en retard de schéma | ✅ Corrigé |
 | 2026-11-18 | Import de référence robuste aux variations Spordle : `shortName` nul, `division`/`gender` absents, et surtout `powerplayPct`/`penaltyKillPct` **omis** par les horaires de tournoi (les compteurs absents valent 0, les pourcentages restent `null`) ; un horaire illisible (JSON inattendu, HTTP, timeout) est désormais ignoré avec un avertissement au lieu d'annuler tout l'import | ✅ Corrigé |
 | 2026-11-19 | À la connexion : profil OIDC complété depuis `/userinfo` (nom, prénom, courriel — uniquement tant que la ligne `users` est incomplète), et tout nouveau compte reçoit automatiquement la licence **COACH** (`user_roles`) ; `GET /api/users/me` expose `teamCount` pour la page de sélection des équipes du premier accès | ✅ Implémenté |
+| 2026-11-26 | **Profil jamais enregistré (diagnostic + correctif)** : les 7 lignes `users` avaient `email`/`first_name`/`last_name` à `NULL` avec `updated_at = created_at`, preuve que la complétion n'avait jamais rien écrit — le token d'API ne porte pas ces claims par défaut et le secours `/userinfo` n'était jamais exploité. Le profil est désormais lu **dans le token** (claims namespacés écrits par une Action Auth0, `Auth:ProfileClaimsNamespace`), et rafraîchi à **chaque** requête authentifiée (Auth0 = source de vérité) ; un claim absent du token ne remplace rien, et `/userinfo` reste en secours tant que la ligne est incomplète | ✅ Corrigé |
 | 2026-11-24 | Suivre une équipe ouvre sa ligue entière (décision 2026-11-24) : toutes les équipes de la ligue deviennent lisibles — sélecteur de la page équipe (`GET /api/nav/leagues/{id}/teams`), détail (`GET /api/teams/{teamId}` via `GetSelectableTeamAsync`), outils MCP (`GetLeagueTeams`, `GetTeamDetail`) — les associations/divisions restent limitées aux suivis ; la page équipe et le rapport hebdomadaire continuent de ne couvrir que les équipes suivies | ✅ Implémenté |
 | 2026-11-25 | Directeur de catégorie : suivre une catégorie (M11, M13, M15, M17, M19, Junior) **un nom d'équipe à la fois** — `GET /api/subscriptions/associations/{id}/categories[/teams?category=…&baseName=…]` et `POST /api/users/me/director-team-subscriptions` (`{ associationId, category, baseName }`) ; le niveau est lu dans le nom français de la ligue (`LeagueCategoryLevel`), la limite d'équipes/le verrou 15 j sont levés pour le rôle DIRECTOR comme pour le président, et un second nom de la même catégorie est refusé (`409`) tant que les équipes du premier sont suivies — `GET /api/users/me/subscriptions` expose la `category` de chaque équipe suivie | ✅ Implémenté |
+| 2026-11-26 | Importer une division ne supprime plus les ligues/divisions des autres (bug « j'ai importé 5956 et ça a effacé mes autres ligues ») : un guid de catégorie Spordle est **partagé entre les divisions** (13 des 17 catégories de 5956 le sont avec 6193), l'import retrouvait donc la ligue d'une autre division, la reparentait puis supprimait ses équipes. `leagues` est désormais unique sur `(division_id, season_id, external_id)`, `teams` et `league_schedules` sur `(league_id, external_id)` (migration `ScopeLeaguesToDivision`), l'import ne reparente plus rien et un import **incomplet** ne supprime rien ; `GET /api/subscriptions/leagues/{id}/teams` et `/api/preview/leagues/{id}/teams` acceptent `divisionId` pour lever l'ambiguïté | ✅ Corrigé |
+| 2026-11-26 | Comptabilité des tokens des agents : tables `agent` (`agent_name` unique, l'assistant `hockey-season-data.agent` inséré par la migration `AddAgentTokenUsage`), `message` (les **questions** uniquement) et `token_usage` (`agent_id`, `input_token_count`, `output_token_count`, `total_token_count`, `reasoning_tokens`, `user_id`, `message_id`). `TokenUsageRecordingChatClient` capture l'usage de chaque appel du modèle et `AgentUsageMiddleware` l'écrit à la fin de l'appel, avec la question posée | ✅ Implémenté |

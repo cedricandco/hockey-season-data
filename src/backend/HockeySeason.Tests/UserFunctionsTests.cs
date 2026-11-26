@@ -642,7 +642,7 @@ public sealed class UserFunctionsTests
         public Task<SubscriptionLeagueOptions> GetLeaguesAsync(int divisionId, string? seasonId = null, CancellationToken cancellationToken = default) =>
             Task.FromResult(new SubscriptionLeagueOptions(seasonId ?? "2026-27", [new("13c38dd1-e464-4835-af5f-75be8561daf6", "M13 B", seasonId ?? "2026-27")]));
 
-        public Task<IReadOnlyList<SubscriptionTeam>> GetTeamsAsync(string leagueId, CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyList<SubscriptionTeam>> GetTeamsAsync(string leagueId, int? divisionId = null, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<SubscriptionTeam>>([new(101, "Alpha")]);
 
         public Task<PresidentTeamOptions> GetTeamsByBaseNameAsync(
@@ -710,10 +710,20 @@ public sealed class UserFunctionsTests
     {
         public int Calls { get; private set; }
 
-        public Task<UserInfo?> GetCurrentUserAsync(CancellationToken cancellationToken = default)
+        /// <summary>Token the resolver handed to the userinfo call (must come from the invocation).</summary>
+        public string? LastToken { get; private set; }
+
+        public Task<UserInfo?> GetCurrentUserAsync(CancellationToken cancellationToken = default) =>
+            GetUserAsync("token-from-accessor", cancellationToken);
+
+        public async Task<UserInfo?> GetUserAsync(string? bearerToken, CancellationToken cancellationToken = default) =>
+            (await TryGetUserAsync(bearerToken, cancellationToken)).Profile;
+
+        public Task<UserInfoResult> TryGetUserAsync(string? bearerToken, CancellationToken cancellationToken = default)
         {
             Calls++;
-            return Task.FromResult<UserInfo?>(profile);
+            LastToken = bearerToken;
+            return Task.FromResult(UserInfoResult.Success(profile));
         }
     }
 

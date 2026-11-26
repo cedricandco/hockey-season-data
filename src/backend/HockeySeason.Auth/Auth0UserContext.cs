@@ -35,13 +35,23 @@ public sealed class Auth0UserContext : IUserContext
     }
 
     /// <inheritdoc />
-    public async Task<UserInfo?> GetCurrentUserAsync(CancellationToken cancellationToken = default)
+    public Task<UserInfo?> GetCurrentUserAsync(CancellationToken cancellationToken = default) =>
+        GetUserAsync(_tokenAccessor.GetBearerToken(), cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<UserInfo?> GetUserAsync(string? bearerToken, CancellationToken cancellationToken = default) =>
+        (await TryGetUserAsync(bearerToken, cancellationToken).ConfigureAwait(false)).Profile;
+
+    /// <inheritdoc />
+    public async Task<UserInfoResult> TryGetUserAsync(string? bearerToken, CancellationToken cancellationToken = default)
     {
-        var token = _tokenAccessor.GetBearerToken();
+        var token = bearerToken?.Trim();
         if (string.IsNullOrWhiteSpace(token))
         {
-            _logger.LogDebug("UserContext resolved no bearer token from the request headers.");
-            return null;
+            _logger.LogWarning(
+                "UserContext got no bearer token for the userinfo call (path={Path}); the caller's profile cannot be resolved.",
+                _options.Path);
+            return UserInfoResult.Failed(UserInfoFailure.MissingToken);
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Get, _options.Path);
@@ -53,11 +63,15 @@ public sealed class Auth0UserContext : IUserContext
             using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
+                var status = (int)response.StatusCode;
                 _logger.LogWarning(
-                    "UserContext userinfo call rejected by the provider: status={Status}, path={Path}.",
-                    (int)response.StatusCode,
-                    _options.Path);
-                return null;
+                    "UserContext userinfo call rejected by the provider: status={Status}, path={Path}, tokenShape={TokenShape}.",
+                    status,
+                    _options.Path,
+                    DescribeTokenShape(token));
+                return UserInfoResult.Failed(status is 401 or 403
+                    ? UserInfoFailure.ProviderRejected
+                    : UserInfoFailure.ProviderError);
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -68,20 +82,38 @@ public sealed class Auth0UserContext : IUserContext
             if (user is not { Sub: { Length: > 0 } })
             {
                 _logger.LogWarning("UserContext received a userinfo payload without a usable 'sub' claim.");
-                return null;
+                return UserInfoResult.Failed(UserInfoFailure.MissingSubject);
             }
-            return user;
+            return UserInfoResult.Success(user);
         }
         catch (HttpRequestException exception)
         {
             _logger.LogError(exception, "UserContext could not reach the identity provider userinfo endpoint.");
-            return null;
+            return UserInfoResult.Failed(UserInfoFailure.Unreachable);
         }
         catch (JsonException exception)
         {
-            _logger.LogError(exception, "UserContext received an unparseable userinfo payload.");
-            return null;
+            // A payload we cannot map is a contract mismatch (claim type or
+            // shape), not a provider outage: log enough to fix it without
+            // ever emitting the body (it carries the caller's profile).
+            _logger.LogError(
+                exception,
+                "UserContext received an unparseable userinfo payload: path={Path}, jsonPath={JsonPath}, targetType={TargetType}.",
+                _options.Path,
+                exception.Path,
+                exception.GetType().Name);
+            return UserInfoResult.Failed(UserInfoFailure.UnparseablePayload);
         }
+    }
+
+    /// <summary>
+    /// Shape of the token without its material: dot-separated segment lengths,
+    /// enough to spot an opaque token (no dot) where a JWT was expected.
+    /// </summary>
+    private static string DescribeTokenShape(string token)
+    {
+        var segments = token.Split('.');
+        return $"length={token.Length} segments={segments.Length}";
     }
 }
 

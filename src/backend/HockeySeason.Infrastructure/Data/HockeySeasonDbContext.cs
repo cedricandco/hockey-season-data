@@ -16,6 +16,13 @@ public sealed class HockeySeasonDbContext(DbContextOptions<HockeySeasonDbContext
     public const string SeedRoleDirector = "director";
     public const string SeedRolePresident = "president";
 
+    /// <summary>
+    /// Logical name of the Hockey Assistant, seeded in the <c>agent</c> table so
+    /// its token usage is attributable from the first call. Must match
+    /// <c>HockeySeasonDataAgentOptions.AgentName</c>.
+    /// </summary>
+    public const string SeedAgentHockeySeasonData = "hockey-season-data.agent";
+
     private static readonly JsonSerializerOptions ExtraJsonOptions = new(JsonSerializerDefaults.Web);
 
     private static string SerializeExtra(Dictionary<string, string?> extra) =>
@@ -37,6 +44,9 @@ public sealed class HockeySeasonDbContext(DbContextOptions<HockeySeasonDbContext
     public DbSet<TeamSubscription> TeamSubscriptions => Set<TeamSubscription>();
     public DbSet<LeagueSubscription> LeagueSubscriptions => Set<LeagueSubscription>();
     public DbSet<OrganizationSubscription> OrganizationSubscriptions => Set<OrganizationSubscription>();
+    public DbSet<Agent> Agents => Set<Agent>();
+    public DbSet<AgentMessage> Messages => Set<AgentMessage>();
+    public DbSet<TokenUsage> TokenUsages => Set<TokenUsage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -91,10 +101,12 @@ public sealed class HockeySeasonDbContext(DbContextOptions<HockeySeasonDbContext
             entity.Property(x => x.Id).UseIdentityByDefaultColumn().ValueGeneratedOnAdd();
             entity.Property(x => x.Name).IsRequired();
             entity.Property(x => x.ExternalId).IsRequired();
-            // A Spordle category id is shared by every season: a league is the
-            // (season, category) pair.
-            entity.HasIndex(x => new { x.SeasonId, x.ExternalId }).IsUnique();
-            entity.HasIndex(x => x.DivisionId);
+            // A Spordle category id is shared by every season *and* by every
+            // office that plays it: importing one division must never touch the
+            // league another division imported. A league is therefore the
+            // (division, season, category) triple.
+            entity.HasIndex(x => new { x.DivisionId, x.SeasonId, x.ExternalId }).IsUnique();
+            entity.HasIndex(x => x.SeasonId);
             entity.HasMany(x => x.Teams)
                 .WithOne(x => x.League)
                 .HasForeignKey(x => x.LeagueId)
@@ -113,9 +125,12 @@ public sealed class HockeySeasonDbContext(DbContextOptions<HockeySeasonDbContext
             entity.Property(x => x.Name).IsRequired();
             entity.Property(x => x.ExternalId).IsRequired();
             // The Spordle schedule id keys every standings/games/suspensions
-            // call, so it is the identity of the row.
-            entity.HasIndex(x => x.ExternalId).IsUnique();
-            entity.HasIndex(x => x.LeagueId);
+            // call, so it is the identity of the row inside its league. The
+            // league is part of the key: a region office republishes the
+            // schedules of its child offices, and importing one must not move
+            // the rows of another.
+            entity.HasIndex(x => new { x.LeagueId, x.ExternalId }).IsUnique();
+            entity.HasIndex(x => x.ExternalId);
         });
 
         modelBuilder.Entity<Team>(entity =>
@@ -125,8 +140,12 @@ public sealed class HockeySeasonDbContext(DbContextOptions<HockeySeasonDbContext
             entity.Property(x => x.Id).UseIdentityByDefaultColumn().ValueGeneratedOnAdd();
             entity.Property(x => x.Name).IsRequired();
             entity.Property(x => x.ExternalId).IsRequired();
-            entity.HasIndex(x => x.ExternalId).IsUnique();
-            entity.HasIndex(x => x.LeagueId);
+            // A Spordle team id is unique inside its league, not across the
+            // catalogue: the same club can be published by several offices, and
+            // importing one division must never re-parent the team row another
+            // division imported.
+            entity.HasIndex(x => new { x.LeagueId, x.ExternalId }).IsUnique();
+            entity.HasIndex(x => x.ExternalId);
             entity.HasMany(x => x.Subscriptions)
                 .WithOne(x => x.Team)
                 .HasForeignKey(x => x.TeamId)
@@ -242,6 +261,55 @@ public sealed class HockeySeasonDbContext(DbContextOptions<HockeySeasonDbContext
             entity.Property(x => x.Id).UseIdentityByDefaultColumn().ValueGeneratedOnAdd();
             entity.HasIndex(x => new { x.UserId, x.OrganizationId }).IsUnique();
             entity.HasIndex(x => x.UserId);
+        });
+
+        modelBuilder.Entity<Agent>(entity =>
+        {
+            entity.ToTable("agent");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).UseIdentityByDefaultColumn().ValueGeneratedOnAdd();
+            entity.Property(x => x.AgentName).IsRequired();
+            entity.HasIndex(x => x.AgentName).IsUnique();
+            // The current chat agent is inserted by the migration so its usage is
+            // attributable without waiting for the first call.
+            entity.HasData(new Agent { Id = 1, AgentName = SeedAgentHockeySeasonData });
+            entity.HasMany(x => x.Messages)
+                .WithOne(x => x.Agent)
+                .HasForeignKey(x => x.AgentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(x => x.TokenUsages)
+                .WithOne(x => x.Agent)
+                .HasForeignKey(x => x.AgentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AgentMessage>(entity =>
+        {
+            entity.ToTable("message");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).UseIdentityByDefaultColumn().ValueGeneratedOnAdd();
+            entity.Property(x => x.Text).IsRequired();
+            entity.HasIndex(x => x.AgentId);
+        });
+
+        modelBuilder.Entity<TokenUsage>(entity =>
+        {
+            entity.ToTable("token_usage");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).UseIdentityByDefaultColumn().ValueGeneratedOnAdd();
+            entity.HasIndex(x => x.AgentId);
+            // Usage is an audit trail: deleting a user or a message must not
+            // erase the accounting row, so both links are detached instead.
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(x => x.Message)
+                .WithMany()
+                .HasForeignKey(x => x.MessageId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(x => x.UserId);
+            entity.HasIndex(x => x.MessageId);
         });
     }
 }

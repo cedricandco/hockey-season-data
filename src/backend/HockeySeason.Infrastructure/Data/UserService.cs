@@ -263,11 +263,17 @@ public sealed class UserService(
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
+        // A Spordle team id is unique inside its league, not across the
+        // catalogue: two divisions may publish the same club. The latest season
+        // wins, then the smallest row id, so the pick is deterministic instead
+        // of throwing on the first duplicate.
         var team = await db.Teams
             .AsNoTracking()
             .Where(t => t.ExternalId == teamId.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            .OrderByDescending(t => t.League.Season.ExternalId)
+            .ThenBy(t => t.Id)
             .Select(t => new { t.Id })
-            .SingleOrDefaultAsync(cancellationToken)
+            .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
         if (team is null)
         {
@@ -412,8 +418,14 @@ public sealed class UserService(
             .AsNoTracking()
             .Where(team => externalIds.Contains(team.ExternalId))
             .Select(team => new { team.Id, team.ExternalId })
-            .ToDictionaryAsync(team => team.ExternalId, team => team.Id, cancellationToken)
+            .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+        // A Spordle team id may exist under several leagues (two divisions
+        // publishing the same club): the first row wins, so the batch stays
+        // idempotent instead of throwing on the duplicate key.
+        var teamIdByExternalId = teamsByExternalId
+            .GroupBy(team => team.ExternalId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Min(team => team.Id), StringComparer.Ordinal);
 
         var followedTeamIds = (await db.TeamSubscriptions
             .AsNoTracking()
@@ -429,7 +441,7 @@ public sealed class UserService(
         var unknown = new List<int>();
         foreach (var id in requested)
         {
-            if (!teamsByExternalId.TryGetValue(id.ToString(System.Globalization.CultureInfo.InvariantCulture), out var teamId))
+            if (!teamIdByExternalId.TryGetValue(id.ToString(System.Globalization.CultureInfo.InvariantCulture), out var teamId))
             {
                 unknown.Add(id);
                 continue;
@@ -468,7 +480,7 @@ public sealed class UserService(
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var subscription = await db.TeamSubscriptions
-            .SingleOrDefaultAsync(s => s.UserId == userId && s.Team.ExternalId == teamId.ToString(System.Globalization.CultureInfo.InvariantCulture), cancellationToken)
+            .FirstOrDefaultAsync(s => s.UserId == userId && s.Team.ExternalId == teamId.ToString(System.Globalization.CultureInfo.InvariantCulture), cancellationToken)
             .ConfigureAwait(false);
         if (subscription is null)
         {
@@ -491,7 +503,7 @@ public sealed class UserService(
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var subscription = await db.TeamSubscriptions
-            .SingleOrDefaultAsync(s => s.UserId == userId && s.Team.ExternalId == teamId.ToString(System.Globalization.CultureInfo.InvariantCulture), cancellationToken)
+            .FirstOrDefaultAsync(s => s.UserId == userId && s.Team.ExternalId == teamId.ToString(System.Globalization.CultureInfo.InvariantCulture), cancellationToken)
             .ConfigureAwait(false);
         if (subscription is null)
         {
@@ -510,6 +522,8 @@ public sealed class UserService(
         var league = await db.Leagues
             .AsNoTracking()
             .Where(l => l.ExternalId == leagueId)
+            .OrderByDescending(l => l.Season.ExternalId)
+            .ThenBy(l => l.Id)
             .Select(l => new { l.Id })
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -558,7 +572,7 @@ public sealed class UserService(
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var subscription = await db.LeagueSubscriptions
-            .SingleOrDefaultAsync(s => s.UserId == userId && s.League.ExternalId == leagueId, cancellationToken)
+            .FirstOrDefaultAsync(s => s.UserId == userId && s.League.ExternalId == leagueId, cancellationToken)
             .ConfigureAwait(false);
         if (subscription is null)
         {

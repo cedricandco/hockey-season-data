@@ -87,7 +87,7 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Provisioning_FillsMissingProfileClaimsWithoutOverwriting()
+    public async Task Provisioning_SyncsTheProfileOnEverySignIn()
     {
         var provisioning = new UserProvisioningService(CreateFactory(), NullLogger<UserProvisioningService>.Instance);
 
@@ -95,7 +95,7 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
         var created = await provisioning.ProvisionAsync(new("auth0|profile", null, null, null));
         Assert.True(created.Created);
 
-        // The userinfo profile arrives later: names and email are stored.
+        // The profile arrives on a later request: names and email are stored.
         await provisioning.ProvisionAsync(new("auth0|profile", "p@example.com", "Patrick", "Roy"));
         await using (var db = CreateContext())
         {
@@ -105,17 +105,35 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
             Assert.Equal("Roy", user.LastName);
         }
 
-        // A later profile never overwrites what is stored.
+        // A profile changed in the identity provider replaces the stored one:
+        // Auth0 is the source of truth.
         await provisioning.ProvisionAsync(new("auth0|profile", "other@example.com", "Autre", "Nom"));
         await using (var db = CreateContext())
         {
             var user = await db.Users.SingleAsync();
-            Assert.Equal("p@example.com", user.Email);
-            Assert.Equal("Patrick", user.FirstName);
-            Assert.Equal("Roy", user.LastName);
+            Assert.Equal("other@example.com", user.Email);
+            Assert.Equal("Autre", user.FirstName);
+            Assert.Equal("Nom", user.LastName);
             // The COACH role is granted once only.
             Assert.Equal(1, await db.UserRoles.CountAsync(userRole => userRole.UserId == created.UserId));
         }
+    }
+
+    [Fact]
+    public async Task Provisioning_KeepsStoredProfile_WhenTheTokenCarriesNoClaim()
+    {
+        var provisioning = new UserProvisioningService(CreateFactory(), NullLogger<UserProvisioningService>.Instance);
+        await provisioning.ProvisionAsync(new("auth0|keep", "k@example.com", "Kim", "Roy"));
+
+        // A token without the profile claims (no Action configured) must not
+        // wipe what userinfo already collected.
+        await provisioning.ProvisionAsync(new("auth0|keep", null, null, null));
+
+        await using var db = CreateContext();
+        var user = await db.Users.SingleAsync();
+        Assert.Equal("k@example.com", user.Email);
+        Assert.Equal("Kim", user.FirstName);
+        Assert.Equal("Roy", user.LastName);
     }
 
     [Fact]
@@ -397,6 +415,25 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
 
         var team = Assert.Single(await catalog.GetTeamsAsync(league.Id));
         Assert.Equal(410, team.Id);
+    }
+
+    [Fact]
+    public async Task SubscriptionCatalog_PinsTheLeagueToTheSelectedDivisionWhenTheCategoryIsShared()
+    {
+        // Spordle publishes one category guid for every office that plays it, so
+        // two divisions can hold a league with the same external id. The
+        // selector walked a division: that is what tells the two rosters apart.
+        var factory = CreateFactory();
+        const string category = "13c38dd1-e464-4835-af5f-75be8561daf6";
+        await SeedTeamAsync(factory, "410", leagueExternalId: category, divisionExternalId: "6193", teamName: "ALPHA");
+        await SeedTeamAsync(factory, "420", leagueExternalId: category, divisionExternalId: "6194", teamName: "GLADIATORS");
+        var catalog = new SubscriptionCatalogService(factory);
+
+        var first = Assert.Single(await catalog.GetTeamsAsync(category, divisionId: 6193));
+        Assert.Equal(410, first.Id);
+
+        var second = Assert.Single(await catalog.GetTeamsAsync(category, divisionId: 6194));
+        Assert.Equal(420, second.Id);
     }
 
     [Fact]
@@ -733,7 +770,10 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
             await db.SaveChangesAsync();
         }
 
-        var league = await db.Leagues.FirstOrDefaultAsync(l => l.ExternalId == leagueExternalId);
+        // A league is the (division, season, category) triple: the same category
+        // guid can be imported by two divisions, so the division is part of the
+        // lookup (otherwise seeding one division would steal the other's row).
+        var league = await db.Leagues.FirstOrDefaultAsync(l => l.ExternalId == leagueExternalId && l.DivisionId == division.Id);
         if (league is null)
         {
             league = new() { DivisionId = division.Id, SeasonId = season.Id, Name = "League", ExternalId = leagueExternalId };
@@ -741,7 +781,7 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
             await db.SaveChangesAsync();
         }
 
-        if (!await db.Teams.AnyAsync(t => t.ExternalId == teamExternalId))
+        if (!await db.Teams.AnyAsync(t => t.ExternalId == teamExternalId && t.LeagueId == league.Id))
         {
             db.Teams.Add(new() { LeagueId = league.Id, Name = teamName ?? $"Team {teamExternalId}", ExternalId = teamExternalId });
         }

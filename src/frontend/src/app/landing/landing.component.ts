@@ -396,10 +396,13 @@ export class LandingComponent {
   private loadTeams(leagueId: string): void {
     this.catalogLoading.set(true);
     this.catalogError.set(false);
-    this.api.getPreviewTeams(leagueId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: ({ teams }) => { this.teams.set(teams); this.catalogLoading.set(false); },
-      error: () => { this.catalogLoading.set(false); this.catalogError.set(true); },
-    });
+    // A category guid is shared by every division that plays it: the division
+    // the visitor walked through pins the roster.
+    this.api.getPreviewTeams(leagueId, this.divisionId() ?? undefined)
+      .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: ({ teams }) => { this.teams.set(teams); this.catalogLoading.set(false); },
+        error: () => { this.catalogLoading.set(false); this.catalogError.set(true); },
+      });
   }
 
   private loadDetail(teamId: number): void {

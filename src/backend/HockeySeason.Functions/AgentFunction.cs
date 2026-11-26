@@ -15,7 +15,8 @@ namespace HockeySeason.Functions;
 public sealed class AgentFunction(
     AIAgent agent,
     IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions> jsonOptions,
-    ILogger<AgentFunction> logger)
+    ILogger<AgentFunction> logger,
+    AgentUsageSessionAccessor? sessions = null)
 {
     [Function("HockeySeasonDataAgent")]
     public async Task<IActionResult> Run(
@@ -49,6 +50,13 @@ public sealed class AgentFunction(
         // knows system/user/assistant/developer/tool, but AG-UI 1.x clients
         // replay reasoning messages they received in earlier runs.
         AGUIReasoningMessageMapper.DropReasoningHistory(input);
+
+        // The question is what the accounting stores (never the answer): the
+        // middleware writes it, with the token usage, once the call ends.
+        if (sessions?.Current is { } usageSession)
+        {
+            usageSession.UserMessage = LastUserMessage(input);
+        }
         var chatContext = input.ToChatRequestContext(options);
 #pragma warning disable MAAI001
         // The Agent Framework's chat-client adapter is currently experimental.
@@ -63,5 +71,23 @@ public sealed class AgentFunction(
             await response.Body.FlushAsync(cancellationToken);
         }
         return new EmptyResult();
+    }
+
+    /// <summary>
+    /// Text of the last user entry of the run, i.e. the question being asked
+    /// now (earlier turns replay the whole conversation). Null when the run
+    /// carries no user message.
+    /// </summary>
+    private static string? LastUserMessage(RunAgentInput input)
+    {
+        for (var index = input.Messages.Count - 1; index >= 0; index--)
+        {
+            if (input.Messages[index] is AGUI.Abstractions.AGUIUserMessage user)
+            {
+                var text = user.Content.ToString();
+                return string.IsNullOrWhiteSpace(text) ? null : text;
+            }
+        }
+        return null;
     }
 }

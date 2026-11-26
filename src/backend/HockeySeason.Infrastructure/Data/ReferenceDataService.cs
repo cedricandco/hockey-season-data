@@ -15,19 +15,25 @@ namespace HockeySeason.Infrastructure.Data;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The import is keyed on Spordle identifiers: a league is the (season,
-/// category id) pair and a team is its Spordle team id. Existing rows are
+/// The import is keyed on Spordle identifiers scoped to the imported division:
+/// a league is the (division, season, category id) triple and a team/schedule
+/// is its Spordle id inside its league. Existing rows of that division are
 /// updated in place, missing ones are created, and leagues/teams that
 /// disappeared from the published season are deleted together with their user
 /// subscriptions (a followed team that no longer exists cannot stay in a
-/// scope). The pruning is limited to the imported season, so importing the
-/// current season never wipes a past one.
+/// scope).
 /// </para>
 /// <para>
-/// A category may be played by several offices of the same association, and
-/// <c>teams.external_id</c> is unique: an existing league or team found under
-/// another office is moved, never duplicated, and the first office that
-/// publishes it owns it.
+/// Nothing outside the imported division is ever modified: a Spordle category
+/// id is shared by every office that plays it (13 of the 17 categories of
+/// office 5956 are also published by 6193), so a league is never looked up by
+/// (season, category) alone, and never re-parented. Importing one division
+/// must leave the leagues and teams of every other division untouched.
+/// </para>
+/// <para>
+/// The pruning is also conditional on a complete read: when Spordle fails to
+/// answer for a category or a schedule, the run is partial and deletes
+/// nothing, because the missing rows are unknown, not vanished.
 /// </para>
 /// </remarks>
 public sealed class ReferenceDataService(
@@ -153,11 +159,21 @@ public sealed class ReferenceDataService(
         var categories = await leagueApi.GetCategoriesAsync(officeId, request.SeasonId, cancellationToken);
         var warnings = new List<string>();
         var leagues = new List<ReferenceLeague>();
+        // A category or a schedule Spordle momentarily fails to publish is
+        // skipped, not deleted: the run is then "incomplete" and the pruning of
+        // the vanishings is disabled, so a transient failure never destroys the
+        // data that is still there.
+        var complete = true;
         foreach (var category in categories)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var schedules = await ReadCategorySchedulesAsync(
                 officeId, request.SeasonId, category, warnings, cancellationToken);
+            if (schedules is null)
+            {
+                complete = false;
+                continue;
+            }
             if (schedules.Count == 0)
             {
                 // Nothing to expose: a category without a published team has no
@@ -165,7 +181,8 @@ public sealed class ReferenceDataService(
                 continue;
             }
 
-            var teams = await ReadSchedulesTeamsAsync(schedules, warnings, cancellationToken);
+            var (teams, teamsComplete) = await ReadSchedulesTeamsAsync(schedules, warnings, cancellationToken);
+            complete &= teamsComplete;
             if (teams.Count == 0)
             {
                 continue;
@@ -178,12 +195,23 @@ public sealed class ReferenceDataService(
                 [.. schedules.Select(schedule => new ReferenceSchedule(schedule.Id, schedule.Name))]));
         }
 
+        if (!complete)
+        {
+            warnings.Add(
+                "Import partiel : Spordle n'a pas répondu pour toutes les données, "
+                + "aucune ligue ni équipe n'a été supprimée.");
+        }
+
         return await PersistAsync(request, organization.Id, organization.Name, officeId, office.Name,
-            leagues, warnings, cancellationToken);
+            leagues, warnings, complete, cancellationToken);
     }
 
-    /// <summary>Schedules of one category, or an empty list with a warning when Spordle fails.</summary>
-    private async Task<IReadOnlyList<HockeySeason.LeagueApi.Models.League>> ReadCategorySchedulesAsync(
+    /// <summary>
+    /// Schedules of one category, or null with a warning when Spordle fails —
+    /// null (not an empty list) so the caller knows the category was not read
+    /// and must not be treated as vanished.
+    /// </summary>
+    private async Task<IReadOnlyList<HockeySeason.LeagueApi.Models.League>?> ReadCategorySchedulesAsync(
         int officeId,
         string seasonId,
         LeagueCategory category,
@@ -199,20 +227,23 @@ public sealed class ReferenceDataService(
         {
             logger.LogWarning(exception, "Schedules of category {CategoryId} are unavailable.", category.Id);
             warnings.Add($"Les horaires de la ligue « {category.FrenchName} » sont indisponibles : la ligue est ignorée.");
-            return [];
+            return null;
         }
     }
 
     /// <summary>
     /// Teams of one category: the union of the standings of every schedule the
-    /// category is played in ("Rives", "Vallée"…), by Spordle team id.
+    /// category is played in ("Rives", "Vallée"…), by Spordle team id. The flag
+    /// is false when a schedule could not be read, so the caller knows the
+    /// roster is partial and must not prune the teams it did not see.
     /// </summary>
-    private async Task<IReadOnlyList<ReferenceTeam>> ReadSchedulesTeamsAsync(
+    private async Task<(IReadOnlyList<ReferenceTeam> Teams, bool Complete)> ReadSchedulesTeamsAsync(
         IReadOnlyList<HockeySeason.LeagueApi.Models.League> schedules,
         List<string> warnings,
         CancellationToken cancellationToken)
     {
         var teams = new Dictionary<int, ReferenceTeam>();
+        var complete = true;
         foreach (var schedule in schedules)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -225,6 +256,7 @@ public sealed class ReferenceDataService(
             {
                 logger.LogWarning(exception, "Teams of schedule {ScheduleId} are unavailable.", schedule.Id);
                 warnings.Add($"Les équipes de l'horaire « {schedule.Name} » sont indisponibles.");
+                complete = false;
                 continue;
             }
 
@@ -234,7 +266,7 @@ public sealed class ReferenceDataService(
             }
         }
 
-        return [.. teams.Values.OrderBy(team => team.Name, StringComparer.OrdinalIgnoreCase)];
+        return ([.. teams.Values.OrderBy(team => team.Name, StringComparer.OrdinalIgnoreCase)], complete);
     }
 
     /// <summary>
@@ -254,6 +286,7 @@ public sealed class ReferenceDataService(
         string officeName,
         IReadOnlyList<ReferenceLeague> leagues,
         IReadOnlyList<string> warnings,
+        bool sourceComplete,
         CancellationToken cancellationToken)
     {
         var now = timeProvider.UtcNow;
@@ -316,18 +349,17 @@ public sealed class ReferenceDataService(
         var updatedTeams = 0;
         var deletedTeams = 0;
 
-        // A category may be played by several divisions of the association, and
-        // the same season may hold leagues of other associations: existing rows
-        // are looked up by association for the re-parenting below, because the
-        // (season, external id) index is unique. The pruning, further down, is
-        // strictly division-scoped.
-        var associationLeagues = await db.Leagues
-            .Where(league => league.SeasonId == season.Id
-                && league.Division.OrganizationId == organization.Id)
+        // Every row this run may touch belongs to the imported division: a
+        // category id is shared by the offices that play it, so looking a league
+        // up by (season, external id) alone would find — and then steal — the row
+        // another division imported. The pruning further down is scoped the same
+        // way.
+        var divisionLeagues = await db.Leagues
+            .Where(league => league.SeasonId == season.Id && league.DivisionId == office.Id)
             .Include(league => league.Teams)
             .Include(league => league.Schedules)
             .ToListAsync(cancellationToken);
-        var leaguesByExternalId = associationLeagues
+        var leaguesByExternalId = divisionLeagues
             .GroupBy(league => league.ExternalId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
@@ -339,42 +371,26 @@ public sealed class ReferenceDataService(
             var leagueChanged = false;
             if (!leaguesByExternalId.TryGetValue(source.ExternalId, out var league))
             {
-                // Same season, another association (or another office of it):
-                // the row is re-parented rather than duplicated.
-                league = await db.Leagues
-                    .FirstOrDefaultAsync(candidate => candidate.SeasonId == season.Id
-                        && candidate.ExternalId == source.ExternalId, cancellationToken);
-
-                if (league is null)
+                // The league of this division for this season does not exist
+                // yet: it is created, never borrowed from another division that
+                // happens to play the same category.
+                league = new League
                 {
-                    league = new League
-                    {
-                        DivisionId = office.Id,
-                        SeasonId = season.Id,
-                        Name = source.Name,
-                        ExternalId = source.ExternalId,
-                        CreatedAt = now,
-                        UpdatedAt = now,
-                    };
-                    db.Leagues.Add(league);
-                    await db.SaveChangesAsync(cancellationToken);
-                    created.Add(source.Name);
-                }
-                else
-                {
-                    league.DivisionId = office.Id;
-                    league.Name = source.Name;
-                    league.UpdatedAt = now;
-                    updated.Add(source.Name);
-                    await db.SaveChangesAsync(cancellationToken);
-                }
-
+                    DivisionId = office.Id,
+                    SeasonId = season.Id,
+                    Name = source.Name,
+                    ExternalId = source.ExternalId,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                };
+                db.Leagues.Add(league);
+                await db.SaveChangesAsync(cancellationToken);
+                created.Add(source.Name);
                 leaguesByExternalId[source.ExternalId] = league;
             }
-            else if (league.Name != source.Name || league.DivisionId != office.Id)
+            else if (league.Name != source.Name)
             {
                 league.Name = source.Name;
-                league.DivisionId = office.Id;
                 league.UpdatedAt = now;
                 leagueChanged = true;
             }
@@ -402,38 +418,35 @@ public sealed class ReferenceDataService(
                     continue;
                 }
 
-                // The schedule may already exist under another league row of the
-                // same season (a category re-parented between offices): its
-                // Spordle id is unique, so the row is moved, never duplicated.
-                var relocatedSchedule = await db.LeagueSchedules
-                    .FirstOrDefaultAsync(candidate => candidate.ExternalId == scheduleExternalId, cancellationToken);
-                if (relocatedSchedule is null)
+                // No row of this league carries that schedule yet: it is added
+                // here. A schedule row of another league is never moved — the
+                // (league, external id) key allows the same Spordle schedule to
+                // be mirrored by two divisions (a region republishes its child
+                // offices' schedules).
+                db.LeagueSchedules.Add(new LeagueSchedule
                 {
-                    db.LeagueSchedules.Add(new LeagueSchedule
-                    {
-                        LeagueId = league.Id,
-                        ExternalId = scheduleExternalId,
-                        Name = sourceSchedule.Name,
-                        CreatedAt = now,
-                        UpdatedAt = now,
-                    });
-                }
-                else
-                {
-                    relocatedSchedule.LeagueId = league.Id;
-                    relocatedSchedule.Name = sourceSchedule.Name;
-                    relocatedSchedule.UpdatedAt = now;
-                }
+                    LeagueId = league.Id,
+                    ExternalId = scheduleExternalId,
+                    Name = sourceSchedule.Name,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                });
                 leagueChanged = true;
             }
 
-            var staleSchedules = league.Schedules
-                .Where(schedule => !IsKept(schedule.ExternalId, keptScheduleIds))
-                .ToList();
-            if (staleSchedules.Count > 0)
+            // A schedule / team that disappeared from Spordle is removed only
+            // when the run read everything: an unreadable category or schedule
+            // leaves the rows in place.
+            if (sourceComplete)
             {
-                db.LeagueSchedules.RemoveRange(staleSchedules);
-                leagueChanged = true;
+                var staleSchedules = league.Schedules
+                    .Where(schedule => !IsKept(schedule.ExternalId, keptScheduleIds))
+                    .ToList();
+                if (staleSchedules.Count > 0)
+                {
+                    db.LeagueSchedules.RemoveRange(staleSchedules);
+                    leagueChanged = true;
+                }
             }
 
             var teamsByExternalId = league.Teams
@@ -454,31 +467,19 @@ public sealed class ReferenceDataService(
                     continue;
                 }
 
-                // The team may already live under another league of the
-                // season (a category played by several offices, or a team
-                // promoted between categories): its Spordle id is unique, so
-                // the existing row is re-parented rather than duplicated.
-                var relocated = await db.Teams
-                    .FirstOrDefaultAsync(candidate => candidate.ExternalId == externalId, cancellationToken);
-                if (relocated is null)
+                // A team of this league whose Spordle id is not in the
+                // standings is new here: it is created. A team row of another
+                // league is never moved — the same Spordle team may be published
+                // by two divisions, and importing one must not steal it.
+                db.Teams.Add(new Team
                 {
-                    db.Teams.Add(new Team
-                    {
-                        LeagueId = league.Id,
-                        Name = sourceTeam.Name,
-                        ExternalId = externalId,
-                        CreatedAt = now,
-                        UpdatedAt = now,
-                    });
-                    createdTeams++;
-                }
-                else
-                {
-                    relocated.LeagueId = league.Id;
-                    relocated.Name = sourceTeam.Name;
-                    relocated.UpdatedAt = now;
-                    updatedTeams++;
-                }
+                    LeagueId = league.Id,
+                    Name = sourceTeam.Name,
+                    ExternalId = externalId,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                });
+                createdTeams++;
             }
 
             if (leagueChanged)
@@ -493,18 +494,24 @@ public sealed class ReferenceDataService(
 
         await db.SaveChangesAsync(cancellationToken);
 
-        // Prune only what belongs to the division being updated, for the
-        // imported season. A league of a sibling division, another season or
-        // another association is never touched, even when the same category id
-        // is imported here. The team / league subscriptions pointing at the
-        // removed rows go with them (ON DELETE CASCADE), so a user never keeps
-        // a subscription to a vanished entity.
-        var divisionLeagues = await db.Leagues
-            .Where(league => league.SeasonId == season.Id
-                && league.DivisionId == office.Id
-                && league.Division.OrganizationId == organization.Id)
-            .ToListAsync(cancellationToken);
+        // Prune only when the run read the division completely. A category or a
+        // schedule Spordle failed to answer for was skipped above, so what is
+        // missing from `leagues` is unknown, not vanished: deleting it would
+        // destroy rows that are still published. The same applies to a run that
+        // read nothing at all (Spordle answered with an empty category list),
+        // which is far more likely a feed problem than a wiped division.
+        if (!sourceComplete || leagues.Count == 0)
+        {
+            return new ReferenceImportResult(
+                organizationName, officeName, request.SeasonId,
+                created, updated, deleted, unchanged, createdTeams, updatedTeams, deletedTeams, warnings);
+        }
 
+        // Prune only what belongs to the division being updated, for the
+        // imported season: the division of the run is the only scope that may
+        // lose rows. The team / league subscriptions pointing at the removed
+        // rows go with them (ON DELETE CASCADE), so a user never keeps a
+        // subscription to a vanished entity.
         var staleLeagues = divisionLeagues.Where(league => !keptLeagueIds.Contains(league.Id)).ToList();
         if (staleLeagues.Count > 0)
         {

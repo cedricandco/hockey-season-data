@@ -20,8 +20,9 @@ public sealed record UserProvisioningResult(int UserId, bool Created, bool Profi
 
 /// <summary>
 /// Use case: ensure the local <c>users</c> row exists for the caller
-/// (Auth0-managed identity), on first authenticated request. Idempotent by
-/// construction — SELECT before INSERT, no existing value overwritten.
+/// (Auth0-managed identity), on first authenticated request, and keep its
+/// profile in sync with the identity provider on every later request.
+/// Idempotent by construction — SELECT before INSERT.
 /// </summary>
 public interface IUserProvisioningService
 {
@@ -29,8 +30,10 @@ public interface IUserProvisioningService
     /// Upserts the caller's user row and returns its local id. A new account is
     /// created with the COACH licence (the default of the software) and the
     /// profile fields (email, first and last name) carried by the claims. An
-    /// existing row is left untouched except for profile fields it is still
-    /// missing (a value already stored is never overwritten).
+    /// existing row has those three fields replaced by the claims — the
+    /// identity provider is the source of truth, so a name or email changed in
+    /// Auth0 reaches the database on the next authenticated request. A claim
+    /// that is missing from the token leaves the stored value alone.
     /// </summary>
     Task<UserProvisioningResult> ProvisionAsync(ApplicationUserClaims claims, CancellationToken cancellationToken = default);
 }

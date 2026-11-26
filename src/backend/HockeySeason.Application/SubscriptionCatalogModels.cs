@@ -111,9 +111,11 @@ public interface ISubscriptionCatalogService
     /// <summary>
     /// Teams of one league (Spordle category guid), by name. The identifier is
     /// the Spordle team id accepted by <see cref="IUserService"/>.
+    /// <paramref name="divisionId"/> pins the league when the category is
+    /// played by several divisions (the guid alone cannot tell them apart).
     /// </summary>
     Task<IReadOnlyList<SubscriptionTeam>> GetTeamsAsync(
-        string leagueId, CancellationToken cancellationToken = default);
+        string leagueId, int? divisionId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Teams of one association whose name starts with <paramref name="baseName"/>

@@ -67,6 +67,34 @@ public sealed class UserContextTests
     }
 
     [Fact]
+    public async Task UserContext_ResolvesProfile_WhenUpdatedAtIsUnixSeconds()
+    {
+        // Auth0 documents /userinfo updated_at as an integer (Unix seconds),
+        // unlike the RFC 3339 string of the same claim in a token. Declaring it
+        // as a string made the whole payload unreadable (502 userinfo_unavailable).
+        await using var provider = new UserinfoTestServer(
+            """{"sub":"auth0|6af39e3cd7146f2a7e5d4959","nickname":"cg","name":"Cedric Gervasoni","updated_at":1762901589,"email":"c@example.com","email_verified":true,"given_name":"Cedric","family_name":"Gervasoni"}""");
+
+        using var client = new HttpClient { BaseAddress = new Uri(provider.BaseAddress) };
+        var context = new Auth0UserContext(
+            client,
+            Options.Create(new UserInfoOptions { BaseAddress = provider.BaseAddress }),
+            new StaticBearerTokenAccessor("token-123"),
+            NullLogger<Auth0UserContext>.Instance);
+
+        var user = await context.GetCurrentUserAsync();
+
+        Assert.NotNull(user);
+        Assert.Equal("c@example.com", user.Email);
+        Assert.Equal("Cedric", user.GivenName);
+        Assert.Equal("Gervasoni", user.FamilyName);
+        // Normalized to ISO-8601 so the SPA keeps receiving a date string.
+        Assert.Equal(
+            DateTimeOffset.FromUnixTimeSeconds(1762901589).ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+            user.UpdatedAt);
+    }
+
+    [Fact]
     public async Task UserContext_ReturnsNullWithoutTokenOrOnProviderFailure()
     {
         await using var provider = new UserinfoTestServer("""{"sub":"x","email_verified":false}""", HttpStatusCode.Forbidden);

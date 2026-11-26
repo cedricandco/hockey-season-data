@@ -10,3 +10,6 @@ obj/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/launch.json
+
+# Azure Functions local configuration (machine-specific, holds local secrets)
+local.settings.json

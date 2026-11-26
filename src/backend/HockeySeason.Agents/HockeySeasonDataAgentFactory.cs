@@ -12,7 +12,7 @@ namespace HockeySeason.Agents;
 /// </summary>
 public static class HockeySeasonDataAgentFactory
 {
-    public const string DefaultName = "hockey-season-data.agent";
+    public const string DefaultName = HockeySeason.Application.AgentNames.HockeySeasonData;
 
     public static ChatClientAgent Create(
         Microsoft.Extensions.AI.IChatClient chatClient,

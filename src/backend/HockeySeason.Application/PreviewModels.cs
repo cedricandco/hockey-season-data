@@ -30,9 +30,11 @@ public interface IPreviewService
     /// <summary>
     /// Teams of one league (Spordle category guid) in its latest imported
     /// season, keyed on the database id the preview detail expects.
+    /// <paramref name="divisionId"/> pins the league when the category is
+    /// played by several divisions (the guid alone cannot tell them apart).
     /// </summary>
     Task<IReadOnlyList<PreviewTeam>> GetTeamsAsync(
-        string leagueId, CancellationToken cancellationToken = default);
+        string leagueId, int? divisionId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// One team the preview can open by database id, with the published
