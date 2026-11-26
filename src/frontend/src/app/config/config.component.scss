@@ -33,6 +33,9 @@
 .selector-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
 .president-card { border-color: #cddff0; background: #f7fbff; }
 .president-card .selector-title { color: #174e82; }
+.director-card { border-color: #d8cfe8; background: #fbf9ff; }
+.director-card .selector-title { color: #174e82; }
+.director-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .president-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .president-grid input {
   width: 100%; min-height: 40px; padding: 9px 10px;
@@ -60,6 +63,7 @@
 .add-button:disabled { background: #eef2f6; color: #9babb9; cursor: default; }
 .hint { color: #708499; font-size: .74rem; }
 .hint-full { color: #9c2c2c; font-weight: 700; }
+.name-locked { display: block; margin: 12px 0 0; color: #86601c; font-weight: 600; }
 .prune-hint { margin: 0 0 10px; }
 
 .list-title { margin: 24px 0 10px; color: #1d3853; font-size: .88rem; }

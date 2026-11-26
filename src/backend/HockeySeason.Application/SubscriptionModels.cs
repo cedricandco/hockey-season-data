@@ -19,6 +19,11 @@ public enum SubscriptionError
     Duplicate,
     /// <summary>The 15-day removal lock of a team subscription is still active.</summary>
     Locked,
+    /// <summary>
+    /// A category director already follows another team name of the category:
+    /// the teams of that name must be removed before following a new one.
+    /// </summary>
+    BaseNameLocked,
 }
 
 /// <summary>Outcome of a subscription attempt.</summary>
@@ -36,10 +41,10 @@ public sealed record SubscriptionResult(
     SubscriptionLimit? Limit = null);
 
 /// <summary>
-/// Outcome of following several teams at once (association president): the
-/// teams added, the ones already followed and the ids that match no imported
-/// team. Nothing is refused by a licence cap — the president scope is
-/// unlimited — so the caller only has to report what changed.
+/// Outcome of following several teams at once (association president or
+/// category director): the teams added, the ones already followed and the ids
+/// that match no imported team. Nothing is refused by a licence cap — their
+/// scope is unlimited — so the caller only has to report what changed.
 /// </summary>
 public sealed record TeamBatchSubscriptionResult(
     SubscriptionError Error,
@@ -47,8 +52,8 @@ public sealed record TeamBatchSubscriptionResult(
     IReadOnlyList<int> AlreadyFollowedTeamIds,
     IReadOnlyList<int> UnknownTeamIds)
 {
-    /// <summary>Nothing was added because the caller is not the association president.</summary>
-    public static TeamBatchSubscriptionResult NotPresident() => new(SubscriptionError.OutOfScope, [], [], []);
+    /// <summary>Nothing was added because the caller does not hold the licence of the batch flow.</summary>
+    public static TeamBatchSubscriptionResult OutOfScope() => new(SubscriptionError.OutOfScope, [], [], []);
 }
 
 /// <summary>

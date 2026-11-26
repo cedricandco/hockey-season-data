@@ -345,12 +345,110 @@ public sealed class UserFunctionsTests
     }
 
     [Fact]
+    public async Task DirectorSelector_ListsCategoriesAndFollowsTheLevelInOneCall()
+    {
+        var provisioning = new FakeProvisioning();
+        var users = new FakeUsers();
+        var (function, _) = CreateUserFunctions(users, provisioning);
+        var (context, request) = CreateContext(provisioning);
+
+        // The selector offers the levels of the association, not the letters.
+        var categories = Assert.IsType<OkObjectResult>(
+            await function.Categories(request, 1, context, CancellationToken.None));
+        using (var body = JsonDocument.Parse(JsonSerializer.Serialize(categories.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web))))
+        {
+            var levels = body.RootElement.GetProperty("categories");
+            Assert.Equal(6, levels.GetArrayLength());
+            Assert.Equal("M11", levels[0].GetProperty("id").GetString());
+            Assert.Equal(4, levels[0].GetProperty("teamCount").GetInt32());
+            Assert.Equal("Junior", levels[5].GetProperty("name").GetString());
+        }
+
+        // Preview: the teams of the picked name inside the category, whatever
+        // the letter refining it.
+        request.QueryString = new QueryString("?category=m13&baseName=grizzly");
+        var preview = Assert.IsType<OkObjectResult>(
+            await function.TeamCatalogByCategory(request, 1, context, CancellationToken.None));
+        using (var body = JsonDocument.Parse(JsonSerializer.Serialize(preview.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web))))
+        {
+            Assert.Equal("M13", body.RootElement.GetProperty("category").GetString());
+            Assert.Equal("grizzly", body.RootElement.GetProperty("baseName").GetString());
+            var teams = body.RootElement.GetProperty("teams");
+            Assert.Equal(1, teams.GetArrayLength());
+            Assert.Equal("GRIZZLY 1 STE-JULIE", teams[0].GetProperty("name").GetString());
+        }
+        // Without a category the request is rejected.
+        request.QueryString = new QueryString(string.Empty);
+        Assert.IsType<BadRequestObjectResult>(
+            await function.TeamCatalogByCategory(request, 1, context, CancellationToken.None));
+
+        // Following the picked name adds every match in one call, through the
+        // DIRECTOR path.
+        request.Body = Json("""{"associationId":1,"category":"M13","baseName":"grizzly"}""");
+        var added = Assert.IsType<OkObjectResult>(
+            await function.AddDirectorTeams(request, context, CancellationToken.None));
+        using (var body = JsonDocument.Parse(JsonSerializer.Serialize(added.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web))))
+        {
+            Assert.Equal("M13", body.RootElement.GetProperty("category").GetString());
+            Assert.Equal("grizzly", body.RootElement.GetProperty("baseName").GetString());
+            Assert.Equal(1, body.RootElement.GetProperty("added").GetArrayLength());
+        }
+        Assert.Equal([201], users.LastDirectorBatchTeamIds);
+        Assert.Equal("M13", users.LastDirectorCategory);
+        Assert.Equal("grizzly", users.LastDirectorBaseName);
+        Assert.Empty(users.LastBatchTeamIds);
+
+        // A name with no team is a 404, an incomplete body a 400.
+        request.Body = Json("""{"associationId":1,"category":"M11","baseName":"grizzly"}""");
+        Assert.IsType<NotFoundObjectResult>(await function.AddDirectorTeams(request, context, CancellationToken.None));
+        request.Body = Json("""{"associationId":1,"category":"M13"}""");
+        Assert.IsType<BadRequestObjectResult>(await function.AddDirectorTeams(request, context, CancellationToken.None));
+        request.Body = Json("""{"associationId":1,"category":"M13","baseName":"inconnu"}""");
+        Assert.IsType<NotFoundObjectResult>(await function.AddDirectorTeams(request, context, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task DirectorBatch_ForbiddenWithoutTheDirectorLicence()
+    {
+        var provisioning = new FakeProvisioning();
+        var users = new FakeUsers
+        {
+            DirectorBatchResult = TeamBatchSubscriptionResult.OutOfScope(),
+        };
+        var (function, _) = CreateUserFunctions(users, provisioning);
+        var (context, request) = CreateContext(provisioning);
+        request.Body = Json("""{"associationId":1,"category":"M13","baseName":"grizzly"}""");
+
+        var result = await function.AddDirectorTeams(request, context, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsAssignableFrom<IStatusCodeActionResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task DirectorBatch_ConflictWhenAnotherNameOfTheCategoryIsFollowed()
+    {
+        var provisioning = new FakeProvisioning();
+        var users = new FakeUsers
+        {
+            DirectorBatchResult = new TeamBatchSubscriptionResult(SubscriptionError.BaseNameLocked, [], [], []),
+        };
+        var (function, _) = CreateUserFunctions(users, provisioning);
+        var (context, request) = CreateContext(provisioning);
+        request.Body = Json("""{"associationId":1,"category":"M13","baseName":"mousquetaire"}""");
+
+        var result = await function.AddDirectorTeams(request, context, CancellationToken.None);
+
+        var conflict = Assert.IsAssignableFrom<IStatusCodeActionResult>(result);
+        Assert.Equal(StatusCodes.Status409Conflict, conflict.StatusCode);
+    }
+
+    [Fact]
     public async Task PresidentBatch_ForbiddenWithoutThePresidentLicence()
     {
         var provisioning = new FakeProvisioning();
         var users = new FakeUsers
         {
-            BatchResult = TeamBatchSubscriptionResult.NotPresident(),
+            BatchResult = TeamBatchSubscriptionResult.OutOfScope(),
         };
         var (function, _) = CreateUserFunctions(users, provisioning);
         var (context, request) = CreateContext(provisioning);
@@ -555,6 +653,31 @@ public sealed class UserFunctionsTests
                     ? [new PresidentTeam(101, "GRIZZLY 1 STE-JULIE", "M13 B", "Simple lettre"),
                        new PresidentTeam(102, "GRIZZLY 2 ST-HYACINTHE", "M15 A", "Simple lettre")]
                     : []));
+
+        public Task<IReadOnlyList<DirectorCategory>> GetCategoriesAsync(
+            int associationId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<DirectorCategory>>(
+            [
+                new("M11", "M11", 4),
+                new("M13", "M13", 2),
+                new("M15", "M15", 3),
+                new("M17", "M17", 2),
+                new("M19", "M19", 1),
+                new(LeagueCategoryLevel.Junior, "Junior", 1),
+            ]);
+
+        public Task<DirectorCategoryOptions> GetTeamsByCategoryAsync(
+            int associationId, string category, string? baseName = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new DirectorCategoryOptions(
+                associationId, "Hockey Richelieu", LeagueCategoryLevel.FromCategory(category), baseName,
+                LeagueCategoryLevel.Matches("M13 B", category)
+                    ? [.. new[]
+                        {
+                            new DirectorTeam(201, "GRIZZLY 1 STE-JULIE", "M13 B", "Simple lettre"),
+                            new DirectorTeam(202, "AIGLES 1 ST-BRUNO", "M13 AA", "Simple lettre"),
+                            new DirectorTeam(203, "MOUSQUETAIRE 1 ST-JEAN", "M13 A", "Simple lettre"),
+                        }.Where(team => baseName is null || TeamNameMatcher.Matches(team.Name, baseName))]
+                    : []));
     }
 
     private sealed class FakeProvisioning : IUserProvisioningService
@@ -672,8 +795,13 @@ public sealed class UserFunctionsTests
         public bool LastRemoveWasAdmin { get; private set; }
         public UserSettingsUpdate? LastSettings { get; private set; }
         public IReadOnlyList<int> LastBatchTeamIds { get; private set; } = [];
+        public IReadOnlyList<int> LastDirectorBatchTeamIds { get; private set; } = [];
+        public string? LastDirectorCategory { get; private set; }
+        public string? LastDirectorBaseName { get; private set; }
         /// <summary>Outcome of the president batch add; defaults to adding every requested team.</summary>
         public TeamBatchSubscriptionResult? BatchResult { get; init; }
+        /// <summary>Outcome of the director batch add; defaults to adding every requested team.</summary>
+        public TeamBatchSubscriptionResult? DirectorBatchResult { get; init; }
 
         public Task<UserSubscriptions> GetSubscriptionsAsync(int userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new UserSubscriptions([], [], []));
@@ -723,6 +851,15 @@ public sealed class UserFunctionsTests
         {
             LastBatchTeamIds = [.. teamIds];
             return Task.FromResult(BatchResult ?? new TeamBatchSubscriptionResult(SubscriptionError.None, [.. teamIds], [], []));
+        }
+
+        public Task<TeamBatchSubscriptionResult> AddDirectorTeamSubscriptionsAsync(
+            int userId, string category, string? baseName, IReadOnlyList<int> teamIds, CancellationToken cancellationToken = default)
+        {
+            LastDirectorCategory = category;
+            LastDirectorBaseName = baseName;
+            LastDirectorBatchTeamIds = [.. teamIds];
+            return Task.FromResult(DirectorBatchResult ?? new TeamBatchSubscriptionResult(SubscriptionError.None, [.. teamIds], [], []));
         }
     }
 }

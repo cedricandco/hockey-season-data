@@ -246,7 +246,20 @@
     "PRESIDENT_NO_MATCH": "No team of this association has that base name.",
     "PRESIDENT_FORBIDDEN": "Only an association president can follow a batch of teams.",
     "PRESIDENT_NOTHING_ADDED": "Every matching team was already followed.",
-    "PRUNE_HINT": "{{count}} followed team(s) do not carry the base name “{{base}}”: remove the ones that are not yours in the list below."
+    "PRUNE_HINT": "{{count}} followed team(s) do not carry the base name “{{base}}”: remove the ones that are not yours in the list below.",
+    "DIRECTOR_TITLE": "Category director",
+    "DIRECTOR_SUBTITLE": "Pick a category (M11, M13, M15, M17, M19 or Junior), then type a team name: every team with that name in the category, whatever the letter (A, B, AA…), across divisions and leagues, is followed at once. A category is followed one name at a time: remove the teams of that name to pick another one.",
+    "CATEGORY": "Category",
+    "CATEGORY_TEAMS": "{{count}} team(s)",
+    "CATEGORY_MATCHES": "Teams with that name in the category",
+    "NO_CATEGORY_MATCH": "No team of this association has that name in that category.",
+    "FOLLOW_CATEGORY": "Follow all these teams",
+    "DIRECTOR_NAME_LOCKED": "You already follow “{{name}}” in {{category}}: remove those teams to follow another name of that category.",
+    "DIRECTOR_NO_MATCH": "No team of this association has that name in that category.",
+    "DIRECTOR_FORBIDDEN": "Only a category director can follow a batch of teams.",
+    "DIRECTOR_NOTHING_ADDED": "Every team with that name was already followed.",
+    "DIRECTOR_NAME_LOCKED_ERROR": "That category already follows another name: remove those teams before following a new one.",
+    "DIRECTOR_ERROR": "The search or the add failed. Try again."
   },
   "SELECTION": {
     "TITLE": "Choose your team",

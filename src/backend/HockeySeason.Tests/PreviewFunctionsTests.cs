@@ -127,6 +127,12 @@ public sealed class PreviewFunctionsTests
 
         public Task<PresidentTeamOptions> GetTeamsByBaseNameAsync(int associationId, string baseName, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PresidentTeamOptions(associationId, "Hockey Richelieu", baseName, []));
+
+        public Task<IReadOnlyList<DirectorCategory>> GetCategoriesAsync(int associationId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<DirectorCategory>>([]);
+
+        public Task<DirectorCategoryOptions> GetTeamsByCategoryAsync(int associationId, string category, string? baseName = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new DirectorCategoryOptions(associationId, "Hockey Richelieu", category, baseName, []));
     }
 
     private sealed class FakePreview : IPreviewService

@@ -150,6 +150,7 @@ first visit.
 | `POST /api/users/me/organization-subscriptions` | Follow a whole association — PRESIDENT scope (all leagues of the org) |
 | `DELETE /api/users/me/organization-subscriptions/{organizationId}` | Unfollow an association |
 | `POST /api/users/me/president-team-subscriptions` | Body `{ "associationId": 1, "baseName": "Grizzly" }` — follow **every** team of the association whose name starts with that base name, in all divisions, leagues and categories (PRESIDENT licence: no team cap, no 15-day lock; duplicates and unknown ids are reported, not refused — `403` when the caller has no PRESIDENT role) |
+| `POST /api/users/me/director-team-subscriptions` | Body `{ "associationId": 1, "category": "M13", "baseName": "Grizzly" }` — follow **every** team of that name inside the category level, whatever the letter (M13 A, M13 B, M13 AA…), in all divisions and leagues (DIRECTOR licence: no team cap, no 15-day lock; duplicates and unknown ids reported — `403` when the caller has no DIRECTOR role, `409` when another name of that category is already followed) |
 
 Read-only navigation for the "follow a team" selector of the configuration
 page (association → division → league → team). Any authenticated caller may
@@ -161,6 +162,8 @@ user already sees — and each level returns the identifier the next one expects
 | `GET /api/subscriptions/associations` | Associations that own at least one division (`organizations.id` + name) |
 | `GET /api/subscriptions/associations/{associationId}/divisions` | Divisions of an association; `id` is the Spordle office number (`divisions.external_id`, e.g. 6193) |
 | `GET /api/subscriptions/associations/{associationId}/teams?baseName=Grizzly` | Teams of the association whose name starts with the base name (case- and accent-insensitive, whole words), across every division/league/category of the latest imported season — the association-president preview |
+| `GET /api/subscriptions/associations/{associationId}/categories` | Category levels the association publishes in its latest imported season (`M11`, `M13`, `M15`, `M17`, `M19`, `Junior`), with the number of teams of each — the category-director selector (the letters A/B/AA are folded into one level) |
+| `GET /api/subscriptions/associations/{associationId}/categories/teams?category=M13&baseName=Grizzly` | Every team of that name inside one category level, whatever the letter refining it, across every division and league — the category-director preview (`baseName` omitted lists the whole level) |
 | `GET /api/subscriptions/divisions/{divisionId}/leagues[?seasonId=2026-27]` | Leagues of a division for a season (latest imported when omitted); `id` is the Spordle category guid |
 | `GET /api/subscriptions/leagues/{leagueId}/teams` | Teams of a league, by Spordle team id (the value `POST /api/users/me/team-subscriptions` expects) |
 
@@ -298,6 +301,38 @@ Two rules make the flow usable:
 The flow is exposed to the PRESIDENT licence only (`UserService` refuses the
 batch with `403` otherwise); the preview endpoint stays readable by any
 authenticated caller because it only exposes shared reference data.
+
+### Category director: follow a category level
+
+A caller holding the **DIRECTOR** licence (`roles.id = 2`) follows the same
+pattern one level down, one name at a time: it picks an association, a
+**category level** — `M11`, `M13`, `M15`, `M17`, `M19` or `Junior` — and a
+**team name** ("Grizzly"), and every team of that name in the category of the
+association's latest imported season is followed in one call. The level is read
+from the published French league name (`LeagueCategoryLevel`), so the letter
+refining a category is deliberately ignored: "M13" + "Grizzly" selects the
+M13 A, M13 B and M13 AA Grizzlies alike, across every division and league,
+because a category director is responsible for the whole level — but not for
+its whole roster.
+
+`GET /api/subscriptions/associations/{id}/categories` lists the levels the
+association actually publishes (with a team count), so the page offers
+`M11`…`Junior` and nothing else; `…/categories/teams?category=M13&baseName=…`
+narrows the level to one name. The rules match the president flow: the team
+licence limit is lifted for the DIRECTOR role (the `team` limit is reported with
+`max: null`), and the batch follows are stored with an already elapsed 15-day
+lock, so the director prunes a team immediately with the regular
+`DELETE /api/users/me/team-subscriptions/{teamId}`.
+
+A category is followed **one name at a time**: when the caller already follows
+another name of the level (compared on the first word of the published name,
+`TeamNameMatcher.BaseNameOf`), the batch answers `409 category_name_locked` and
+nothing is added — the director removes those teams first. `GET
+/api/users/me/subscriptions` reports each followed team's `category`, which is
+what the page uses to know the level already follows a name. The batch endpoint
+(`POST /api/users/me/director-team-subscriptions`) answers `403` for a caller
+without the DIRECTOR role; the preview stays readable by any authenticated
+caller.
 
 ## Authentication (HockeySeason.Auth)
 

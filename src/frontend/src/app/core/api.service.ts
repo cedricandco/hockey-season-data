@@ -15,6 +15,9 @@ import {
   ReferenceSeasonsResponse,
 } from '../admin/reference.models';
 import {
+  DirectorCategoriesResponse,
+  DirectorTeamsFollowResult,
+  DirectorTeamsResponse,
   PresidentTeamsFollowResult,
   PresidentTeamsResponse,
   SubscriptionAssociationsResponse,
@@ -210,6 +213,40 @@ export class ApiService {
   /** Unfollows a team; 423 when the 15-day lock is still active. */
   removeTeamSubscription(teamId: number): Observable<unknown> {
     return this.http.delete(`${this.baseUrl}/users/me/team-subscriptions/${teamId}`);
+  }
+
+  /**
+   * Category-director selector: category levels ("M11", "M13", …, "Junior") of
+   * one association, with the number of teams of each.
+   */
+  getDirectorCategories(associationId: number): Observable<DirectorCategoriesResponse> {
+    return this.http.get<DirectorCategoriesResponse>(
+      `${this.baseUrl}/subscriptions/associations/${associationId}/categories`);
+  }
+
+  /**
+   * Category-director selector: every team of one category level whose name
+   * starts with the base name, whatever the letter refining it ("M13" +
+   * "Grizzly" selects M13 A, M13 B and M13 AA Grizzlies).
+   */
+  getDirectorTeams(associationId: number, category: string, baseName?: string): Observable<DirectorTeamsResponse> {
+    let params = new HttpParams().set('category', category);
+    if (baseName) params = params.set('baseName', baseName);
+    return this.http.get<DirectorTeamsResponse>(
+      `${this.baseUrl}/subscriptions/associations/${associationId}/categories/teams`, { params });
+  }
+
+  /**
+   * Follows every team of one team name inside a category level in one call
+   * (DIRECTOR licence: no team cap, no 15-day lock).
+   */
+  addDirectorTeamSubscriptions(
+    associationId: number,
+    category: string,
+    baseName: string,
+  ): Observable<DirectorTeamsFollowResult> {
+    return this.http.post<DirectorTeamsFollowResult>(
+      `${this.baseUrl}/users/me/director-team-subscriptions`, { associationId, category, baseName });
   }
 
   /**

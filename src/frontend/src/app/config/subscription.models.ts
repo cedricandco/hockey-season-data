@@ -81,12 +81,70 @@ export interface PresidentTeamsFollowResult {
   unknown: number[];
 }
 
+/**
+ * A category level of an association, e.g. "M13": the category-director
+ * selector picks the level and follows every team of it, whatever the letter
+ * refining the category ("M13 A", "M13 B", "M13 AA").
+ */
+export interface DirectorCategory {
+  /** Level itself ("M11", "M13", "M15", "M17", "M19", "JUNIOR"). */
+  id: string;
+  /** Display name of the level. */
+  name: string;
+  /** Number of teams of the level in the latest imported season. */
+  teamCount: number;
+}
+
+/** `GET /api/subscriptions/associations/{id}/categories` */
+export interface DirectorCategoriesResponse {
+  categories: DirectorCategory[];
+}
+
+/**
+ * A team matched by the category-director selector: picking a level ("M13") and
+ * typing a team name ("Grizzly") selects every team of that name in the
+ * category, whatever its letter. `id` is the Spordle team id the
+ * team-subscription endpoints expect.
+ */
+export interface DirectorTeam {
+  id: number;
+  name: string;
+  leagueName: string;
+  divisionName: string;
+}
+
+/** `GET /api/subscriptions/associations/{id}/categories/teams?category=…&baseName=…` */
+export interface DirectorTeamsResponse {
+  associationId: number;
+  associationName: string;
+  category: string;
+  /** Team name the list was narrowed to; null when the whole level is listed. */
+  baseName: string | null;
+  teams: DirectorTeam[];
+}
+
+/** `POST /api/users/me/director-team-subscriptions` outcome. */
+export interface DirectorTeamsFollowResult {
+  associationId: number;
+  associationName: string;
+  category: string;
+  baseName: string;
+  /** Spordle team ids followed by this call. */
+  added: number[];
+  /** Spordle team ids already followed (reported, not refused). */
+  alreadyFollowed: number[];
+  /** Spordle team ids that match no imported team. */
+  unknown: number[];
+}
+
 /** One followed team, with its 15-day removal lock window. */
 export interface FollowedTeam {
   teamId: number;
   name: string | null;
   createdAt: string;
   lockedUntil: string | null;
+  /** Category level of the team's league ("M13", "JUNIOR"), null when it publishes none. */
+  category?: string | null;
 }
 
 /** One followed league (Spordle category guid). */

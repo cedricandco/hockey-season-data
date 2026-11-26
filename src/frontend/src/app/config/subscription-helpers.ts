@@ -80,6 +80,87 @@ export function isAssociationPresident(roleCodes: readonly string[] = []): boole
 }
 
 /**
+ * Whether the caller is a category director: the DIRECTOR licence shows up in
+ * the account roles. A director follows a whole category level ("M13") at once
+ * — every letter of it — so the configuration page offers that flow.
+ */
+export function isCategoryDirector(roleCodes: readonly string[] = []): boolean {
+  return roleCodes.some((code) => code.toLowerCase() === 'director');
+}
+
+/**
+ * Whether the category flow can run: a level and a team name must be typed, the
+ * preview must have matched at least one team, and no batch add may be in
+ * flight. A category is followed one name at a time, so a name other than the
+ * one the level already follows (`lockedName`) is blocked — the comparison uses
+ * the base name (first word), so another suffix of the same family ("grizzly 5"
+ * after "grizzly 3") stays allowed.
+ */
+export function canFollowCategory(
+  category: string | null,
+  baseName: string,
+  matches: number,
+  adding = false,
+  lockedName: string | null = null,
+): boolean {
+  if (adding || (category ?? '').trim().length === 0 || baseName.trim().length === 0 || matches <= 0) {
+    return false;
+  }
+  return lockedName === null || baseNameOf(baseName) === lockedName;
+}
+
+/** Whether the "show the teams" button can be pressed: level and name typed. */
+export function canPreviewCategoryTeams(category: string | null, baseName: string): boolean {
+  return (category ?? '').trim().length > 0 && baseName.trim().length > 0;
+}
+
+/**
+ * Team name a category director already follows in a category level, or null.
+ * A category is followed one name at a time: while the teams of that name are
+ * followed, another name cannot be picked — the director removes them first.
+ * The level of a followed team comes from the API (`category`), the level of
+ * the selector from its own id.
+ */
+export function lockedCategoryName(
+  teams: readonly Pick<FollowedTeam, 'name' | 'category'>[],
+  category: string | null,
+): string | null {
+  const level = categoryLevelOf(category);
+  if (level === null) return null;
+  const followed = teams.find((team) =>
+    categoryLevelOf(team.category) === level && baseNameOf(team.name).length > 0);
+  return followed ? baseNameOf(followed.name) : null;
+}
+
+/**
+ * Level of a published league name — "M13 A", "M13 B", "M13 AA" all belong to
+ * M13, which is what a category director follows. Mirrors the backend
+ * `LeagueCategoryLevel`: the first "M<digits>" word, or Junior/Juvénil.
+ */
+export function categoryLevelOf(leagueName: string | null | undefined): string | null {
+  const words = (leagueName ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter((word) => word.length > 0);
+  const first = words[0];
+  if (!first) return null;
+  if (first.startsWith('JUNIOR') || first.startsWith('JUVENIL')) return 'JUNIOR';
+  const match = /^M\d+/.exec(first);
+  return match ? match[0] : null;
+}
+
+/**
+ * Whether a league belongs to the picked category level, ignoring the letters
+ * that refine it: "M13" covers "M13 A", "M13 B" and "M13 AA".
+ */
+export function matchesCategory(leagueName: string | null | undefined, category: string): boolean {
+  const level = categoryLevelOf(category);
+  return level !== null && categoryLevelOf(leagueName) === level;
+}
+
+/**
  * Whether the typed base name can be turned into follows: something other than
  * blank must be typed, and the base name must match at least one team.
  */

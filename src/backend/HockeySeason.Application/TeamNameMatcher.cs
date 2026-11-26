@@ -17,7 +17,9 @@ namespace HockeySeason.Application;
 /// </remarks>
 public static class TeamNameMatcher
 {
-    /// <summary>Whether the team name starts with the base name, on a word boundary.</summary>
+    /// <summary>
+    /// Whether the team name starts with the base name, on a word boundary.
+    /// </summary>
     public static bool Matches(string? teamName, string? baseName)
     {
         var name = Normalize(teamName);
@@ -29,6 +31,18 @@ public static class TeamNameMatcher
 
         return string.Equals(name, basis, StringComparison.Ordinal)
             || name.StartsWith(basis + " ", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Base name of a published team name: its first normalized word
+    /// ("GRIZZLY 1 STE-JULIE" → "grizzly"). A category director may follow one
+    /// base name per category, so this is the key the lock is kept on.
+    /// </summary>
+    public static string BaseNameOf(string? teamName)
+    {
+        var normalized = Normalize(teamName);
+        var separator = normalized.IndexOf(' ');
+        return separator < 0 ? normalized : normalized[..separator];
     }
 
     /// <summary>

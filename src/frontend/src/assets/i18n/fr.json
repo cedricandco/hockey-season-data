@@ -248,7 +248,20 @@
     "PRESIDENT_NO_MATCH": "Aucune équipe de cette association ne porte ce nom de base.",
     "PRESIDENT_FORBIDDEN": "Seul un président d'association peut suivre un lot d'équipes.",
     "PRESIDENT_NOTHING_ADDED": "Toutes les équipes correspondantes étaient déjà suivies.",
-    "PRUNE_HINT": "{{count}} équipe(s) suivie(s) ne portent pas le nom « {{base}} » : retirez celles qui ne vous concernent pas dans la liste ci-dessous."
+    "PRUNE_HINT": "{{count}} équipe(s) suivie(s) ne portent pas le nom « {{base}} » : retirez celles qui ne vous concernent pas dans la liste ci-dessous.",
+    "DIRECTOR_TITLE": "Directeur de catégorie",
+    "DIRECTOR_SUBTITLE": "Choisissez une catégorie (M11, M13, M15, M17, M19 ou Junior), puis saisissez le nom d'une équipe : toutes les équipes de ce nom dans la catégorie, peu importe la lettre (A, B, AA…), divisions et ligues confondues, seront suivies. Une catégorie se suit un nom à la fois : retirez les équipes de ce nom pour en choisir un autre.",
+    "CATEGORY": "Catégorie",
+    "CATEGORY_TEAMS": "{{count}} équipe(s)",
+    "CATEGORY_MATCHES": "Équipes de ce nom dans la catégorie",
+    "NO_CATEGORY_MATCH": "Aucune équipe de cette association ne porte ce nom dans cette catégorie.",
+    "FOLLOW_CATEGORY": "Suivre toutes ces équipes",
+    "DIRECTOR_NAME_LOCKED": "Vous suivez déjà « {{name}} » dans {{category}} : retirez ces équipes pour suivre un autre nom de cette catégorie.",
+    "DIRECTOR_NO_MATCH": "Aucune équipe de cette association ne porte ce nom dans cette catégorie.",
+    "DIRECTOR_FORBIDDEN": "Seul un directeur de catégorie peut suivre un lot d'équipes.",
+    "DIRECTOR_NOTHING_ADDED": "Toutes les équipes de ce nom étaient déjà suivies.",
+    "DIRECTOR_NAME_LOCKED_ERROR": "Cette catégorie suit déjà un autre nom : retirez ces équipes avant d'en suivre un nouveau.",
+    "DIRECTOR_ERROR": "La recherche ou l'ajout a échoué. Réessayez."
   },
   "SELECTION": {
     "TITLE": "Choisissez votre équipe",

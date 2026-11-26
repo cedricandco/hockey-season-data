@@ -140,12 +140,7 @@ public sealed class SubscriptionCatalogService(
         ArgumentNullException.ThrowIfNull(baseName);
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
-        var association = await db.Organizations
-            .AsNoTracking()
-            .Where(organization => organization.Id == associationId)
-            .Select(organization => new { organization.Name })
-            .SingleOrDefaultAsync(cancellationToken)
-            .ConfigureAwait(false);
+        var association = await FindAssociationAsync(db, associationId, cancellationToken).ConfigureAwait(false);
         if (association is null)
         {
             return new(associationId, string.Empty, baseName.Trim(), []);
@@ -154,6 +149,111 @@ public sealed class SubscriptionCatalogService(
         // The latest season of the association: a team promoted between
         // categories keeps one Spordle id, so each team appears once even when
         // several divisions of the association publish the same base name.
+        var candidates = await LatestSeasonTeamsAsync(db, associationId, cancellationToken).ConfigureAwait(false);
+
+        var teams = candidates
+            .Where(team => TeamNameMatcher.Matches(team.Name, baseName))
+            .Select(team => (Team: team, team.ExternalId))
+            .Where(item => item.ExternalId > 0)
+            .DistinctBy(item => item.ExternalId)
+            .OrderBy(item => item.Team.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.ExternalId)
+            .Select(item => new PresidentTeam(item.ExternalId, item.Team.Name, item.Team.LeagueName, item.Team.DivisionName))
+            .ToList();
+
+        return new(associationId, association.Name, baseName.Trim(), teams);
+    }
+
+    /// <summary>
+    /// Category levels of the association in its latest imported season, with
+    /// the number of teams of each. The level is read from the published name
+    /// (<see cref="LeagueCategoryLevel"/>), so "M13 A", "M13 B" and "M13 AA"
+    /// all count under M13 — what a category director follows.
+    /// </summary>
+    public async Task<IReadOnlyList<DirectorCategory>> GetCategoriesAsync(
+        int associationId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var teams = await LatestSeasonTeamsAsync(db, associationId, cancellationToken).ConfigureAwait(false);
+
+        return
+        [
+            .. teams
+                .Select(team => (Team: team, Level: LeagueCategoryLevel.FromLeagueName(team.LeagueName)))
+                .Where(item => item.Level is not null && item.Team.ExternalId > 0)
+                .GroupBy(item => item.Level!, StringComparer.Ordinal)
+                .Select(group => new DirectorCategory(
+                    group.Key,
+                    LeagueCategoryLevel.Display(group.Key),
+                    group.Select(item => item.Team.ExternalId).Distinct().Count()))
+                .OrderBy(category => category.Id, LeagueCategoryLevel.Comparer),
+        ];
+    }
+
+    /// <summary>
+    /// Teams of one category level of the association — "M13" selects the
+    /// M13 A, M13 B and M13 AA teams alike, because the letter refines the
+    /// category rather than naming another one. When <paramref name="baseName"/>
+    /// is given only the teams whose name starts with it are kept: a category
+    /// director follows one team name of a category, not its whole roster.
+    /// </summary>
+    public async Task<DirectorCategoryOptions> GetTeamsByCategoryAsync(
+        int associationId, string category, string? baseName = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(category);
+        var level = LeagueCategoryLevel.FromCategory(category);
+        var trimmedBaseName = baseName?.Trim();
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var association = await FindAssociationAsync(db, associationId, cancellationToken).ConfigureAwait(false);
+        if (association is null)
+        {
+            return new(associationId, string.Empty, level, trimmedBaseName, []);
+        }
+
+        var candidates = await LatestSeasonTeamsAsync(db, associationId, cancellationToken).ConfigureAwait(false);
+
+        var teams = candidates
+            .Where(team => LeagueCategoryLevel.Matches(team.LeagueName, level))
+            .Where(team => team.ExternalId > 0)
+            // The name match is accent- and case-insensitive and works on whole
+            // words (`TeamNameMatcher`), which a provider-side LIKE cannot
+            // express: it runs in memory over the reference rows of the
+            // association only.
+            .Where(team => string.IsNullOrEmpty(trimmedBaseName) || TeamNameMatcher.Matches(team.Name, trimmedBaseName))
+            .DistinctBy(team => team.ExternalId)
+            .OrderBy(team => team.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(team => team.ExternalId)
+            .Select(team => new DirectorTeam(team.ExternalId, team.Name, team.LeagueName, team.DivisionName))
+            .ToList();
+
+        return new(associationId, association.Name, level, trimmedBaseName, teams);
+    }
+
+    private static async Task<OrganizationName?> FindAssociationAsync(
+        HockeySeasonDbContext db, int associationId, CancellationToken cancellationToken) =>
+        await db.Organizations
+            .AsNoTracking()
+            .Where(organization => organization.Id == associationId)
+            .Select(organization => new OrganizationName(organization.Name))
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+    private sealed record OrganizationName(string Name);
+
+    private sealed record CandidateTeam(int ExternalId, string Name, string LeagueName, string DivisionName);
+
+    /// <summary>
+    /// Teams the association publishes in its latest imported season, with the
+    /// league and division they play in. A team keeps one Spordle id even when
+    /// it is promoted between categories, so the rows are de-duplicated by that
+    /// id; a team without a usable Spordle id is dropped, as it could not be
+    /// followed.
+    /// </summary>
+    private static async Task<IReadOnlyList<CandidateTeam>> LatestSeasonTeamsAsync(
+        HockeySeasonDbContext db, int associationId, CancellationToken cancellationToken)
+    {
         var seasonExternalId = await db.Leagues
             .AsNoTracking()
             .Where(league => league.Division.OrganizationId == associationId)
@@ -163,7 +263,7 @@ public sealed class SubscriptionCatalogService(
             .ConfigureAwait(false);
         if (seasonExternalId is null)
         {
-            return new(associationId, association.Name, baseName.Trim(), []);
+            return [];
         }
 
         var candidates = await db.Teams
@@ -180,17 +280,13 @@ public sealed class SubscriptionCatalogService(
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var teams = candidates
-            .Where(team => TeamNameMatcher.Matches(team.Name, baseName))
-            .Select(team => (Team: team, ExternalId: int.TryParse(
-                team.ExternalId, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : 0))
-            .Where(item => item.ExternalId > 0)
-            .DistinctBy(item => item.ExternalId)
-            .OrderBy(item => item.Team.Name, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(item => item.ExternalId)
-            .Select(item => new PresidentTeam(item.ExternalId, item.Team.Name, item.Team.LeagueName, item.Team.DivisionName))
-            .ToList();
-
-        return new(associationId, association.Name, baseName.Trim(), teams);
+        return
+        [
+            .. candidates
+                .Select(team => (Team: team, ExternalId: int.TryParse(
+                    team.ExternalId, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : 0))
+                .Where(item => item.ExternalId > 0)
+                .Select(item => new CandidateTeam(item.ExternalId, item.Team.Name, item.Team.LeagueName, item.Team.DivisionName)),
+        ];
     }
 }

@@ -50,4 +50,30 @@ public sealed class TeamNameMatcherTests
         Assert.True(TeamNameMatcher.Matches("AIGLES ST-JÉRÔME", "aigles st-jerome"));
         Assert.True(TeamNameMatcher.Matches("AIGLES ST-JEROME", "aigles st-jérôme"));
     }
+
+    [Fact]
+    public void BaseNameOf_ReturnsTheFirstWordOfThePublishedName()
+    {
+        Assert.Equal("grizzly", TeamNameMatcher.BaseNameOf("GRIZZLY 1 STE-JULIE"));
+        Assert.Equal("aigles", TeamNameMatcher.BaseNameOf("AIGLES ST-JÉRÔME"));
+        Assert.Equal("grizzly", TeamNameMatcher.BaseNameOf("  GRIZZLY--2  "));
+        Assert.Equal(string.Empty, TeamNameMatcher.BaseNameOf(""));
+        Assert.Equal(string.Empty, TeamNameMatcher.BaseNameOf(null));
+    }
+
+    /// <summary>
+    /// The category director keeps one name per level, keyed on
+    /// <see cref="TeamNameMatcher.BaseNameOf"/>: every team of that name matches
+    /// the key, and teams of another name do not.
+    /// </summary>
+    [Fact]
+    public void BaseNameOf_GroupsEveryTeamOfTheSameName()
+    {
+        Assert.Equal(
+            TeamNameMatcher.BaseNameOf("GRIZZLY 1 STE-JULIE"),
+            TeamNameMatcher.BaseNameOf("GRIZZLY 2 ST-HYACINTHE"));
+        Assert.NotEqual(
+            TeamNameMatcher.BaseNameOf("GRIZZLY 1 STE-JULIE"),
+            TeamNameMatcher.BaseNameOf("MOUSQUETAIRE 1 ST-JEAN"));
+    }
 }

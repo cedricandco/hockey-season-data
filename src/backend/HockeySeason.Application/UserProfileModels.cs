@@ -24,8 +24,16 @@ public sealed record UserSubscriptions(
 /// <summary>
 /// One followed team, with its lock window: the identifier is the Spordle team
 /// id and <see cref="LockedUntil"/> the end of the 15-day removal lock.
+/// <see cref="Category"/> is the category level of the team's league ("M13",
+/// "JUNIOR", null when the league publishes none), used by the category
+/// director to know which name its category already follows.
 /// </summary>
-public sealed record UserTeamSubscription(int TeamId, string? Name, DateTimeOffset CreatedAt, DateTimeOffset? LockedUntil);
+public sealed record UserTeamSubscription(
+    int TeamId,
+    string? Name,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? LockedUntil,
+    string? Category = null);
 
 /// <summary>One followed league: the identifier is the Spordle category id (guid).</summary>
 public sealed record UserLeagueSubscription(string LeagueId, string? Name, DateTimeOffset CreatedAt);

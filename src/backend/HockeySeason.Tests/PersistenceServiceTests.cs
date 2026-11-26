@@ -476,6 +476,124 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
         Assert.False(await db.TeamSubscriptions.AnyAsync(subscription => subscription.UserId == userId));
     }
 
+    [Fact]
+    public async Task SubscriptionCatalog_FindsTeamsByCategoryAcrossLettersAndDivisions()
+    {
+        var factory = CreateFactory();
+        // Two divisions of the same association; the M13 category spans the
+        // plain letters (A, B) and the double one (AA), while M15 must stay out.
+        await SeedTeamAsync(factory, "710", leagueExternalId: "m13-a", divisionExternalId: "6193", teamName: "GRIZZLY 1");
+        await SeedTeamAsync(factory, "711", leagueExternalId: "m13-b", divisionExternalId: "6193", teamName: "AIGLES 1");
+        await SeedTeamAsync(factory, "712", leagueExternalId: "m13-aa", divisionExternalId: "6194", teamName: "FALCON 1");
+        await SeedTeamAsync(factory, "713", leagueExternalId: "m15-a", divisionExternalId: "6193", teamName: "GRIZZLY 2");
+        await NameLeagueAsync(factory, "m13-a", "M13 A");
+        await NameLeagueAsync(factory, "m13-b", "M13 B");
+        await NameLeagueAsync(factory, "m13-aa", "M13 AA");
+        await NameLeagueAsync(factory, "m15-a", "M15 A");
+        var catalog = new SubscriptionCatalogService(factory);
+        var associationId = await AssociationIdAsync(factory);
+
+        var categories = await catalog.GetCategoriesAsync(associationId);
+
+        Assert.Equal(["M13", "M15"], categories.Select(category => category.Id));
+        Assert.Equal(3, categories[0].TeamCount);
+        Assert.Equal(1, categories[1].TeamCount);
+
+        var m13 = await catalog.GetTeamsByCategoryAsync(associationId, "m13");
+        Assert.Equal("M13", m13.Category);
+        Assert.Null(m13.BaseName);
+        Assert.Equal([710, 711, 712], m13.Teams.Select(team => team.Id).OrderBy(id => id));
+        Assert.Contains(m13.Teams, team => team.Id == 712 && team.DivisionName == "Div");
+
+        // The director narrows the level to one team name: "grizzly" keeps the
+        // GRIZZLY teams of the category only, whatever the division and letter.
+        var grizzly = await catalog.GetTeamsByCategoryAsync(associationId, "m13", "grizzly");
+        Assert.Equal("grizzly", grizzly.BaseName);
+        Assert.Equal([710], grizzly.Teams.Select(team => team.Id));
+
+        // An unknown level matches nothing; a missing association is empty too.
+        Assert.Empty((await catalog.GetTeamsByCategoryAsync(associationId, "M11")).Teams);
+        Assert.Empty((await catalog.GetTeamsByCategoryAsync(associationId, "M13", "mousquetaire")).Teams);
+        Assert.Empty((await catalog.GetTeamsByCategoryAsync(4242, "M13")).Teams);
+    }
+
+    [Fact]
+    public async Task DirectorBatch_FollowsOneTeamNameOfTheCategoryWithoutCapOrLock()
+    {
+        var factory = CreateFactory();
+        for (var i = 1; i <= 7; i++)
+        {
+            await SeedTeamAsync(factory, $"{800 + i}", leagueExternalId: "director-league",
+                divisionExternalId: "6193", teamName: $"GRIZZLY {i}");
+        }
+        var userId = await SeedDirectorAsync(factory);
+        await NameLeagueAsync(factory, "director-league", "M13 A");
+        var users = CreateUserService(factory);
+
+        var result = await users.AddDirectorTeamSubscriptionsAsync(
+            userId, "M13", "grizzly", [801, 802, 803, 804, 805, 806, 807]);
+
+        Assert.Equal(SubscriptionError.None, result.Error);
+        Assert.Equal([801, 802, 803, 804, 805, 806, 807], result.AddedTeamIds.OrderBy(id => id));
+        var limits = (await users.GetLimitsAsync(userId)).ToDictionary(limit => limit.Kind);
+        Assert.Null(limits["team"].Max);
+        Assert.True(limits["team"].CanAddMore);
+
+        // No 15-day lock, exactly like the president batch.
+        Assert.Equal(SubscriptionError.None, await users.RemoveTeamSubscriptionAsync(userId, 807, isAdmin: false));
+
+        // The followed teams report the category level of their league, which is
+        // what the page uses to know a name is already followed.
+        var subscriptions = await users.GetSubscriptionsAsync(userId);
+        Assert.All(subscriptions.Teams, team => Assert.Equal("M13", team.Category));
+
+        // A category is followed one name at a time: another name of the level
+        // is refused until the teams of the first one are removed.
+        var locked = await users.AddDirectorTeamSubscriptionsAsync(userId, "M13", "mousquetaire", [801]);
+        Assert.Equal(SubscriptionError.BaseNameLocked, locked.Error);
+        Assert.Empty(locked.AddedTeamIds);
+
+        // The same name stays followable: duplicates are reported, not refused.
+        var again = await users.AddDirectorTeamSubscriptionsAsync(userId, "M13", "grizzly", [801, 999999]);
+        Assert.Equal(SubscriptionError.None, again.Error);
+        Assert.Empty(again.AddedTeamIds);
+        Assert.Equal([801], again.AlreadyFollowedTeamIds);
+        Assert.Equal([999999], again.UnknownTeamIds);
+
+        // Another category is independent: M15 keeps its own name.
+        Assert.Equal(SubscriptionError.None,
+            (await users.AddDirectorTeamSubscriptionsAsync(userId, "M15", "mousquetaire", [])).Error);
+    }
+
+    [Fact]
+    public async Task DirectorBatch_ChangesNothingForACallerWithoutTheDirectorRole()
+    {
+        var factory = CreateFactory();
+        await SeedTeamAsync(factory, "901", leagueExternalId: "director-league", divisionExternalId: "6193", teamName: "M13 TEAM");
+        var userId = await SeedCoachAsync(factory);
+        var users = CreateUserService(factory);
+
+        var result = await users.AddDirectorTeamSubscriptionsAsync(userId, "M13", "grizzly", [901]);
+
+        Assert.Equal(SubscriptionError.OutOfScope, result.Error);
+        await using var db = CreateContext();
+        Assert.False(await db.TeamSubscriptions.AnyAsync(subscription => subscription.UserId == userId));
+    }
+
+    /// <summary>Provisions a caller and grants the DIRECTOR licence (category scope).</summary>
+    private static async Task<int> SeedDirectorAsync(IDbContextFactory<HockeySeasonDbContext> factory)
+    {
+        var provisioning = new UserProvisioningService(factory, NullLogger<UserProvisioningService>.Instance);
+        var userId = (await provisioning.ProvisionAsync(new($"auth0|director-{Guid.NewGuid():N}", null, null, null))).UserId;
+        await using var db = await factory.CreateDbContextAsync();
+        if (!await db.UserRoles.AnyAsync(userRole => userRole.UserId == userId && userRole.RoleId == 2))
+        {
+            db.UserRoles.Add(new UserRole { UserId = userId, RoleId = 2 });
+            await db.SaveChangesAsync();
+        }
+        return userId;
+    }
+
     private static async Task<int> AssociationIdAsync(IDbContextFactory<HockeySeasonDbContext> factory)
     {
         await using var db = await factory.CreateDbContextAsync();
@@ -627,6 +745,15 @@ public sealed class PersistenceServiceTests : IAsyncLifetime
         {
             db.Teams.Add(new() { LeagueId = league.Id, Name = teamName ?? $"Team {teamExternalId}", ExternalId = teamExternalId });
         }
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Renames the league with the given external id, after it is seeded (its published French name).</summary>
+    private static async Task NameLeagueAsync(IDbContextFactory<HockeySeasonDbContext> factory, string leagueExternalId, string name)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        var league = await db.Leagues.SingleAsync(league => league.ExternalId == leagueExternalId);
+        league.Name = name;
         await db.SaveChangesAsync();
     }
 

@@ -75,22 +75,37 @@ public sealed class UserService(
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
-        var teams = await db.TeamSubscriptions
+        // The category level of a followed team comes from its league name,
+        // which `LeagueCategoryLevel` reads in memory (the provider cannot
+        // translate it): the director needs it to know which name its category
+        // already covers. The list is small (the caller's follows), so it is
+        // ordered in memory too — SQLite cannot sort a DateTimeOffset column.
+        var followedTeams = await db.TeamSubscriptions
             .AsNoTracking()
             .Where(subscription => subscription.UserId == userId)
-            .OrderBy(subscription => subscription.CreatedAt)
-            .Select(subscription => new UserTeamSubscription(
-                int.Parse(subscription.Team.ExternalId),
+            .Select(subscription => new
+            {
+                subscription.Team.ExternalId,
                 subscription.Team.Name,
                 subscription.CreatedAt,
-                subscription.LockedUntil))
+                subscription.LockedUntil,
+                LeagueName = subscription.Team.League.Name,
+            })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+        var teams = followedTeams
+            .OrderBy(team => team.CreatedAt)
+            .Select(team => new UserTeamSubscription(
+                int.Parse(team.ExternalId),
+                team.Name,
+                team.CreatedAt,
+                team.LockedUntil,
+                LeagueCategoryLevel.FromLeagueName(team.LeagueName)))
+            .ToList();
 
         var leagues = await db.LeagueSubscriptions
             .AsNoTracking()
             .Where(subscription => subscription.UserId == userId)
-            .OrderBy(subscription => subscription.CreatedAt)
             .Select(subscription => new UserLeagueSubscription(
                 subscription.League.ExternalId,
                 subscription.League.Name,
@@ -104,7 +119,6 @@ public sealed class UserService(
         var organizations = await db.OrganizationSubscriptions
             .AsNoTracking()
             .Where(subscription => subscription.UserId == userId)
-            .OrderBy(subscription => subscription.CreatedAt)
             .Select(subscription => new
             {
                 subscription.Organization.ExternalId,
@@ -116,8 +130,9 @@ public sealed class UserService(
 
         return new(
             teams,
-            leagues,
+            [.. leagues.OrderBy(league => league.CreatedAt)],
             [.. organizations
+                .OrderBy(organization => organization.CreatedAt)
                 .Select(organization => int.TryParse(organization.ExternalId, out var id)
                     ? new UserOrganizationSubscription(id, organization.Name, organization.CreatedAt)
                     : null)
@@ -156,14 +171,18 @@ public sealed class UserService(
         // role means "every league of the association", not a cap of zero, so
         // it is reported as unlimited rather than 0. The same holds for teams:
         // a president follows every team of a base name at once, so the COACH
-        // cap of 5 does not apply to their team list.
+        // cap of 5 does not apply to their team list, and a DIRECTOR follows
+        // every team of a whole category level ("M13 A" + "M13 B" + "M13 AA"),
+        // so their team list is unbounded too.
         var isPresident = maxFollowed.ContainsKey(PresidentRoleId);
+        var isDirector = maxFollowed.ContainsKey(DirectorRoleId);
+        var unlimitedTeams = isPresident || isDirector;
         var organizationMax = maxFollowed.GetValueOrDefault(PresidentRoleId) > 0
             ? maxFollowed[PresidentRoleId]
             : (int?)null;
         return
         [
-            new(TeamKind, isPresident ? null : maxFollowed.GetValueOrDefault(CoachRoleId), used[TeamKind]),
+            new(TeamKind, unlimitedTeams ? null : maxFollowed.GetValueOrDefault(CoachRoleId), used[TeamKind]),
             new(LeagueKind, maxFollowed.GetValueOrDefault(DirectorRoleId), used[LeagueKind]),
             new(OrganizationKind, organizationMax, used[OrganizationKind]),
         ];
@@ -298,17 +317,86 @@ public sealed class UserService(
     /// Spordle ids are reported rather than refused, and a caller without the
     /// PRESIDENT role changes nothing.
     /// </summary>
-    public async Task<TeamBatchSubscriptionResult> AddPresidentTeamSubscriptionsAsync(
-        int userId, IReadOnlyList<int> teamIds, CancellationToken cancellationToken = default)
+    public Task<TeamBatchSubscriptionResult> AddPresidentTeamSubscriptionsAsync(
+        int userId, IReadOnlyList<int> teamIds, CancellationToken cancellationToken = default) =>
+        AddBatchTeamSubscriptionsAsync(userId, teamIds, PresidentRoleId, cancellationToken);
+
+    /// <summary>
+    /// Follows every team of one team name inside a category level ("M13" +
+    /// "Grizzly" → every M13 Grizzly team, whatever its letter) under the
+    /// DIRECTOR licence. The director scope lifts the team cap and the 15-day
+    /// removal lock, exactly like the president batch; duplicates and unknown
+    /// ids are reported. A category is followed one name at a time: when the
+    /// caller already follows another name of the level, nothing is added and
+    /// <see cref="SubscriptionError.BaseNameLocked"/> is returned. A caller
+    /// without the DIRECTOR role changes nothing.
+    /// </summary>
+    public async Task<TeamBatchSubscriptionResult> AddDirectorTeamSubscriptionsAsync(
+        int userId, string category, string? baseName, IReadOnlyList<int> teamIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(category);
+        ArgumentNullException.ThrowIfNull(teamIds);
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        if (!OpenAccess && !await HasRoleAsync(db, userId, DirectorRoleId, cancellationToken).ConfigureAwait(false))
+        {
+            return TeamBatchSubscriptionResult.OutOfScope();
+        }
+
+        if (await FollowsAnotherNameOfCategoryAsync(db, userId, category, baseName, cancellationToken).ConfigureAwait(false))
+        {
+            return new(SubscriptionError.BaseNameLocked, [], [], []);
+        }
+
+        return await AddBatchTeamSubscriptionsAsync(userId, teamIds, DirectorRoleId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Whether the caller already follows a team of the category level under a
+    /// name other than the requested one: a category director follows one team
+    /// name per category, so the teams of that name must be removed before
+    /// another one can be picked. Names are compared on their base name — the
+    /// first word of the published name (`TeamNameMatcher.BaseNameOf`), the key
+    /// the page uses too. The category of a followed team is read from its
+    /// league name in memory (<see cref="LeagueCategoryLevel"/>), which the
+    /// provider cannot translate.
+    /// </summary>
+    private static async Task<bool> FollowsAnotherNameOfCategoryAsync(
+        HockeySeasonDbContext db, int userId, string category, string? baseName, CancellationToken cancellationToken)
+    {
+        var requestedName = TeamNameMatcher.BaseNameOf(baseName);
+        if (requestedName.Length == 0)
+        {
+            return false;
+        }
+
+        var followed = await db.TeamSubscriptions
+            .AsNoTracking()
+            .Where(subscription => subscription.UserId == userId)
+            .Select(subscription => new { subscription.Team.Name, LeagueName = subscription.Team.League.Name })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var followedInCategory = followed
+            .Where(team => LeagueCategoryLevel.Matches(team.LeagueName, category))
+            .ToList();
+        return followedInCategory.Count > 0
+            && !followedInCategory.Any(team => TeamNameMatcher.BaseNameOf(team.Name) == requestedName);
+    }
+
+    private async Task<TeamBatchSubscriptionResult> AddBatchTeamSubscriptionsAsync(
+        int userId, IReadOnlyList<int> teamIds, int roleId, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(teamIds);
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
-        if (!OpenAccess && !await HasRoleAsync(db, userId, PresidentRoleId, cancellationToken).ConfigureAwait(false))
+        if (!OpenAccess && !await HasRoleAsync(db, userId, roleId, cancellationToken).ConfigureAwait(false))
         {
-            // The whole-association flow belongs to the PRESIDENT licence:
-            // another role keeps the single-team path and its cap.
-            return TeamBatchSubscriptionResult.NotPresident();
+            // Each batch flow belongs to a whole-scope licence (a base name of
+            // the association, a category of the director): another role keeps
+            // the single-team path and its cap.
+            return TeamBatchSubscriptionResult.OutOfScope();
         }
 
         var requested = teamIds.Distinct().ToList();
@@ -568,10 +656,10 @@ public sealed class UserService(
         }
 
         var maximums = await MaxFollowedByKindAsync(db, userId, cancellationToken).ConfigureAwait(false);
-        if (maximums.ContainsKey(PresidentRoleId) && kind == TeamKind)
+        if ((maximums.ContainsKey(PresidentRoleId) || maximums.ContainsKey(DirectorRoleId)) && kind == TeamKind)
         {
-            // The president licence covers a whole association: no team cap,
-            // matching the batch add of a base name.
+            // A president follows every team of a base name, a director every
+            // team of a category level: no team cap, matching their batch add.
             return new(kind, null, used);
         }
         return new(kind, maximums.GetValueOrDefault(roleId), used);

@@ -5,15 +5,21 @@ import {
   baseNameOf,
   canAddTeam,
   canFollowBaseName,
+  canFollowCategory,
   canFollowMoreTeams,
   canLoadDivisions,
   canLoadLeagues,
   canLoadTeams,
+  canPreviewCategoryTeams,
+  categoryLevelOf,
   formatUsage,
   isAssociationPresident,
+  isCategoryDirector,
   isRemovable,
   limitOf,
+  lockedCategoryName,
   matchesBaseName,
+  matchesCategory,
   normalizeTeamName,
 } from './subscription-helpers.ts';
 
@@ -82,6 +88,77 @@ test('isAssociationPresident only offers the batch flow to the PRESIDENT licence
   assert.equal(isAssociationPresident(['PRESIDENT']), true);
   assert.equal(isAssociationPresident([]), false);
   assert.equal(isAssociationPresident(), false);
+});
+
+test('isCategoryDirector only offers the category flow to the DIRECTOR licence', () => {
+  assert.equal(isCategoryDirector(['coach']), false);
+  assert.equal(isCategoryDirector(['coach', 'director']), true);
+  assert.equal(isCategoryDirector(['DIRECTOR']), true);
+  assert.equal(isCategoryDirector(['president']), false);
+  assert.equal(isCategoryDirector([]), false);
+  assert.equal(isCategoryDirector(), false);
+});
+
+test('canFollowCategory needs a level, a typed name and at least one match', () => {
+  assert.equal(canFollowCategory('M13', 'grizzly', 2), true);
+  assert.equal(canFollowCategory('Junior', 'grizzly', 1), true);
+  assert.equal(canFollowCategory(null, 'grizzly', 2), false);
+  assert.equal(canFollowCategory('  ', 'grizzly', 2), false);
+  // A name with no match cannot be followed: the preview must list teams first.
+  assert.equal(canFollowCategory('M13', 'grizzly', 0), false);
+  assert.equal(canFollowCategory('M13', '  ', 2), false);
+  // While the batch add runs the button stays disabled.
+  assert.equal(canFollowCategory('M13', 'grizzly', 2, true), false);
+  // A name other than the one the level follows is blocked; the same name is not.
+  assert.equal(canFollowCategory('M13', 'mousquetaire', 1, false, 'grizzly'), false);
+  assert.equal(canFollowCategory('M13', 'GRIZZLY', 2, false, 'grizzly'), true);
+  // Another suffix of the same family keeps the same base name.
+  assert.equal(canFollowCategory('M13', 'GRIZZLY 2', 1, false, 'grizzly'), true);
+  assert.equal(canFollowCategory('M13', 'grizzly', 2, false, null), true);
+});
+
+test('canPreviewCategoryTeams needs a level and a typed name', () => {
+  assert.equal(canPreviewCategoryTeams('M13', 'grizzly'), true);
+  assert.equal(canPreviewCategoryTeams(null, 'grizzly'), false);
+  assert.equal(canPreviewCategoryTeams('M13', '   '), false);
+});
+
+test('lockedCategoryName locks a category to the name it already follows', () => {
+  const teams = [
+    { name: 'GRIZZLY 1 STE-JULIE', category: 'M13' },
+    { name: 'AIGLES 1 ST-BRUNO', category: 'M15' },
+  ];
+  assert.equal(lockedCategoryName(teams, 'M13'), 'grizzly');
+  // Another level is independent: M15 keeps its own name.
+  assert.equal(lockedCategoryName(teams, 'M15'), 'aigles');
+  assert.equal(lockedCategoryName(teams, 'M11'), null);
+  // No level picked, nothing locked; an unknown level neither.
+  assert.equal(lockedCategoryName(teams, null), null);
+  // A team without a published category never locks a level.
+  assert.equal(lockedCategoryName([{ name: 'GRIZZLY 1', category: null }], 'M13'), null);
+  assert.equal(lockedCategoryName([], 'M13'), null);
+});
+
+test('categoryLevelOf reads the level of a published league name', () => {
+  assert.equal(categoryLevelOf('M13 B'), 'M13');
+  assert.equal(categoryLevelOf('M13 AA'), 'M13');
+  assert.equal(categoryLevelOf('M13A'), 'M13');
+  assert.equal(categoryLevelOf(' m11 a '), 'M11');
+  assert.equal(categoryLevelOf('Junior A'), 'JUNIOR');
+  assert.equal(categoryLevelOf('Juvénil B'), 'JUNIOR');
+  assert.equal(categoryLevelOf('Atome BB'), null);
+  assert.equal(categoryLevelOf(''), null);
+  assert.equal(categoryLevelOf(null), null);
+});
+
+test('matchesCategory folds the letters into the category', () => {
+  assert.equal(matchesCategory('M13 B', 'M13'), true);
+  assert.equal(matchesCategory('M13 AA', 'm13'), true);
+  assert.equal(matchesCategory('M13', ' M13 '), true);
+  assert.equal(matchesCategory('Junior A', 'junior'), true);
+  assert.equal(matchesCategory('M15 A', 'M13'), false);
+  assert.equal(matchesCategory('M13 B', ''), false);
+  assert.equal(matchesCategory(null, 'M13'), false);
 });
 
 test('canFollowBaseName needs a typed base name and at least one match', () => {

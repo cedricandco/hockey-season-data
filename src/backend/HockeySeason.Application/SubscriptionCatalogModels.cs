@@ -54,6 +54,37 @@ public sealed record PresidentTeamOptions(
     IReadOnlyList<PresidentTeam> Teams);
 
 /// <summary>
+/// A category level of an association — "M11", "M13", "M15", "M17", "M19" or
+/// "Junior" — offered by the category-director selector. <see cref="Id"/> is
+/// the level itself, the value the team list of the category is queried with;
+/// the letters that refine a category ("M13 A", "M13 B", "M13 AA") are ignored,
+/// which is the whole point of the level.
+/// </summary>
+public sealed record DirectorCategory(string Id, string Name, int TeamCount);
+
+/// <summary>
+/// A team a category director may follow by picking its category level, with
+/// the league and division it plays in so the page can list it without another
+/// call. <see cref="Id"/> is the Spordle team id, the value the team
+/// subscription endpoints expect.
+/// </summary>
+public sealed record DirectorTeam(int Id, string Name, string LeagueName, string DivisionName);
+
+/// <summary>
+/// Teams of one category level of an association in the latest imported season
+/// ("M13" → every M13 team of every division, whatever the letter), optionally
+/// narrowed to one team name: a category director follows one name per
+/// category, so <see cref="BaseName"/> is the filter that was applied (null
+/// when the whole level is listed).
+/// </summary>
+public sealed record DirectorCategoryOptions(
+    int AssociationId,
+    string AssociationName,
+    string Category,
+    string? BaseName,
+    IReadOnlyList<DirectorTeam> Teams);
+
+/// <summary>
 /// Read-only navigation for the "follow a team" selector: association →
 /// division → league → team, over the reference data mirrored from Spordle.
 /// Every identifier returned is the one the next level expects, and the team
@@ -93,4 +124,24 @@ public interface ISubscriptionCatalogService
     /// </summary>
     Task<PresidentTeamOptions> GetTeamsByBaseNameAsync(
         int associationId, string baseName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Category levels ("M11", "M13", …, "Junior") the association publishes in
+    /// its latest imported season, with the number of teams of each. Used by the
+    /// category-director selector, where picking a level selects every letter
+    /// of the category at once.
+    /// </summary>
+    Task<IReadOnlyList<DirectorCategory>> GetCategoriesAsync(
+        int associationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Teams of one category level of the association in its latest imported
+    /// season, across every division and league: "M13" selects the M13 A, M13 B
+    /// and M13 AA teams alike, because the letter is a refinement of the
+    /// category, not a different one. <paramref name="baseName"/> narrows the
+    /// result to the teams whose name starts with it — a category director
+    /// follows one team name per category, never its whole roster.
+    /// </summary>
+    Task<DirectorCategoryOptions> GetTeamsByCategoryAsync(
+        int associationId, string category, string? baseName = null, CancellationToken cancellationToken = default);
 }

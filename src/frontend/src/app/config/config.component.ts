@@ -8,6 +8,8 @@ import { ThemeService } from '../core/theme.service';
 import {
   FollowedTeam,
   PresidentTeam,
+  DirectorCategory,
+  DirectorTeam,
   SubscriptionAssociation,
   SubscriptionDivision,
   SubscriptionLeague,
@@ -19,14 +21,19 @@ import {
   baseNameOf,
   canAddTeam,
   canFollowBaseName,
+  canFollowCategory,
   canFollowMoreTeams,
   canLoadDivisions,
   canLoadLeagues,
   canLoadTeams,
+  canPreviewCategoryTeams,
+  categoryLevelOf,
   formatUsage,
   isAssociationPresident,
+  isCategoryDirector,
   isRemovable,
   limitOf,
+  lockedCategoryName,
   matchesBaseName,
 } from './subscription-helpers';
 
@@ -47,6 +54,15 @@ import {
  * leagues and categories — is followed in one call. That scope lifts the team
  * cap and the removal lock, so the president prunes unwanted teams right away
  * with the regular remove button.
+ *
+ * A caller holding the DIRECTOR licence gets a "category director" block built
+ * the same way: it picks an association and a category level ("M11", "M13",
+ * "M15", "M17", "M19", "Junior") — the letters refining a category (A, B, AA…)
+ * are folded into the level — then types one team name ("Grizzly"), and every
+ * team of that name in the category is followed in one call, with the same
+ * lifted cap and removal lock. A category is followed one name at a time: while
+ * the teams of a name are followed, another name of the level is refused until
+ * they are removed.
  */
 @Component({
   selector: 'app-config',
@@ -162,6 +178,89 @@ import {
             </div>
           }
 
+          @if (isDirector()) {
+            <div class="selector-card director-card">
+              <h3 class="selector-title">{{ 'FOLLOW.DIRECTOR_TITLE' | translate }}</h3>
+              <p class="section-subtitle">{{ 'FOLLOW.DIRECTOR_SUBTITLE' | translate }}</p>
+              <div class="selector-grid president-grid director-grid">
+                <label class="field">
+                  <span>{{ 'FOLLOW.ASSOCIATION' | translate }}</span>
+                  <select [ngModel]="directorAssociationId()" (ngModelChange)="selectDirectorAssociation($event)"
+                    [disabled]="catalogLoading() || directorAdding()">
+                    <option [ngValue]="null">{{ 'FOLLOW.SELECT' | translate }}</option>
+                    @for (association of associations(); track association.id) {
+                      <option [ngValue]="association.id">{{ association.name }}</option>
+                    }
+                  </select>
+                </label>
+                <label class="field">
+                  <span>{{ 'FOLLOW.CATEGORY' | translate }}</span>
+                  <select [ngModel]="directorCategory()" (ngModelChange)="selectDirectorCategory($event)"
+                    [disabled]="directorAssociationId() === null || directorCategoriesLoading() || directorAdding()">
+                    <option [ngValue]="null">{{ 'FOLLOW.SELECT' | translate }}</option>
+                    @for (category of directorCategories(); track category.id) {
+                      <option [ngValue]="category.id">
+                        {{ category.name }} · {{ 'FOLLOW.CATEGORY_TEAMS' | translate: { count: category.teamCount } }}
+                      </option>
+                    }
+                  </select>
+                </label>
+                <label class="field">
+                  <span>{{ 'FOLLOW.BASE_NAME' | translate }}</span>
+                  <input type="text"
+                    [placeholder]="'FOLLOW.BASE_NAME_PLACEHOLDER' | translate"
+                    [ngModel]="directorBaseName()" (ngModelChange)="setDirectorBaseName($event)"
+                    [disabled]="directorCategory() === null || directorMatchesLoading() || directorAdding()"
+                    (keydown.enter)="previewDirectorTeams()" />
+                </label>
+              </div>
+
+              @if (directorLockedName(); as lockedName) {
+                <p class="hint name-locked" role="status">
+                  {{ 'FOLLOW.DIRECTOR_NAME_LOCKED' | translate: { name: lockedName, category: directorCategoryLabel() } }}
+                </p>
+              }
+
+              <div class="selector-actions">
+                <button type="button" class="add-button"
+                  [disabled]="!canPreviewDirectorTeams() || directorMatchesLoading()"
+                  (click)="previewDirectorTeams()">
+                  {{ (directorMatchesLoading() ? 'FOLLOW.SEARCHING' : 'FOLLOW.PREVIEW') | translate }}
+                </button>
+                <button type="button" class="add-button"
+                  [disabled]="!directorCanFollow()"
+                  (click)="followDirectorTeams()">
+                  {{ (directorAdding() ? 'FOLLOW.ADDING' : 'FOLLOW.FOLLOW_CATEGORY') | translate }}
+                </button>
+                @if (directorAddedCount() > 0) {
+                  <span class="hint" role="status">
+                    {{ 'FOLLOW.FOLLOW_ALL_DONE' | translate: { count: directorAddedCount() } }}
+                  </span>
+                }
+              </div>
+
+              @if (directorMatches().length > 0) {
+                <ul class="match-list" [attr.aria-label]="'FOLLOW.CATEGORY_MATCHES' | translate">
+                  @for (team of directorMatches(); track team.id) {
+                    <li class="match-item" [class.match-followed]="directorTeamFollowed(team.id)">
+                      <span class="match-name">{{ team.name }}</span>
+                      <span class="match-meta">{{ team.leagueName }} · {{ team.divisionName }}</span>
+                      @if (directorTeamFollowed(team.id)) {
+                        <span class="match-badge">✓</span>
+                      }
+                    </li>
+                  }
+                </ul>
+              } @else if (directorSearched()) {
+                <p class="hint">{{ 'FOLLOW.NO_CATEGORY_MATCH' | translate }}</p>
+              }
+
+              @if (directorError()) {
+                <p class="notice" role="alert">{{ directorError()! | translate }}</p>
+              }
+            </div>
+          }
+
           @if (hasTeamLicence()) {
             <div class="selector-card">
               <h3 class="selector-title">{{ 'FOLLOW.ADD_TITLE' | translate }}</h3>
@@ -245,7 +344,8 @@ import {
           } @else {
             <ul class="followed-list">
               @for (team of followedTeams(); track team.teamId) {
-                <li class="followed-item" [class.followed-match]="followedMatchesBaseName(team)">
+                <li class="followed-item"
+                  [class.followed-match]="followedMatchesBaseName(team) || followedLocksCategory(team)">
                   <div class="followed-text">
                     <span class="followed-name">{{ team.name ?? ('FOLLOW.TEAM_UNKNOWN' | translate: { id: team.teamId }) }}</span>
                     @if (!removable(team)) {
@@ -309,6 +409,19 @@ export class ConfigurationComponent implements OnInit {
   readonly presidentSearched = signal(false);
   readonly presidentError = signal<string | null>(null);
 
+  /** Category-director block: association → category level → team name → teams. */
+  readonly directorAssociationId = signal<number | null>(null);
+  readonly directorCategory = signal<string | null>(null);
+  readonly directorCategories = signal<DirectorCategory[]>([]);
+  readonly directorCategoriesLoading = signal(false);
+  readonly directorBaseName = signal('');
+  readonly directorMatches = signal<DirectorTeam[]>([]);
+  readonly directorMatchesLoading = signal(false);
+  readonly directorAdding = signal(false);
+  readonly directorAddedCount = signal(0);
+  readonly directorSearched = signal(false);
+  readonly directorError = signal<string | null>(null);
+
   readonly followedTeams = computed<FollowedTeam[]>(() => this.subscriptions()?.teams ?? []);
   readonly teamLimit = computed(() => limitOf(this.subscriptions(), 'team'));
   readonly usage = computed(() => formatUsage(this.teamLimit()));
@@ -317,6 +430,20 @@ export class ConfigurationComponent implements OnInit {
   readonly hasTeamLicence = computed(() => this.teamLimit()?.max !== 0);
   /** The president block is offered to the PRESIDENT licence only. */
   readonly isPresident = computed(() => isAssociationPresident(this.roleCodes()));
+  /** The director block is offered to the DIRECTOR licence only. */
+  readonly isDirector = computed(() => isCategoryDirector(this.roleCodes()));
+  /**
+   * Team name the director already follows in the picked category: a category
+   * is followed one name at a time, so the block refuses another name until
+   * those teams are removed from the list below.
+   */
+  readonly directorLockedName = computed(() =>
+    lockedCategoryName(this.followedTeams(), this.directorCategory()));
+  /** Display name of the picked level ("Junior" rather than JUNIOR). */
+  readonly directorCategoryLabel = computed(() => {
+    const picked = this.directorCategory();
+    return this.directorCategories().find((category) => category.id === picked)?.name ?? picked ?? '';
+  });
   /**
    * Followed teams the typed base name does not cover: the president sees how
    * many other teams remain and prunes them one by one with the remove button
@@ -329,6 +456,14 @@ export class ConfigurationComponent implements OnInit {
   /** The followed team carries the base name being typed. */
   readonly followedMatchesBaseName = (team: { name: string | null }): boolean =>
     matchesBaseName(team.name, this.presidentBaseName().trim());
+
+  /**
+   * The followed team is the name that locks the picked category: the director
+   * sees which rows to remove to free the level for another name.
+   */
+  readonly followedLocksCategory = (team: { name: string | null; category?: string | null }): boolean =>
+    baseNameOf(team.name) === this.directorLockedName()
+    && categoryLevelOf(team.category) === categoryLevelOf(this.directorCategory());
 
   /** Base names already followed, offered as suggestions in the input. */
   readonly presidentBaseSuggestions = computed(() =>
@@ -350,6 +485,7 @@ export class ConfigurationComponent implements OnInit {
         if (associations.length === 1) {
           this.selectAssociation(associations[0].id);
           this.selectPresidentAssociation(associations[0].id);
+          this.selectDirectorAssociation(associations[0].id);
         }
       },
       // The follow list stays usable: only the selector is unavailable.
@@ -508,6 +644,124 @@ export class ConfigurationComponent implements OnInit {
                 : 'FOLLOW.PRESIDENT_ERROR');
         },
       });
+  }
+
+  // ─── Category director: follow one team name of a category ─────────────
+
+  selectDirectorAssociation(id: number | null): void {
+    this.directorAssociationId.set(id);
+    this.directorCategory.set(null);
+    this.directorCategories.set([]);
+    this.directorBaseName.set('');
+    this.directorMatches.set([]);
+    this.directorSearched.set(false);
+    this.directorAddedCount.set(0);
+    this.directorError.set(null);
+    if (id !== null) this.loadDirectorCategories(id);
+  }
+
+  /** Picking a level clears the previous name and preview. */
+  selectDirectorCategory(category: string | null): void {
+    this.directorCategory.set(category);
+    this.directorBaseName.set('');
+    this.directorMatches.set([]);
+    this.directorSearched.set(false);
+    this.directorAddedCount.set(0);
+    this.directorError.set(null);
+  }
+
+  /** Typing a name invalidates the previous preview: it described another name. */
+  setDirectorBaseName(value: string): void {
+    this.directorBaseName.set(value);
+    this.directorMatches.set([]);
+    this.directorSearched.set(false);
+    this.directorAddedCount.set(0);
+    this.directorError.set(null);
+  }
+
+  directorTeamFollowed(teamId: number): boolean {
+    return alreadyFollowed(this.followedTeams(), teamId);
+  }
+
+  canPreviewDirectorTeams(): boolean {
+    return canPreviewCategoryTeams(this.directorCategory(), this.directorBaseName());
+  }
+
+  /** "Follow these teams" is enabled once the name matched teams of the level. */
+  directorCanFollow(): boolean {
+    return canFollowCategory(
+      this.directorCategory(), this.directorBaseName(), this.directorMatches().length,
+      this.directorAdding(), this.directorLockedName());
+  }
+
+  /** Lists the teams the typed name selects in the category, so they can be checked. */
+  previewDirectorTeams(): void {
+    const associationId = this.directorAssociationId();
+    const category = this.directorCategory();
+    const baseName = this.directorBaseName().trim();
+    if (associationId === null || category === null || baseName.length === 0 || this.directorMatchesLoading()) return;
+
+    this.directorMatchesLoading.set(true);
+    this.directorError.set(null);
+    this.directorAddedCount.set(0);
+    this.api.getDirectorTeams(associationId, category, baseName)
+      .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: ({ teams }) => {
+          this.directorMatches.set(teams);
+          this.directorSearched.set(true);
+          this.directorMatchesLoading.set(false);
+        },
+        error: () => {
+          this.directorMatchesLoading.set(false);
+          this.directorSearched.set(true);
+          this.directorError.set('FOLLOW.DIRECTOR_ERROR');
+        },
+      });
+  }
+
+  /** Follows every matched team of that name, then reloads the followed list. */
+  followDirectorTeams(): void {
+    const associationId = this.directorAssociationId();
+    const category = this.directorCategory();
+    const baseName = this.directorBaseName().trim();
+    if (associationId === null || category === null || baseName.length === 0 || !this.directorCanFollow()) return;
+
+    this.directorAdding.set(true);
+    this.directorError.set(null);
+    this.directorAddedCount.set(0);
+    this.api.addDirectorTeamSubscriptions(associationId, category, baseName)
+      .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (result) => {
+          this.directorAdding.set(false);
+          this.directorAddedCount.set(result.added.length);
+          if (result.added.length === 0) this.directorError.set('FOLLOW.DIRECTOR_NOTHING_ADDED');
+          this.loadSubscriptions();
+        },
+        error: (error: { status?: number }) => {
+          this.directorAdding.set(false);
+          this.directorError.set(
+            error.status === 404 ? 'FOLLOW.DIRECTOR_NO_MATCH'
+              : error.status === 403 ? 'FOLLOW.DIRECTOR_FORBIDDEN'
+                : error.status === 409 ? 'FOLLOW.DIRECTOR_NAME_LOCKED_ERROR'
+                  : 'FOLLOW.DIRECTOR_ERROR');
+        },
+      });
+  }
+
+  /** Category levels of the association, read from its latest imported season. */
+  private loadDirectorCategories(associationId: number): void {
+    this.directorCategoriesLoading.set(true);
+    this.directorError.set(null);
+    this.api.getDirectorCategories(associationId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: ({ categories }) => {
+        this.directorCategories.set(categories);
+        this.directorCategoriesLoading.set(false);
+      },
+      error: () => {
+        this.directorCategoriesLoading.set(false);
+        this.directorError.set('FOLLOW.DIRECTOR_ERROR');
+      },
+    });
   }
 
   addTeam(): void {

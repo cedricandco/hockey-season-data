@@ -24,6 +24,16 @@ public sealed record CreateLeagueSubscriptionRequest(string? LeagueId);
 public sealed record FollowTeamsByBaseNameRequest(int AssociationId, string? BaseName);
 
 /// <summary>
+/// Request body of POST /api/users/me/director-team-subscriptions: the
+/// association (a row of <c>organizations</c>), a category level
+/// ("M11", "M13", "M15", "M17", "M19" or "Junior") and the base name of one
+/// team of it ("Grizzly"). Every team of that name in the category is followed
+/// at once, whatever its letter (M13 A, M13 B, M13 AA…); a category is
+/// followed one name at a time.
+/// </summary>
+public sealed record FollowTeamsByCategoryRequest(int AssociationId, string? Category, string? BaseName);
+
+/// <summary>
 /// Local account endpoints (PostgreSQL): profile, visual settings and the
 /// team / league / organization subscriptions bounded by the caller's licence.
 /// Every function provisions the caller on first use through
@@ -88,7 +98,8 @@ public sealed class UserFunctions(
         var limits = await users.GetLimitsAsync(userId, cancellationToken);
         return new OkObjectResult(new
         {
-            Teams = subscriptions.Teams.Select(team => new { team.TeamId, team.Name, team.CreatedAt, team.LockedUntil }),
+            Teams = subscriptions.Teams.Select(team =>
+                new { team.TeamId, team.Name, team.CreatedAt, team.LockedUntil, team.Category }),
             Leagues = subscriptions.Leagues.Select(league => new { league.LeagueId, league.Name, league.CreatedAt }),
             Organizations = subscriptions.Organizations.Select(organization =>
                 new { organization.OrganizationId, organization.Name, organization.CreatedAt }),
@@ -196,6 +207,60 @@ public sealed class UserFunctions(
     }
 
     /// <summary>
+    /// Category levels ("M11", "M13", …, "Junior") an association publishes —
+    /// the category-director selector. The letters refining a category
+    /// ("M13 A", "M13 B", "M13 AA") are folded into one level, which is what the
+    /// director picks.
+    /// </summary>
+    [Function("SubscriptionCategories")]
+    public async Task<IActionResult> Categories(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "subscriptions/associations/{associationId:int}/categories")] HttpRequest request,
+        int associationId, FunctionContext context, CancellationToken cancellationToken)
+    {
+        if (Unauthorized(context) is { } denied) return denied;
+        if (associationId <= 0) return InvalidBody();
+
+        var categories = await catalog.GetCategoriesAsync(associationId, cancellationToken);
+        return new OkObjectResult(new
+        {
+            categories = categories.Select(item => new { item.Id, item.Name, item.TeamCount }),
+        });
+    }
+
+    /// <summary>
+    /// Teams of one category level of an association, across every division and
+    /// league, narrowed to one team name — the category-director preview. A
+    /// director follows one team name per category, so <c>baseName</c> is the
+    /// filter: without it the whole roster of the level is listed, which is
+    /// only useful to discover the names. Any authenticated caller may preview
+    /// the match; following the teams requires the DIRECTOR licence.
+    /// </summary>
+    [Function("SubscriptionTeamsByCategory")]
+    public async Task<IActionResult> TeamCatalogByCategory(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "subscriptions/associations/{associationId:int}/categories/teams")] HttpRequest request,
+        int associationId, FunctionContext context, CancellationToken cancellationToken)
+    {
+        if (Unauthorized(context) is { } denied) return denied;
+        if (associationId <= 0) return InvalidBody();
+
+        var category = request.Query["category"].ToString();
+        if (string.IsNullOrWhiteSpace(category)) return InvalidBody();
+
+        var baseName = request.Query["baseName"].ToString();
+        var options = await catalog.GetTeamsByCategoryAsync(
+            associationId, category.Trim(),
+            string.IsNullOrWhiteSpace(baseName) ? null : baseName.Trim(), cancellationToken);
+        return new OkObjectResult(new
+        {
+            options.AssociationId,
+            options.AssociationName,
+            options.Category,
+            options.BaseName,
+            teams = options.Teams.Select(team => new { team.Id, team.Name, team.LeagueName, team.DivisionName }),
+        });
+    }
+
+    /// <summary>
     /// Follows every team of an association whose name starts with the base
     /// name, in one call (PRESIDENT licence). The president scope lifts the
     /// team cap and the 15-day lock, so the batch can be pruned immediately
@@ -229,6 +294,57 @@ public sealed class UserFunctions(
         {
             AssociationId = matches.AssociationId,
             matches.AssociationName,
+            matches.BaseName,
+            Added = result.AddedTeamIds,
+            AlreadyFollowed = result.AlreadyFollowedTeamIds,
+            Unknown = result.UnknownTeamIds,
+        });
+    }
+
+    /// <summary>
+    /// Follows every team of one team name inside a category level ("M13" +
+    /// "Grizzly" → every M13 Grizzly team, whatever its letter) in one call
+    /// (DIRECTOR licence). Exactly like the president batch, the director scope
+    /// lifts the team cap and the 15-day lock, so the batch can be pruned
+    /// immediately with the regular team-subscription DELETE. A category is
+    /// followed one name at a time: while the caller follows another name of the
+    /// level the batch answers 409 and nothing changes.
+    /// </summary>
+    [Function("AddDirectorTeamSubscriptions")]
+    public async Task<IActionResult> AddDirectorTeams(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "users/me/director-team-subscriptions")] HttpRequest request,
+        FunctionContext context, CancellationToken cancellationToken)
+    {
+        if (Unauthorized(context) is { } denied) return denied;
+
+        var body = await ReadBodyAsync<FollowTeamsByCategoryRequest>(request, cancellationToken);
+        if (body is null || body.AssociationId <= 0 || string.IsNullOrWhiteSpace(body.Category)
+            || string.IsNullOrWhiteSpace(body.BaseName))
+        {
+            return InvalidBody();
+        }
+
+        var userId = await resolver.GetOrCreateUserIdAsync(context, cancellationToken);
+        var baseName = body.BaseName.Trim();
+        var matches = await catalog.GetTeamsByCategoryAsync(
+            body.AssociationId, body.Category.Trim(), baseName, cancellationToken);
+        if (matches.Teams.Count == 0)
+        {
+            return new NotFoundObjectResult(new { error = "no_matching_team" });
+        }
+
+        var result = await users.AddDirectorTeamSubscriptionsAsync(
+            userId, matches.Category, baseName, [.. matches.Teams.Select(team => team.Id)], cancellationToken);
+        if (result.Error != SubscriptionError.None)
+        {
+            return Map(result.Error);
+        }
+
+        return new OkObjectResult(new
+        {
+            AssociationId = matches.AssociationId,
+            matches.AssociationName,
+            matches.Category,
             matches.BaseName,
             Added = result.AddedTeamIds,
             AlreadyFollowed = result.AlreadyFollowedTeamIds,
@@ -366,6 +482,15 @@ public sealed class UserFunctions(
         },
         SubscriptionError.OutOfScope => new StatusCodeResult(StatusCodes.Status403Forbidden),
         SubscriptionError.Duplicate => new ConflictObjectResult(new { error = "already_followed" }),
+        SubscriptionError.BaseNameLocked => new ObjectResult(new ProblemDetails
+        {
+            Status = StatusCodes.Status409Conflict,
+            Title = "category_name_locked",
+            Detail = "A category is followed one team name at a time: remove the teams of the current name before following another one.",
+        })
+        {
+            StatusCode = StatusCodes.Status409Conflict,
+        },
         SubscriptionError.Locked => new ObjectResult(new ProblemDetails
         {
             Status = StatusCodes.Status423Locked,

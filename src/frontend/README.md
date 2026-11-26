@@ -217,6 +217,26 @@ teams covered by the typed base name are highlighted there. Duplicates and
 unknown ids are reported in the response, not refused (`403` when the caller
 has no PRESIDENT licence — the card is hidden in that case).
 
+### Category director (one team name of a category)
+
+A caller holding the DIRECTOR licence sees a **Category director** card built
+the same way: it picks an association, a **category** — `M11`, `M13`, `M15`,
+`M17`, `M19` or `Junior`, listed by
+`GET /api/subscriptions/associations/{id}/categories` with the number of teams
+of each — then types a **team name** ("Grizzly"). "Show the teams" lists them
+(`GET /api/subscriptions/associations/{id}/categories/teams?category=M13&baseName=Grizzly`)
+and "Follow all these teams" sends one
+`POST /api/users/me/director-team-subscriptions`
+(`{ associationId, category, baseName }`). The letters refining a category
+(A, B, AA…) are folded into the level, so the director covers every letter at
+once; the team cap and the 15-day removal lock are lifted exactly like the
+president flow.
+
+A category is followed **one name at a time**. Once a name of the level is
+followed (the team list reports each followed team's `category`), the card
+shows a notice naming it and disables the add button until those teams are
+removed — the backend enforces the same rule with `409 category_name_locked`.
+
 ## Chat page
 
 The chat page (`/chat`) is the default route and fills the viewport below the

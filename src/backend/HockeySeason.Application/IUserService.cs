@@ -53,6 +53,20 @@ public interface IUserService
     Task<TeamBatchSubscriptionResult> AddPresidentTeamSubscriptionsAsync(
         int userId, IReadOnlyList<int> teamIds, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Follows several teams at once — the category-director flow, where
+    /// picking a level ("M13") and typing one team name ("Grizzly") selects
+    /// every team of that name in the category, whatever its letter (M13 A,
+    /// M13 B, M13 AA…). The DIRECTOR licence lifts the team cap and the 15-day
+    /// removal lock, exactly like the president batch. A category is followed
+    /// one name at a time: while the caller follows another name of the level,
+    /// the batch is refused with <see cref="SubscriptionError.BaseNameLocked"/>
+    /// and nothing changes. Teams already followed are reported, not refused; a
+    /// caller without the DIRECTOR role changes nothing.
+    /// </summary>
+    Task<TeamBatchSubscriptionResult> AddDirectorTeamSubscriptionsAsync(
+        int userId, string category, string? baseName, IReadOnlyList<int> teamIds, CancellationToken cancellationToken = default);
+
     /// <summary>Follows a whole association (PRESIDENT scope).</summary>
     Task<SubscriptionResult> AddOrganizationSubscriptionAsync(int userId, int organizationId, CancellationToken cancellationToken = default);
 
